@@ -213,6 +213,32 @@ public final class TrioAppearance {
     }
 
     /**
+     * Whether the two-SIM rows take the ring's 12 o'clock notch.
+     *
+     * <p>The notch is a single slot, so the things that can occupy it are ordered
+     * rather than merely each testing for themselves. This is that order: the
+     * rows outrank the Wi-Fi arcs and the type label, and only the bolt outranks
+     * the rows.
+     *
+     * <p>What suppresses the rows here is the <em>bolt</em> - the glyph actually
+     * drawing one - and deliberately not the charger. The two came apart when the
+     * bolt became switchable: with "show the charging bolt" off the glyph hands
+     * the bolt back to MIUI and its own notch is free again, so the rows can have
+     * it. Keying this on charging, as {@link #dualSimRows} does, would keep the
+     * notch empty on a charging frame that draws nothing in it.
+     *
+     * <p>{@link #dualSimRows} stays as it is for the rectangular arrangement,
+     * which has no notch to arbitrate: there the second row is a column beside
+     * the first, so the arcs and the charger really do rule it out.
+     *
+     * @param bolt whether this frame draws the charging bolt
+     * @param sims how many SIM signal levels are known this frame
+     */
+    public boolean dualClaimsNotch(boolean bolt, int sims) {
+        return dualSim && signalDots() && sims >= 2 && !bolt;
+    }
+
+    /**
      * Whether the glyph itself draws the mobile level dots.
      *
      * <p>Both arrangements go through here so the two can never disagree about
@@ -319,7 +345,9 @@ public final class TrioAppearance {
             // The plug, not the bolt: charging suppresses the second row whether
             // or not this frame happens to draw a bolt for it (the bolt is
             // conditional on the percentage being on, the plug never is).
-            dual = a.dualSimRows(wifi, charging, sims);
+            // The notch is arbitrated, not merely shared: the rows outrank the
+            // arcs, and only the bolt outranks the rows. See dualClaimsNotch.
+            dual = a.dualClaimsNotch(bolt, sims);
             // The dual reading's top row owns the 12 o'clock notch, so the
             // percentage cannot be drawn there: it moves to the ring centre,
             // which is where it already goes whenever the notch is spoken for.
@@ -327,7 +355,11 @@ public final class TrioAppearance {
             // percentage everywhere else.
             valueInCentre = hasValue && (a.centreValue || dual || (!wifi && !type));
             valueInGap = hasValue && !valueInCentre && !bolt;
-            wifiInGap = wifi && a.centreValue && !bolt;
+            // The rows outrank the arcs: both want the same slot, and the rows
+            // carry a per-SIM reading the arcs cannot show anywhere else, while a
+            // Wi-Fi level is also legible from the arcs' absence. The bolt above
+            // already yielded to the rows via dualClaimsNotch.
+            wifiInGap = wifi && a.centreValue && !bolt && !dual;
             typeInCentre = type && !wifi && !valueInCentre;
             // The second row sits in the notch the gap label would otherwise use,
             // so the label yields rather than overlapping SIM 1's dots.
@@ -338,7 +370,15 @@ public final class TrioAppearance {
             gapUsed = bolt || wifiInGap || valueInGap || typeInGap || dual;
             // With the centre reserved and nothing to move into the notch, the
             // arcs are dropped outright rather than drawn behind the number.
-            drawWifi = a.wifi && (!a.centreValue || wifiInGap);
+            //
+            // Keyed on where the percentage actually landed, not on the switch
+            // that asked for it: the rows reserve the centre as well, so a frame
+            // with the rows in the notch while the centring switch is off would
+            // otherwise send the arcs to the centre and draw them across the
+            // number. That combination is reachable since the rows outrank the
+            // arcs; with the rows off, `valueInCentre` and `centreValue` agree
+            // except when there is no ink to draw anyway.
+            drawWifi = a.wifi && (!valueInCentre || wifiInGap);
             drawValue = valueInCentre || valueInGap;
         }
     }

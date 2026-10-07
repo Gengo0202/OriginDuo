@@ -33,7 +33,7 @@
     <string name="show_mobile_summary">在底部绘制四个电平点表示移动网络信号强度；关闭后原生移动信号图标回到状态栏原本的位置。</string>
 
     <string name="dual_sim_title">双卡信号</string>
-    <string name="dual_sim_summary">无 Wi-Fi 且未充电时，改画上下两排信号点：上排为卡一，下排为卡二。只在双卡且能读到两卡电平时生效；单卡或正在充电时仍只画一排，显示当前上网卡。</string>
+    <string name="dual_sim_summary">改画上下两排信号点：上排为卡一，下排为卡二。圆环顶部缺口只有一个位置，占用顺序是「双卡 → Wi-Fi 弧 → 环内网络类型」，双卡排最前，会顶掉 Wi-Fi 弧；只有环内充电闪电（需同时开启「充电时显示闪电」）能压过它。只在双卡且能读到两卡电平时生效；单卡时仍只画一排，显示当前上网卡。</string>
 
     <string name="show_value_title">显示电量数字</string>
     <string name="show_value_summary">在环内显示电量百分比；充电时改为闪电图标。关闭后充电闪电同样交还原生图标。</string>
@@ -65,7 +65,7 @@
     <string name="out_signal_margin_summary">环外读数与电池图标之间的空隙，单位为 dp。默认 2dp，可调范围 0–16dp。这是一条会被占位的边距：调大时读数远离电池，同时原生图标整体让出同样宽度，所以读数永远不会压到旁边的图标上。读数本身的高矮由上面的「环外信号大小」决定，不需要再单独调位置。</string>
 
     <string name="value_centre_title">电量数字居中</string>
-    <string name="value_centre_summary">电量数字放大到圆环中间并始终优先占据圆心。Wi-Fi 弧缩到顶部缺口，充电时改用小的闪电占用缺口（此时不画 Wi-Fi 弧），环内的网络类型也让位到缺口。</string>
+    <string name="value_centre_summary">电量数字放大到圆环中间并始终优先占据圆心，顶部缺口腾给别的信息。缺口只有一个位置，占用顺序是「双卡（若开启）→ Wi-Fi 弧 → 环内网络类型」，都没开时圆环闭合成整圆；开启「充电时显示闪电」时由环内闪电占位（此时不画 Wi-Fi 弧）。</string>
 
     <string name="color_role_title">状态颜色</string>
     <string name="color_role_summary">分别为低电量、充电与危险电量指定颜色。</string>

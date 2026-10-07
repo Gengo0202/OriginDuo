@@ -466,26 +466,33 @@ graphics layer，顶栏再通过同一个 `backdrop` 采样它——捕获源与
 | | 关（默认，行为未变） | 开 |
 | --- | --- | --- |
 | 圆心 | Wi-Fi 弧；无 Wi-Fi 且未选环内类型时是电量数字 | 电量数字（放大 `CENTRE_SIZE_RATIO` 倍）——只要 `show_value` 且电量已知就必定是它 |
-| 顶部缺口 | 电量数字 / 闪电 | Wi-Fi 弧（缩小到 `GAP_WIFI_SCALE`）/ 充电时的小闪电 / 让位出来的环内网络类型 |
+| 顶部缺口 | 电量数字 / 闪电 / 双卡两排的上排 | 按顺序取第一个可用者：闪电 → 双卡 → Wi-Fi 弧（缩到 `GAP_WIFI_SCALE`）→ 环内网络类型，都没有则圆环闭合成整圆 |
 
-三条让位规则都只作用于 `centred == true`：
+**缺口是单槽位，按优先级仲裁**（顺序同上）。四条让位规则：
 
-1. **闪电恒落缺口**。`boltInCentre` / `boltInGap` 这对变量已删除，`drawBolt(Canvas c, int color)`
+1. **闪电 vs 双卡**：只有 `bolt` 能压过双卡，`charging` 不能——见「双卡信号」一节的解释。
+2. **双卡 vs Wi-Fi 弧**：`wifiInGap` 带 `&& !dual` 给双卡让位。这是有意取舍（双卡无处可去，
+   弧线有无可从缺失去读）。
+3. **闪电恒落缺口**。`boltInCentre` / `boltInGap` 这对变量已删除，`drawBolt(Canvas c, int color)`
    只剩一个落点，固定用 `boltOffsetX/Y` + `BOLT_SCALE`（原居中几何 `BOLT_CENTRE_SCALE`、
    `boltCentreOffsetX/Y` 已从 `TrioGeometry` 移除）。闪电占缺口时**整组 Wi-Fi 弧不画**，
-   门是 `cfg.showWifi && (!centred || wifiInGap)` —— 不能只把 `wifiInGap` 置假，否则
-   `drawWifi(..., false)` 会把弧画回圆心压在数字上。
-2. **缺口归闪电时用窄嘴**。`gapUsed` 的门与 `GAP_START/END_CHARGE` 的选择只看 `bolt`，
+   门是 `cfg.showWifi && (!valueInCentre || wifiInGap)` —— 不能只把 `wifiInGap` 置假，否则
+   `drawWifi(..., false)` 会把弧画回圆心压在数字上。**门取 `valueInCentre` 而非 `centred`**：
+   双卡也会把数字强制送进圆心，那个组合下按开关判断同样会叠画（见「双卡信号」一节）。
+4. **缺口归闪电时用窄嘴**。`gapUsed` 的门与 `GAP_START/END_CHARGE` 的选择只看 `bolt`，
    不再看闪电落在哪个槽位。
-3. **环内网络类型让位**。`valueInCentre` 生效时数字占圆心，类型改由新增的
+5. **环内网络类型让位**。`valueInCentre` 生效时数字占圆心，类型改由新增的
    `drawGapType(Canvas c, String type, int fg, TrioSettings cfg)` 画进缺口（`gapClearWidth` +
    `gapBaseline`，用 `cfg.typeSize` / `cfg.typeWeight`）；圆心空出来时才回到 `drawCentreType`。
 
 Wi-Fi 搬进缺口仍是 canvas 变换（`translate` + `scale`）完成的，几何常量仍是原始那套绝对值，
 在 `save()`/`restoreToCount()` 里做。
 
-`centred == false` 时这套式子化简回改动前的判定（`wifiInGap` 与 `typeInGap` 恒为假），
+`valueInCentre == false` 且双卡关时这套式子化简回改动前的判定（`wifiInGap` 与 `typeInGap` 恒为假），
 `work\slotcheck\verify.ps1` 用 12 个非居中状态在新旧两版之间逐像素对照，专门锁住这一点。
+**注意这条绕过双卡**：双卡开着时它会把数字强制送进圆心（`valueInCentre = … || dual || …`），
+于是那个「非居中」的帧其实也走居中分支——这正是 `drawWifi` 的门必须按 `valueInCentre` 而不是
+按开关判断的原因。
 
 代码侧的符号（`Prefs.KEY_VALUE_CENTRED`、`TrioSettings.valueCentred`、`TrioRenderer` 里的 `centred`）
 都跟着标签改成了「居中」语义，只有那个字符串字面量保持 `"swap_wifi_value"`。
@@ -861,18 +868,34 @@ hook `StatusBarIconView.onDarkChanged(ArrayList,float,int)`（AOSP 拼法）与
 
 ### 双卡信号
 
-「双卡信号」（`dual_sim_signal`）在**无 Wi-Fi 且未充电**时把一排点换成上下两排：**上排 = 卡一
-（slot 0）、下排 = 卡二（slot 1）**。判定集中在 `TrioAppearance.dualSimRows(wifiInk, charging,
-sims)`，渲染端只问「画几排」。触发条件三条同时成立，任一条不满足就回退成单排（当前上网卡）：
+「双卡信号」（`dual_sim_signal`）把一排点换成上下两排：**上排 = 卡一（slot 0）、下排 = 卡二
+（slot 1）**。渲染端只问「画几排」，判定集中在这里。
 
-1. 开关打开；
-2. `wifiInk` 为假（没有 Wi-Fi 墨迹）；
-3. 第 3 个参数（`charging`）为假 —— 注意是**插没插充电器**，不是**这一帧画不画闪电**。
-   闪电自己还有 `show_value` 这个前置条件（`drawsBolt() = showBolt && showValue`），两者不是一回事；
-   早期实现误把 `bolt` 传进来，于是「充电中 + 关掉电量数字」会被判成未充电而画出两排。现在两处
-   调用点（`Ring`/`Rect`）都传 `charging`，`work\dualsimcheck\verify.ps1` 专门盯这条。
+**两条规则并存，别把它们合成一条**——两种排布的「第二排」位置不同，所以让位条件也不同：
 
-`sims < 2` 时也回退 —— 只有一张卡有读数时，画两排会多出一排空格，不如照旧画当前上网卡。
+| 排布 | 谓词 | 第二排是 | 让位给 |
+|---|---|---|---|
+| 矩形 | `dualSimRows(wifiInk, charging, sims)` | 旁边**另一列** | Wi-Fi 墨迹 **和** 插着充电器 |
+| 圆环 | `dualClaimsNotch(bolt, sims)` | 顶部**同一个缺口**的上排 | 只有**闪电** |
+
+**圆环那条是缺口仲裁，不是"条件都满足"**。顶部缺口只有一个位置，能占它的东西按顺序排：
+**闪电 > 双卡 > Wi-Fi 弧 > 环内网络类型 > 无（闭合）**。所以：
+
+- `dualClaimsNotch` 只问 `bolt`，**故意不问 charging**。闪电开关化之后这两件事分家了：
+  「充电时显示闪电」关掉时模块不画闪电、把闪电交还系统（`hidesNativeBolt()` 为假），缺口就
+  重新空闲，两排点可以占据。若按 charging 判定，就会出现「充电中、却什么都没画在缺口里」——
+  用户报的正是这个。
+- `wifiInGap` 因此多了 `&& !dual`：弧线给双卡让位。**这是有意的取舍**：双卡被顶掉后无处可去
+  （数字占环心），而 Wi-Fi 有无可以从弧线的缺失去读，两害相权取双卡。
+- `drawWifi` 改判 `!valueInCentre`（而非 `!a.centreValue`）。原因是上面的让位让一个**此前不可达**
+  的组合变得可达：**双卡 + Wi-Fi 有墨迹 + 未开「电量数字居中」**。此时 `dual` 把 `valueInCentre`
+  强制为真（数字让位到环心），若 `drawWifi` 仍按开关判断就会把弧线也送去环心、和放大数字叠画。
+  渲染器里对应那条注释（`TrioRenderer` 的 "a bolt that has taken the notch suppresses them
+  outright"）说的是同一件事，只是当时只有闪电能造成这个局面。
+
+`sims < 2` 时两条规则都回退 —— 只有一张卡有读数时，画两排会多出一排空格，不如照旧画当前上网卡。
+工作台 `work\dualsimcheck` 同时钉住两条规则，并各有一个反例（`bolt` 变体把缺口规则喂成充电器、
+`narrow` 变体把双卡缺口压回百分比缺口）。
 
 几何在 `TrioGeometry`：`DOTS_DUAL[8][2]` 的 `0..3` 是 SIM 1 上排（`DOTS` 关于**环心** `B_CY`
 镜像，不是关于设计盒中心），`4..7` 是 SIM 2 下排（`DOTS` 原值）；下排落在 `B_START`/`B_SWEEP`

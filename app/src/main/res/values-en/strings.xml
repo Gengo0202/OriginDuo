@@ -33,7 +33,7 @@
     <string name="show_mobile_summary">Draw four level dots for mobile network signal strength. Turn off to send the stock mobile icon back to its usual place in the status bar.</string>
 
     <string name="dual_sim_title">Dual-SIM signal</string>
-    <string name="dual_sim_summary">With no Wi-Fi and not charging, draw two rows of dots instead of one: SIM 1 on top, SIM 2 below. Only applies when both SIMs are present and readable; a single SIM, or while charging, still draws one row for the current data SIM.</string>
+    <string name="dual_sim_summary">Draw two rows of dots instead of one: SIM 1 on top, SIM 2 below. The ring\'s top notch holds one thing at a time, and the order is dual-SIM, then the Wi-Fi arcs, then the in-ring network type - the rows come first and displace the arcs. Only the in-ring charging bolt outranks them, so it must be switched on to take the notch instead. Only applies when both SIMs are present and readable; a single SIM still draws one row for the current data SIM.</string>
 
     <string name="show_value_title">Show battery number</string>
     <string name="show_value_summary">Show the battery percentage inside the ring; replaced by a bolt while charging. Turn off to give the charging bolt back to the system as well.</string>
@@ -65,7 +65,7 @@
     <string name="out_signal_margin_summary">The gap between the out-of-ring reading and the battery icon, in dp. The default is 2dp and the slider covers 0–16dp. This gap is reserved: widening it moves the reading away from the battery and pushes the native icons over by the same amount, so the reading can never end up on top of them. The reading\'s own height is set by Out-of-ring signal size above; there is no separate position to tune.</string>
 
     <string name="value_centre_title">Centre the percentage</string>
-    <string name="value_centre_summary">Enlarge the percentage into the middle of the ring and always keep it there. The Wi-Fi arcs shrink into the top notch, a smaller bolt takes the notch while charging (the arcs are then dropped), and an in-ring network type moves into the notch too.</string>
+    <string name="value_centre_summary">Enlarge the percentage into the middle of the ring and always keep it there, freeing the top notch for something else. The notch holds one thing at a time, in the order dual-SIM (if on), then the Wi-Fi arcs, then the in-ring network type; with none of them the ring closes into a full circle. While the in-ring charging bolt is switched on, it takes the notch instead and the arcs are dropped.</string>
 
     <string name="color_role_title">State colors</string>
     <string name="color_role_summary">Pick colors for low battery, charging and critical battery.</string>
