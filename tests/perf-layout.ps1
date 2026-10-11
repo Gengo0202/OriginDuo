@@ -109,9 +109,11 @@ function Emit([string]$rel,[string]$text){
 
 # The typeface already has a real desktop stand-in and is copied, so a family
 # the renderer asks for resolves the same way it does in the preview workbenches.
+# It comes from tests\shims (tracked) and not from the preview workbench's copy
+# under work\ (gitignored), so this script still runs in a fresh clone.
 $gfx=Join-Path $src 'android/graphics'
 New-Item -ItemType Directory -Force $gfx | Out-Null
-Copy-Item (Join-Path $root 'work/preview/src/android/graphics/Typeface.java') (Join-Path $gfx 'Typeface.java') -Force
+Copy-Item (Join-Path $root 'tests/shims/android/graphics/Typeface.java') (Join-Path $gfx 'Typeface.java') -Force
 
 # The paint is written here rather than copied. The preview's stand-in returns
 # AWT's ascent, which is positive; Android's FontMetrics.ascent is negative, and

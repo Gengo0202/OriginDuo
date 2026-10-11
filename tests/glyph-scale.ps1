@@ -1,7 +1,7 @@
 # Overall-size verification harness.
 #
-# Compiles the real TrioRenderer against the desktop shims in work\preview\src
-# and renders the glyph into a Java2D bitmap at several overall-size settings.
+# Compiles the real TrioRenderer against the desktop shims in tests\shims and
+# renders the glyph into a Java2D bitmap at several overall-size settings.
 # The pixels that were actually painted are then counted, so this is an
 # end-to-end check: it can only pass if the setting reaches the canvas and
 # scales the drawing uniformly about its centre. A formula-level assertion could
@@ -9,9 +9,11 @@
 #
 # The two shims that matter are android/graphics/Canvas (maps the renderer's
 # drawing calls onto Java2D) and android/view/View (the host frame the fit is
-# measured from). Both already exist for the preview harness; this script
-# reuses them rather than restating them, because a second copy could drift
-# away from the one the other probes compile against.
+# measured from). They live under tests\shims, which is tracked, so this script
+# runs in a fresh clone with nothing but app\src. It deliberately does NOT read
+# the preview workbench's copy under work\preview\src: work\ is gitignored, so
+# depending on it would put the evidence exactly where a workspace cleanup can
+# delete it -- which is the fragility this script exists to remove.
 #
 # Usage:  powershell -File tests\glyph-scale.ps1
 
@@ -285,7 +287,7 @@ $probeText = $probeText.Replace(
 # other probes already rely on the same tree, so it is shared infrastructure in
 # practice - but say so plainly instead of letting javac report a hundred
 # missing-symbol errors for a file that was never there.
-$previewRoot = Join-Path $root 'work\preview\src'
+$previewRoot = Join-Path $root 'tests\shims'
 if (!(Test-Path (Join-Path $previewRoot 'android\graphics\Canvas.java'))) {
     throw "the desktop shims are missing: $previewRoot (see docs/DEVELOPMENT.md, the test section)"
 }

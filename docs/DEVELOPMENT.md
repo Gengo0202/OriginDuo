@@ -1395,7 +1395,7 @@ work\overview\                         全部支持样式的状态总览图（�
    另有一条**终点用例**盖住 M6 担心的隐患：把算出的行距写回视图后，`getLineSpacingMultiplier()`
    必须原样读回、与重新计算的值相等 —— 若这个比较永不收敛，每个 layout pass 都会再 post 一次同步，
    状态栏将无限重排；垫片按 Android 的方式逐位存回，四舍五入的垫片会正好掩盖它。
-   `tests\glyph-scale.ps1` 锁**整体尺寸**这条端到端的线：它复用 `work\preview\src` 的桌面垫片把真
+   `tests\glyph-scale.ps1` 锁**整体尺寸**这条端到端的线：它用 `tests\shims` 的桌面垫片把真
    `TrioRenderer` 画进 Java2D 位图，然后数**真正落笔的像素**，所以它不是公式层面的自洽检查，而是
    「这个设置确实到达了画布」。17 条断言里：相邻档位（100/90/80/70/60）墨迹必须逐档递减；墨迹**面积**
    随系数平方下降、**包围盒宽高**随系数线性下降（后两条才是「等比缩小」而不是「细节熔掉」的证据）；
@@ -1411,6 +1411,13 @@ work\overview\                         全部支持样式的状态总览图（�
    factor: got <0.6736883167543373> want <0.36000001430511475>` 抓到它 —— 这证明像素那部分独立承重，
    不是给契约钉当装饰。
    四个脚本都只读源码、写到 `work\` 下编译，不碰 `app\src`。
+   **垫片放在 `tests\shims`（入库）而不是 `work\preview\src`（`work\` 被 gitignore）**：第四个脚本
+   编译的是**真 `TrioRenderer`**，需要 `android/graphics/{Canvas,Paint,Path,RectF,Color,PorterDuff,
+   Typeface}`、`android/view/View`、`android/{content/SharedPreferences,os/Bundle}` 与两个同名桌面替身
+   （`TrioConfig`/`TrioState`）。这些垫片原先只在 `work\preview\src` 里有一份，而那棵树是**不入库**的，
+   于是「把这条证明入库」的目的会被自己拆掉——工作区一清理，脚本就跑不起来。
+   `tests\perf-layout.ps1` 也曾经从 `work/preview/src` 拷 `Typeface.java`，同样已改指 `tests\shims`。
+   判断方法很简单：把 `work\preview\src` 改名后再跑，四个脚本都应仍 `exit 0`。
    **注意它们不会被自动发现**，要手动跑：
    `powershell -NoProfile -ExecutionPolicy Bypass -File tests\battery-presence.ps1`。
    PS 5.1 下**必须**这样经由 `cmd`（或让脚本自己吞掉 javac 的 stderr）运行：javac 会往 stderr 写
