@@ -8,6 +8,7 @@
     <string name="group_colors">颜色</string>
 
     <string name="group_stroke">描边</string>
+    <string name="group_scale">整体尺寸</string>
     <string name="group_text">文字</string>
     <string name="group_type">网络类型</string>
     <string name="group_out_signal">环外信号</string>
@@ -16,56 +17,70 @@
     <string name="tab_general">常规</string>
 
     <string name="master_title">启用三合一图标</string>
-    <string name="master_summary">总开关。关闭后恢复系统原本的电池与信号图标。</string>
+    <string name="master_summary">总开关，关闭后恢复系统原本的电池与信号图标。</string>
 
     <string name="trio_style_title">三合一样式</string>
-    <string name="trio_style_summary">选择三合一的排布方式。圆环是默认样式；矩形改用左右两列信号点夹住中间内容，底部横贯一条电量条。</string>
+    <string name="trio_style_summary">圆环是默认样式；矩形用两列信号点夹住中间内容。</string>
     <string name="trio_style_ring">圆环</string>
     <string name="trio_style_rect">矩形</string>
 
     <string name="overlay_title">独立窗口绘制</string>
-    <string name="overlay_summary">把三合一画在一个独立的小窗口里，不再受状态栏窗口高度（约 43dp）限制，图标可以完整显示；代价是图形下半部分会露在状态栏背景之外。关闭后回到状态栏内绘制。</string>
+    <string name="overlay_summary">画在独立窗口里，不受状态栏高度（约 43dp）限制。</string>
 
     <string name="show_wifi_title">显示 Wi-Fi 弧</string>
-    <string name="show_wifi_summary">在最外层绘制 Wi-Fi 弧线，弧数跟随实际信号强度；关闭后原生 Wi-Fi 图标回到状态栏原本的位置。</string>
+    <string name="show_wifi_summary">最外层绘制 Wi-Fi 弧，弧数跟随信号强度。</string>
 
     <string name="show_mobile_title">显示移动信号点</string>
-    <string name="show_mobile_summary">在底部绘制四个电平点表示移动网络信号强度；关闭后原生移动信号图标回到状态栏原本的位置。</string>
+    <string name="show_mobile_summary">底部绘制四个电平点表示移动信号强度。</string>
 
     <string name="dual_sim_title">双卡信号</string>
-    <string name="dual_sim_summary">改画上下两排信号点：上排为卡一，下排为卡二。圆环顶部缺口只有一个位置，占用顺序是「双卡 → Wi-Fi 弧 → 环内网络类型」，双卡排最前，会顶掉 Wi-Fi 弧；只有环内充电闪电（需同时开启「充电时显示闪电」）能压过它。只在双卡且能读到两卡电平时生效；单卡时仍只画一排，显示当前上网卡。</string>
+    <string name="dual_sim_summary">改画上下两排信号点：上排卡一，下排卡二。只在双卡时生效。</string>
 
     <string name="show_value_title">显示电量数字</string>
-    <string name="show_value_summary">在环内显示电量百分比；充电时改为闪电图标。关闭后充电闪电同样交还原生图标。</string>
+    <string name="show_value_summary">环内显示电量百分比，充电时改为闪电图标。</string>
 
     <string name="show_bolt_title">充电时显示闪电</string>
-    <string name="show_bolt_summary">关闭后不再用环内闪电，改由系统原生的充电闪电显示在电池图标旁。</string>
+    <string name="show_bolt_summary">关闭后环内不画闪电，交还系统原生图标。</string>
 
     <string name="show_mobile_type_title">网络类型</string>
-    <string name="show_mobile_type_summary">选择网络类型文字的显示位置：关闭、圆环内，或在状态栏中另外绘制一个。</string>
+    <string name="show_mobile_type_summary">网络类型文字的位置：关闭、圆环内，或环外另画一个。</string>
     <string name="mobile_type_off">关闭</string>
     <string name="mobile_type_inside">环内</string>
     <string name="mobile_type_outside">环外</string>
 
     <string name="signal_mode_title">信号位置</string>
-    <string name="signal_mode_summary">选择移动信号读数的位置。环内沿用图标底部的电平点；环外则把它挪到电池图标旁，按下面的堆叠开关决定怎么显示。</string>
+    <string name="signal_mode_summary">移动信号读数的位置：环内沿用底部电平点，环外挪到电池图标旁。</string>
     <string name="signal_mode_inside">环内</string>
     <string name="signal_mode_outside">环外</string>
 
     <string name="stacked_signal_title">堆叠信号</string>
-    <string name="stacked_signal_summary">环外时自己绘制读数：四条高度递增的柱表示一张卡，下方一排圆点表示另一张卡；只有一张卡时只画柱。关闭则沿用系统原生的移动信号图标。</string>
+    <string name="stacked_signal_summary">环外时自己绘制读数：柱表示一张卡，圆点表示另一张。</string>
 
     <string name="data_sim_only_title">仅显示上网卡</string>
-    <string name="data_sim_only_summary">双卡时只绘制当前上网卡的读数，另一张卡不显示。单卡或读不到上网卡时不受影响。</string>
+    <string name="data_sim_only_summary">双卡时只绘制当前上网卡的读数。</string>
 
     <string name="out_signal_size_title">环外信号大小</string>
-    <string name="out_signal_size_summary">环外读数的整体高度，单位为 dp（会随屏幕密度自动换算成像素）。15dp 与状态栏原生信号图标同高，也是默认值；可调范围 6–20dp。无论有没有下方圆点排，同一行都按同一大小绘制，两种形状不会一大一小。下拉控制中心不会改变它。</string>
+    <string name="out_signal_size_summary">环外读数的高度，单位 dp。默认 15dp（与原生信号图标同高），可调 6–20dp。带不带下方圆点排都按同一大小绘制。</string>
 
     <string name="out_signal_margin_title">环外信号间距</string>
-    <string name="out_signal_margin_summary">环外读数与电池图标之间的空隙，单位为 dp。默认 2dp，可调范围 0–16dp。这是一条会被占位的边距：调大时读数远离电池，同时原生图标整体让出同样宽度，所以读数永远不会压到旁边的图标上。读数本身的高矮由上面的「环外信号大小」决定，不需要再单独调位置。</string>
+    <string name="out_signal_margin_summary">环外读数与电池图标之间的空隙，单位 dp。默认 2dp，可调 0–16dp。这条边距会被占位：调大时原生图标让出同样宽度，读数不会压到图标上。</string>
+
+    <string name="perf_power_title">充电功率</string>
+    <string name="perf_power_summary">电池图标旁显示充电功率，取自电池自身电流与电压，不足 10W 保留一位小数。</string>
+
+    <string name="perf_temp_title">电池温度</string>
+    <string name="perf_temp_summary">电池图标旁显示电池温度，单位摄氏度，取整显示，与充电功率上下两行排列。</string>
+
+    <string name="glyph_scale_title">图标整体尺寸</string>
+    <string name="glyph_scale_summary">整个图标相对状态栏给定框的百分比，默认 100%%。状态栏的框只有约 20dp 高，所以只能缩小、不能放大；100%% 就是系统给多大画多大。缩小时描边、圆弧与文字按同一比例一起缩，形状不变。</string>
+
+    <string name="perf_scale_title">读数整体尺寸</string>
+    <string name="perf_scale_summary">两项读数在自适应大小之上的百分比，默认 100%%。只开一项时是环外类型字号，两项都开时已经自动缩到两行合起来一个图标高，这里再整体放大或缩小。</string>
+
+    <string name="perf_pair_title">充电功率与电池温度</string>
 
     <string name="value_centre_title">电量数字居中</string>
-    <string name="value_centre_summary">电量数字放大到圆环中间并始终优先占据圆心，顶部缺口腾给别的信息。缺口只有一个位置，占用顺序是「双卡（若开启）→ Wi-Fi 弧 → 环内网络类型」，都没开时圆环闭合成整圆；开启「充电时显示闪电」时由环内闪电占位（此时不画 Wi-Fi 弧）。</string>
+    <string name="value_centre_summary">电量数字放大到圆环中间，顶部缺口按双卡 → Wi-Fi 弧 → 环内类型依次占用。</string>
 
     <string name="color_role_title">状态颜色</string>
     <string name="color_role_summary">分别为低电量、充电与危险电量指定颜色。</string>
@@ -92,10 +107,10 @@
 
     <string name="arc_stroke_title">弧线粗细</string>
     <string name="arc_stroke_summary">Wi-Fi 弧线的描边宽度。</string>
-    <string name="arc_stroke_summary_rect">Wi-Fi 弧线的描边宽度，同时决定这组弧线在顶部槽位里的纵向位置。</string>
+    <string name="arc_stroke_summary_rect">Wi-Fi 弧线的描边宽度，同时决定弧线在顶部槽位的高度。</string>
 
     <string name="value_size_title">数字字号</string>
-    <string name="value_size_summary">电量百分比文字的尺寸。注意「电量数字居中」打开时，居中的数字最大放大到原值的 1.4 倍，38 及以上不再变大（缺口里的数字仍按原值）。</string>
+    <string name="value_size_summary">电量百分比文字的大小。居中时最多放大 1.4 倍，原值 38 以上不再变大。</string>
 
     <string name="value_weight_title">数字字重</string>
     <string name="value_weight_summary">电量数字的笔画粗细，100 最细、900 最粗。</string>
@@ -104,16 +119,16 @@
     <string name="type_size_summary">圆环中间 3G/4G/5G 等文字的大小。</string>
 
     <string name="out_type_size_title">环外网络类型字号</string>
-    <string name="out_type_size_summary">状态栏中环外 3G/4G/5G 等文字的大小，单位为 dp（会随屏幕密度自动换算成像素），默认 14dp，可调范围 8–26dp。这个标签由系统状态栏绘制，设置页里的预览格是它唯一的所见即所得参照。</string>
+    <string name="out_type_size_summary">状态栏中环外 3G/4G/5G 文字的大小，单位 dp，默认 14dp，可调 8–26dp。下方预览格是它唯一的参照。</string>
 
     <string name="out_type_margin_left_title">环外类型左边距</string>
-    <string name="out_type_margin_left_summary">环外网络类型标签与其外侧（背对电池的一侧）之间的空隙，单位为 dp。默认 2dp，可调范围 0–16dp。RTL 语言下整行镜像，这条边距会跟着翻到另一侧。</string>
+    <string name="out_type_margin_left_summary">环外类型标签与外侧（背对电池的一侧）之间的空隙，单位 dp。默认 2dp，可调 0–16dp。RTL 语言下整行镜像。</string>
 
     <string name="out_type_margin_right_title">环外类型右边距</string>
-    <string name="out_type_margin_right_summary">环外网络类型标签与其内侧（朝向电池与环外读数的一侧）之间的空隙，单位为 dp。默认 2dp，可调范围 0–16dp。RTL 语言下同样会镜像。</string>
+    <string name="out_type_margin_right_summary">环外类型标签与内侧（朝向电池与环外读数的一侧）之间的空隙，单位 dp。默认 2dp，可调 0–16dp。RTL 语言下同样镜像。</string>
 
     <string name="type_suffix_scale_title">5GA 中 A 的比例</string>
-    <string name="type_suffix_scale_summary">网络类型以 A 结尾时（如 5GA），末尾的 A 相对主字号的百分比，底边与主字对齐。默认 65%%，可调范围 50–100%%；100%% 即不再缩小。环内与环外两处同时生效。</string>
+    <string name="type_suffix_scale_summary">网络类型以 A 结尾时（如 5GA），末尾 A 相对主字号的百分比，与主字对齐。默认 65%%，可调 50–100%%。环内环外同时生效。</string>
 
     <string name="type_weight_title">网络类型字重</string>
     <string name="type_weight_summary">网络类型的笔画粗细，100 最细、900 最粗。</string>

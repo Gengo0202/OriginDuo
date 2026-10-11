@@ -39,6 +39,7 @@ io.github.yixing233.hyperduo
 ├─ TrioOverlay.java      独立窗口绘制：状态栏窗口只有约 43dp 高并裁掉多余部分，
 │                      这里另开一个只有图标那么大、不接收触摸的窗口
 ├─ TrioState.java        电量 / 信号等级 / 前景色等运行期状态
+├─ BatteryPresence.java  粘性电池广播采样：是否接着充电器 / 充电功率 / 电池温度
 ├─ TrioGeometry.java     120×120 设计空间的几何常量
 ├─ TrioAppearance.java   外观规则：每个元素该不该画、画在哪（渲染器与预览共用）
 ├─ TrioRenderer.java     纯 Canvas 描边绘制（状态栏与预览共用）
@@ -243,14 +244,14 @@ adb shell am start -n io.github.yixing233.hyperduo/.ui.MainActivity
 ## 配置通道
 
 设置走 libxposed 的 remote preferences，组名 / 文件名同为 `Prefs.NAME = "hyperduo_settings"`；
-键与默认值集中在 `Prefs.java`，上下界也在那里（第十一轮后共 36 个 `KEY_*` 常量，其中
-`KEY_SHOW_MOBILE_TYPE` 是只读的迁移遗留键，实际读写的 35 个键见配置项参考）。
+键与默认值集中在 `Prefs.java`，上下界也在那里（第十四轮后共 41 个 `KEY_*` 常量，其中
+`KEY_SHOW_MOBILE_TYPE` 与 `KEY_OUT_TYPE_SIZE` 是只读的迁移遗留键，实际读写的 39 个键见配置项参考）。
 
 - **写侧**（设置 App）：`HyperDuoApp.onServiceBind` 拿到 `XposedService`，之后每次改动都
   `getRemotePreferences(NAME).edit().putX(...).commit()`，并把同一份写进本应用的
   `SharedPreferences`（即 `shared_prefs\hyperduo_settings.xml`）。服务是异步绑定、也可能随时
   死亡，所以 `SettingsRepository` 每次写入都实时取 `HyperDuoApp.xposedService`，**不缓存
-  service**；绑定成功时还会 `syncAllToFramework()` 全量重放这 35 个键，补齐框架缺席期间的改动。
+  service**；绑定成功时还会 `syncAllToFramework()` 全量重放这 39 个键，补齐框架缺席期间的改动。
   **每新增一个键都必须同时加到 `syncAllToFramework()`**，否则该键在框架重连后不会下发。
 - **读侧**（hook 进程）：remote `SharedPreferences` 是**只读**的，但支持
   `registerOnSharedPreferenceChangeListener`，框架会实时投递变更。`TrioConfig` 注册一个监听器，
@@ -518,6 +519,18 @@ Wi-Fi 搬进缺口仍是 canvas 变换（`translate` + `scale`）完成的，几
 ——`TrioHooks` 用它做「宿主尚未测量」的守卫（`TrioHooks.java:1752`），改它会把守卫一起改坏。
 环外标签的字号**已经不再取自 inkScale**，见「网络类型：环内与环外」。
 
+**用户的整体尺寸乘在这个适配上**：`drawInto` 里那句是
+`final float scale = inkScale(w, h, rect) * appearance.glyphFit();`（`TrioRenderer.java:136`），
+`glyphFit()` 来自 `TrioAppearance.java`，把 `glyph_scale_pct` clamp 后除以 100。乘**适配**而不是乘
+**设计单位**是刻意的：整块字形几何是同一个 120×120 的盒子，缩适配会让每一笔描边、每条弧、每个
+数字按同一比例变化，而后面那次 `translate` 仍然居中原点；若改成对设计单位另做一次
+`canvas.scale`，线宽（`Paint.setStrokeWidth` 给的是设计单位下的常量）与半径的缩放口径就会分家。
+
+**`TrioOverlay` 刻意不拿这一项缩窗口**：独立窗口里那个字形是 `drawState` 画的，而 `drawState` 走的
+正是上面那条已经乘过 `glyphFit()` 的路径。窗口本身再按同一个百分比缩一次，等于把设置乘两遍——
+字形的缩放是「框不变、画小一点」，所以正确的形态是**宿主大小的透明窗口 + 居中的小字形**，
+而不是一个跟着变小的窗口。（窗口尺寸仍由 `TrioOverlay.sync()` 按宿主测量决定。）
+
 矩形排布（设计空间仍是 120×120，`TrioGeometry` 的 `rectangular arrangement` 一节）：
 
 - **两列信号点**，`RECT_DOT_LX = 9.6` / `RECT_DOT_RX = 110.4`，行心
@@ -710,6 +723,10 @@ sRGB 亮度判断，三组角色色各有深/浅两套。前景 tint 自身仍�
 
 `PREVIEW_SIZE = 39.dp` 是为了让八格一行放得下（8×39 + 7×4 = 340dp < 344dp）。第 7 格用了
 `"5GA"` 作为示例类型——正是为了让 `type_suffix_scale` 有可见反馈。
+
+第十三轮加的两个性能读数（充电功率 / 电池温度）**没有预览格**：它们只在状态栏里出现，而这一行
+八格已经贴着宽度预算（340dp 对内容宽 344dp），再塞第九格只能靠继续缩小每一格。两个开关在设置页
+各有一行，但它们画出的东西在预览卡上无处可见。
 
 唯一的额外处理：状态栏里这个标签是 wrap-content、排在图标盒旁边，宽了就往右伸不会被裁；
 而预览格是个正方形，`"5GA"` 这种宽字串会顶到边界。所以 `TrioPreviewView.drawOutTypeLabel`
@@ -1038,13 +1055,14 @@ int dataSlot, int[] out)` 是唯一的读数解析处。两卡都有读数 ⇒ `
 对称（后者写的是 `if (!TrioConfig.appearance().typeOutOfRing) return;`，同样在**不**该挂载时
 提前退出）。
 
-**两个视图共用一条 strip**：信号与类型标签都排在电池图标左边，都以
+**两个视图共用一条 strip**（第十三轮后是三个）：信号与类型标签都排在电池图标左边，都以
 `reserveOutTypeSpace(container, total)` 往容器左侧撑 padding。它们各自更新时如果都按自己的宽度
-去撑，后更新的那个就会把先更新的挤掉，所以统一走 `reserveOutRingStrip(container)` —— 它读两个
+去撑，后更新的那个就会把先更新的挤掉，所以统一走 `reserveOutRingStrip(container)` —— 它读每个
 子视图的 `getMeasuredWidth()` 求和，并配上各自的缝：读数是
 `out_signal_margin_dp`，标签是 `out_type_margin_left_dp` + `out_type_margin_right_dp`
 **两条都算**（朝锚点的内侧缝 + 背对锚点的外侧缝，后者是它与原生图标之间的空隙，两种情况都在
-画）。
+画）。性能读数（`PerfLabel`，见「状态栏性能读数」）加入的是同一条求和，而不是给自己另外预留——
+它只在自己开着时才有一份宽度，所以不会在关掉时留下空洞。
 
 **两条边距都必须计入，这一条修过一次**：原先只在**没有**读数时才把外侧缝算进去，理由是
 「有读数时两视图之间的缝已经由内侧那条覆盖了」。但外侧缝画的是标签另一侧的空隙，有读数时
@@ -1067,6 +1085,108 @@ int dataSlot, int[] out)` 是唯一的读数解析处。两卡都有读数 ⇒ `
 **采样时机**：环外堆叠也要分卡读数，所以 `TrioState.refresh()` 的轮询门与
 `hyperduo-signal` 里的 `pollSimsNow` 条件都从裸的 `dualSim` 放宽成
 `dualSim || appearance().stackedOut()`。
+
+### 状态栏性能读数（充电功率 / 电池温度）
+
+第十三轮新增的两个只读显示项，各由一个布尔键控制（`perf_power` / `perf_temp`，默认都关）。
+它们**共用同一个视图**：`TrioHooks.PerfLabel`（`TrioHooks.java` 的 `performance readout` 区块），
+一个挂在 `batteryContainerOf(host)` 上的 `TextView`，与环外类型标签、环外读数同一处邻居位置。
+共用一个视图的理由是两项的可见性可以独立：只开功率就只显示功率，只开温度就只显示温度，两个都
+关整块视图才摘掉（`TrioAppearance.perfAnywhere()` = `perfPower || perfTemp` 就是挂载门）。
+文本由 `perfText(a)` 按段拼：功率段只在 `TrioState.sChargingAttached` 为真时出现，温度段只要
+`TEMP_UNKNOWN` 以外的读数就出现，两段之间用一个换行符（`PERF_BREAK`）相接——**一项一行**。
+竖排而不是并排是有意的：两项横着排会把视图撑成两个读数的宽度，挤掉旁边原生图标的预留；
+两行只让它变高。只开一项时视图里没有换行符，仍然是一行高。
+
+**两行要压进行高才能放进状态栏**：这里的容器只有 88px，而共享字号是 42px，两行按正常行高
+放不下。先由 `perfTextSize(text, container, host)` 把字号缩下来：它取
+`TrioRenderer.inkScale(host.getWidth(), host.getHeight(), a.rect)`——**与 `drawInto` 给画布用的
+完全同一个适配系数**——乘 `INK_H`（矩形样式用 `RECT_INK_H`）得到图标真实绘制高度，再除以行数
+换回字号（`base * (icon / lines) / lineHeight`），最后用 `PERF_MIN_SIZE_RATIO = 0.6f` 和 `base`
+两头收口。只开一项时不缩：一行本来就放得下，缩了反而像另一个设置。行高由探针
+`PERF_PROBE` 量，**不能在 view 上量**——要决定的正是这个字号本身，从 view 上读会让结果依赖
+view 是否已经被赋过值。
+
+**行距是第二道保险**：字号缩完通常两行合起来已经是一个图标高，`perfLineSpacing(view, text, container)`
+便返回 `1f`。它真正起作用是在「行被摆得比字形还矮」时（容器高度不足以装下这两行）：数出换行符
+算行数，用 `view.getPaint().getFontMetrics()` 取该字体该字号的真实 `descent - ascent`，只压缩
+**第一行之下**的那些行——`setLineSpacing` 缩放的是第一行之后的每一行，第一行保留全高，所以要把
+空间除以「第一行之外」的行数，直接除以总行数会把这份全高摊到所有行上，结果比容器还高
+（实测 100px > 88px）。倍数下限是
+`PERF_MIN_LINE_SPACING = 0.72f`，再低两行就要贴上了；数字、度号、C 都没有下伸部，返回这点
+行距是安全的。`createPerfLabel` 用 `setMaxLines(2)` 而不是 `setSingleLine(true)`，真正决定高度的
+是 `updatePerfLabel` 里那次 `UNSPECIFIED` 测量。
+
+**行距也算进重同步条件**：容器高度变化时只有它的高度变了（那一行收起时 88px、拉开控制中心后
+134px），文本与字号都比得相等，所以
+`refreshPerfLabel` 里除了
+`perf.getTextSize() != perfTextSize(text, container, host)`，还必须有
+`perf.getLineSpacingMultiplier() != perfLineSpacing(perf, text, container)`——少了这一项，
+上一帧按另一个行高算出的行距会被留下，两行在新行高里就会溢出。同族的 `refreshOutTypeLabel` 是比了
+自己的缩放项的，这里照做。`perfLineSpacing` 只读 paint 度量与容器高度/内边距，不写不 post，
+因此在 `onLayout` 回调里读它是安全的。
+
+**字号变了必须能触发重同步**：`refreshPerfLabel` 的重同步条件里比对的是
+`perf.getTextSize() != perfTextSize(text, container, host)`，不是 `outTypeSizePx(container)`。
+该项原本写的是后者，改成自适应字号后必须同步改，否则两项读数一起打开时字号变了也不会重新
+同步。
+
+**功率是电池自己的电流 × 电压**（`BatteryPresence.wattsOf`），不是充电器协商出来的最大档位：
+协商值在电量爬升时几乎不变，而用户想看的正是「现在还充进去多少瓦」，所以它随电量升高逐渐变小。
+满电时电池的电流是**一个小负数**（向外漏），因此算出的瓦数 clamp 在 0，绝不显示负功率。
+显示格式由 `powerText(watts)` 决定：不足 10W 保留一位小数（`6.4W`），10W 及以上取整（`18W`）——
+小数位在两位数的瓦数上没有信息量。温度取整到整摄氏度，degree 符号在源码里写成 `"\u00B0C"`
+以保持该文件全 ASCII。
+
+**没接充电器时不显示功率段，而不是显示 `0W`**：`0W` 挨在温度旁边会被读成「读数坏了」，
+而它实际表达的只是「没在充电」，所以干脆整段消失。温度与充电器无关，照常显示——这条不对称正是
+两项要分成两个开关的原因。
+
+**「问不出来」是第三种答案**：`getIntProperty` 对不支持的属性返回 `Integer.MIN_VALUE`、
+`EXTRA_VOLTAGE` 可能缺失，这两条既不是「没在充电」也不是任何瓦数，所以 `wattsOf` 返回哨兵
+`TrioState.POWER_UNKNOWN`（`Float.NaN`），`perfText` 多判一项 `!Float.isNaN(sChargePowerW)`
+才拼功率段。早先版本把它们折成 `0f`，会在温度旁边画出一个很自信的 `0.0W`——正是上面那条注释
+要避免的假读数。**真正的 0（满电、充电器停止推流）仍然显示 `0.0W`**，「满电时不闪断」的行为不变。
+哨兵是 `NaN`，所以判它**只能**用 `Float.isNaN(...)`，**绝不能写 `x != POWER_UNKNOWN`**：`NaN != NaN`
+恒为真，不等号会把这枚哨兵本身放行，`powerText` 的 `Math.round(NaN * 10f)` 得 `0`，画出来恰好又是
+那个要避免的 `0.0W`。同样的道理，`publish` 的去重比较必须写成 `Float.compare(beforeWatts, …) != 0`，
+用 `!=` 会让答不出功率的设备每 3 秒无谓重绘状态栏一次。这两处都有 `tests\battery-presence.ps1` 兜底。
+
+**字号以环外网络类型字号**（`out_type_size_dp`）**为基准**：只开一项时与邻居
+环外标签一样大，摆在一起才对得齐；两项都开时在这个基准上按图标高度自适应缩小（`perfTextSize`，
+见上），让两行合起来不高于一个图标，所以组合态比单项小一档；**缩放下限
+`PERF_MIN_SIZE_RATIO = 0.6f` 触底时两行会略微高过图标一点**——宁可略高也不缩到看不清。
+换言之，**两项各自的字号相同，
+但它们与组合态的字号不同**——早期文档写的「两个读数永远一样大」描述的是两项单项之间，不是组合态。
+调基准键会同时影响两者。
+
+**「读数整体尺寸」是这条规则之上的最后一次缩放**：`perf_scale_pct` 由
+`TrioAppearance.perfFit()` clamp 后除以 100，在 `perfTextSize` 的最后一句乘上去——
+`return Math.max(base * PERF_MIN_SIZE_RATIO, Math.min(base, size)) * factor;`——并且**三条提前返回
+的兜底分支也各乘一次**（`lines < 2 || host == null`、`fit <= 0f`、`lineHeight <= 0f` 都返回
+`base * factor`）。之所以要覆盖到每一条答案，是因为只有一项读数打开时走的就是 `lines < 2` 那条
+分支：如果它只缩放组合态，那么单项时滑杆没有任何反应，等用户打开第二个开关时才突然跳一下。
+它乘的是**自适应结果**而不是替掉它，所以两项读数仍然跟着图标高度与 `out_type_size_dp` 走；
+范围 60 – 150 也因此比字形的 60 – 100 宽——它缩放的是一个字号，不是一块被宿主框限死的绘制。
+
+**采样**在 `BatteryPresence.java`（形状照抄 `WifiPresence.java`）：注册一个粘性的
+`ACTION_BATTERY_CHANGED` 接收器，再在 SystemUI 里自续一个 3 秒的看门狗（模块跑在
+`android.uid.systemui`）。之所以只用广播与 `BatteryManager.getIntProperty(BATTERY_PROPERTY_CURRENT_NOW)`，
+是因为 sysfs 与 health HAL 对 SystemUI uid 都已关闭。读数发布到 `TrioState.sChargingAttached` /
+`sChargePowerW` / `sBatteryTempC`，`BatteryPresence.start(sContext)` 由 `TrioState.attachContext`
+挨着 `WifiPresence.start(sContext)` 调用。
+
+**采样是无条件启动的，即使两个开关都没开**：`attachContext` 不知道也不需要知道当前配置，而两个
+开关随时可能被打开（广播、或设置页里的下一次点击），那时若还没有读数，状态栏会先空一拍再出现。
+代价是常驻一个接收器与一条 3 秒的主线程重读（`registerReceiver(null, …)` 是粘性查询，不是新注册），
+与相邻的 `WifiPresence` 完全同形。真正决定「画不画」的是渲染侧的 `perfAnywhere()`，开关的关闭
+状态不会让采样器少跑，但也不会让它多画一笔。
+
+**挂载与链**：本视图与另两个环外视图同生命周期——posted 路径挂/摘、`instanceof PerfLabel` 当标记、
+`restoreNative` 时摘掉、前景色走 `applyOutRingInk`，同步点仍是同样四个 posted 调用处，外加
+`settle` 里那次 layout 安全的 `refreshPerfLabel`（`settle` 是从 `onLayout` 里调的，那里不能
+`addView`）。它加入的是 `reserveOutRingStrip` 里的**同一条求和**，不给自己单独预留；锚链上是
+`labelAnchorIn` 先看它、再退回 `readingAnchorIn`（见「网络类型：环内与环外」）。
 
 ## Hook 清单
 
@@ -1123,6 +1243,8 @@ hook 组 10 拦 `setIsHideBattery`，把值记进 `TrioState.sIslandHideBattery`
   环外读数顶上，与用户是否开过「环外 + 堆叠」无关。
 
 环外标签（用户开了环外类型时）继续显示：锚链 `labelAnchorIn` 优先取环外读数——岛下读数必在。
+第十三轮后这条链还多一环：`labelAnchorIn` 先看有没有可见的性能读数（`PerfLabel`），有就贴它，
+否则退回 `readingAnchorIn`（可见的环外读数，再退回电池盒）。
 岛收回（`setIsHideBattery(false)`）时同一套反应把三件事还原：字形恢复、Wi-Fi 槽重新折叠（若用户
 开着弧）、环外读数按用户原设置决定去留。
 
@@ -1179,6 +1301,10 @@ hook 组 10 拦 `setIsHideBattery`，把值记进 `TrioState.sIslandHideBattery`
 | `type_weight` | `700` | 100 – 900（环内/环外共用） |
 | `track_alpha` | `56` | 0 – 255 |
 | `debug_log` | `false` | — |
+| `perf_power` | `false` | —（在电池图标旁追加充电功率读数，与 `perf_temp` 共用同一个环外 `TextView`；功率是电池自身电流 × 电压，没接充电器时不显示这一段） |
+| `perf_temp` | `false` | —（在同一处追加电池温度读数，单位摄氏度、取整；不接充电器同样显示） |
+| `glyph_scale_pct` | `100` | 60 – 100（三合一字形的整体缩放百分比。乘在 `TrioRenderer.drawInto` 那个适配系数上——`inkScale(...) * appearance.glyphFit()`——所以整块 120×120 几何里每一笔描边、弧线与数字按同一比例缩放，`translate` 的居中不变。上界只有 100 是因为宿主给电池图标的框只有 28dp × 20dp，超过 100 只会画到视野外、裁不裁由 MIUI 说了算；下界 60 避免缩到看不见。`TrioOverlay` **刻意不**拿它缩窗口——窗口里那个字形由 `drawState` 画，而 `drawState` 已经乘过这一项，再缩一次就是双重缩放） |
+| `perf_scale_pct` | `100` | 60 – 150（两项性能读数的整体缩放百分比，**最后**一步乘在 `TrioHooks.perfTextSize` 的答案上——`Math.max(base * PERF_MIN_SIZE_RATIO, Math.min(base, size)) * factor`——并且同样乘上三条兜底分支（`base * factor`），所以单项读数、测不出宿主、测不出行高这三种答案都会跟着动。它是「自适应结果之上的倍数」而不是第二个绝对字号，因此两项读数仍然跟着图标与 `out_type_size_dp` 走。范围比字形那条宽、且允许超过 100，是因为它乘的是字号而不是一个被框限死的绘制） |
 
 ## 已知限制
 
@@ -1233,8 +1359,8 @@ work\overview\                         全部支持样式的状态总览图（�
 
 ## 测试
 
-仓库**目前没有任何自动化测试**（`app\src` 下只有 `main`，没有 `test` / `androidTest` source set）。
-回归验证靠两条手工通道：
+仓库**没有 Android 侧自动化测试**（`app\src` 下只有 `main`，没有 `test` / `androidTest` source set），
+但 `tests\` 下有三个**纯 JVM 断言脚本**（见下面第 3 条）。回归验证靠三条通道：
 
 1. **离线 JVM 预览**（`work\preview\`，不入库）：一套只服务工装的 `android.*` 桌面垫片 + 入口
    `PreviewMain`，直接编译 `Prefs.java` / `TrioSettings.java` / `TrioGeometry.java` /
@@ -1246,6 +1372,44 @@ work\overview\                         全部支持样式的状态总览图（�
    `Canvas.restoreToCount` 的语义错实现过一次，症状是画布变换泄漏到后续所有绘制；矩形样式的
    `drawRoundRect` / `Path.addRoundRect` 也一度只有真机 API、垫片缺失）。
 2. **上机验证**：`install.ps1` 装机后重启 SystemUI，看日志与状态栏实拍。
+3. **纯 JVM 断言**（`tests\`，入库）：不依赖设备，把生产代码里的关键方法**原样抽出来**编译执行，
+   方法改名或改签名就报错退出，所以它们锁的是真源码而不是副本。`tests\wifi-presence.ps1` 锁
+   `WifiPresence.resolve/publish` 的 18 组真值表；`tests\battery-presence.ps1` 锁 `BatteryPresence`
+   的瓦数换算与哨兵、`TrioHooks.perfText` 的分段与两项一行规则、`perfLines`，以及 `publish` 的
+   去重（含 `NaN` 陷阱）；`tests\perf-layout.ps1` 锁自适应字号 `perfTextSize` 与行距 `perfLineSpacing`
+   —— 后者就是「两行合起来是一个图标高」那条身份断言，并且**把被否决的算法也钉住**
+   （`room / (lines - 1)` 与 `room / lines` 两种分摊都被显式排除）。这条身份最初两边都用生产的
+   `perfLineHeight`，因此只是**自洽检查**：若该函数整体带上一个会被字号公式约掉的因子，它照样成立；
+   现在同一句话再用一支**从没经过 `perfLineHeight`** 的 paint 量一遍（`2 * (descent - ascent)` 对
+   图标高），并断言两者互相吻合，这才让它成为独立事实。第十四轮给它补了 10 条断言覆盖
+   `perf_scale_pct` 这个乘数（单项读数也缩放、三条兜底分支也缩放、clamp 到 60 与 150 两端），
+   现在打印 `PASS: 53 cases over perfTextSize, perfLineSpacing and inkScale`；同一轮还修掉了复核
+   指出的两处重复覆盖（近边界用例改用 `(int) Math.ceil(lh * 2f) - 1` 算确切行数）与一条自指的
+   下限断言（改用 `eq("the legibility floor is 0.6 of the type size", PERF_MIN_SIZE_RATIO, 0.6f)`
+   把下限当成外部事实来陈述）。此外它还补了三条**纯函数够不到的接线**，用源码契约钉而不是调用来锁：
+   `perfLineHeight` 里 `PERF_PROBE.setTypeface(TrioRenderer.typefaceFor(weight))` 必须还在（否则
+   字重分支消失，而桌面 AWT 对 PLAIN/BOLD 报告完全相同的度量，任何基于度量的断言都测不到它）、
+   `refreshPerfLabel` 的四路重同步条件里必须还有 `perf.getLineSpacingMultiplier()` 与
+   `perfLineSpacing(perf, text, container)` 的比较、`updatePerfLabel` 里必须还是「先比再写」
+   （`if (perf.getLineSpacingMultiplier() != spacing) { perf.setLineSpacing(0f, spacing); }`）。
+   另有一条**终点用例**盖住 M6 担心的隐患：把算出的行距写回视图后，`getLineSpacingMultiplier()`
+   必须原样读回、与重新计算的值相等 —— 若这个比较永不收敛，每个 layout pass 都会再 post 一次同步，
+   状态栏将无限重排；垫片按 Android 的方式逐位存回，四舍五入的垫片会正好掩盖它。三个脚本都只读源码、写到 `work\`
+   下编译，不碰 `app\src`。
+   **注意它们不会被自动发现**，要手动跑：
+   `powershell -NoProfile -ExecutionPolicy Bypass -File tests\battery-presence.ps1`。
+   PS 5.1 下**必须**这样经由 `cmd`（或让脚本自己吞掉 javac 的 stderr）运行：javac 会往 stderr 写
+   一条既有的 deprecation 注记，而工装都设了 `$ErrorActionPreference='Stop'`，直接调用会把这条
+   注记当成致命错误（`NativeCommandError`）。
+   `tests\perf-layout.ps1` 另有一条**垫片陷阱**值得记住：它自带的桌面 `android.graphics.Paint`
+   必须把 `getFontMetrics().ascent` 写成**负值**（Android 约定），而不是照抄 `work\preview` 垫片里
+   AWT 的正值 —— 正值会让 `descent - ascent` 变成负数，于是 `perfTextSize` / `perfLineSpacing` 全部
+   走「量不出来」的兜底分支，探针会在什么都没量的情况下「通过」。同理，字体度量要按参考字号量一次
+   再线性缩放：AWT 会把字号取整到整点，而 Android 的度量对字号严格线性，否则那条身份断言会以
+   半个像素的误差假失败。
+   写这类脚本还有个通用要求：**生成目录必须每次整棵重建**。编译步骤收的是 `$src` 下所有 `.java`，
+   若只清 `classes` 而不清 `src`，上一版遗留、这一版不再生成的文件会继续参与编译，一个陈旧定义
+   足以遮蔽同名的新定义，让探针对着已经不存在的代码通过。（`tests\perf-layout.ps1` 已按此修正。）
 
 另有 `work\gapcheck\verify.ps1`（不入库）专门盯**电量环缺口**：它把同一份 `GapProbe` 跑两遍 —— 一遍
 编工作树的 `TrioRenderer`，一遍把 `batteryRing` 单独换回旧算法（其余代码不动，免得测到另一个程序）。

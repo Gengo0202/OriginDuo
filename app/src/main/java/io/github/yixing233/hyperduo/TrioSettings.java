@@ -149,6 +149,44 @@ public final class TrioSettings {
     public int typeWeight;
     public int trackAlpha;
 
+    /**
+     * Draws the battery's charging power beside the out-of-ring reading.
+     *
+     * <p>Follows {@link #outSignalSize}/{@link #outTypeSize} rather than the ring:
+     * like them it is a status-bar element whose box must be laid out and
+     * reserved, not a glyph drawn inside a canvas this module owns. It has no
+     * size setting of its own - the text matches the out-of-ring type, so it
+     * never needs a second slider to keep the two readings looking alike.
+     *
+     * <p>Shown only while a charger is attached; see {@link Prefs#KEY_PERF_POWER}.
+     */
+    public boolean perfPower;
+    /**
+     * Draws the battery's temperature beside the out-of-ring reading.
+     *
+     * <p>The two readouts share one view and one reserved strip, which is why
+     * they are two flags rather than a two-entry list: turning both off takes the
+     * view away entirely, and turning either on brings back the same view with
+     * only the requested segment drawn.
+     */
+    public boolean perfTemp;
+
+    /**
+     * Overall size of the two readouts, as a percentage of the size the adaptive
+     * fit settles on. 100 leaves that answer alone, which is the shipped state.
+     *
+     * <p>Applied after the fit and after the {@code PERF_MIN_SIZE_RATIO} floor, so
+     * the slider scales whatever the rules produced rather than replacing them:
+     * the pair still tracks the icon it stands beside and still tracks
+     * {@link #outTypeSize}.
+     */
+    public int perfScale;
+    /**
+     * Overall size of the trio glyph, as a percentage of the fit the host box
+     * implies. Shrink-only; see {@link Prefs#KEY_GLYPH_SCALE}.
+     */
+    public int glyphScale;
+
     /** Only used by the settings app: the hooked side reads this via {@code TrioConfig}. */
     public boolean debugLog;
 
@@ -167,6 +205,10 @@ public final class TrioSettings {
         s.stackedSignal = Prefs.DEF_STACKED_SIGNAL;
         s.dataSimOnly = Prefs.DEF_DATA_SIM_ONLY;
         s.overlayGlyph = Prefs.DEF_OVERLAY;
+        s.perfPower = Prefs.DEF_PERF_POWER;
+        s.perfTemp = Prefs.DEF_PERF_TEMP;
+        s.perfScale = Prefs.DEF_PERF_SCALE;
+        s.glyphScale = Prefs.DEF_GLYPH_SCALE;
 
         s.roleColors = Prefs.DEF_ROLE_COLORS;
         s.criticalOnDark = Prefs.DEF_COLOR_CRITICAL_ON_DARK;
@@ -235,6 +277,14 @@ public final class TrioSettings {
         s.stackedSignal = p.getBoolean(Prefs.KEY_STACKED_SIGNAL, Prefs.DEF_STACKED_SIGNAL);
         s.dataSimOnly = p.getBoolean(Prefs.KEY_DATA_SIM_ONLY, Prefs.DEF_DATA_SIM_ONLY);
         s.overlayGlyph = p.getBoolean(Prefs.KEY_OVERLAY, Prefs.DEF_OVERLAY);
+        s.perfPower = p.getBoolean(Prefs.KEY_PERF_POWER, Prefs.DEF_PERF_POWER);
+        s.perfTemp = p.getBoolean(Prefs.KEY_PERF_TEMP, Prefs.DEF_PERF_TEMP);
+        s.perfScale = Prefs.clamp(
+                p.getInt(Prefs.KEY_PERF_SCALE, Prefs.DEF_PERF_SCALE),
+                Prefs.MIN_PERF_SCALE, Prefs.MAX_PERF_SCALE);
+        s.glyphScale = Prefs.clamp(
+                p.getInt(Prefs.KEY_GLYPH_SCALE, Prefs.DEF_GLYPH_SCALE),
+                Prefs.MIN_GLYPH_SCALE, Prefs.MAX_GLYPH_SCALE);
 
         s.roleColors = p.getBoolean(Prefs.KEY_ROLE_COLORS, Prefs.DEF_ROLE_COLORS);
         s.criticalOnDark = p.getInt(Prefs.KEY_COLOR_CRITICAL_ON_DARK, Prefs.DEF_COLOR_CRITICAL_ON_DARK);
@@ -382,6 +432,10 @@ public final class TrioSettings {
         s.stackedSignal = stackedSignal;
         s.dataSimOnly = dataSimOnly;
         s.overlayGlyph = overlayGlyph;
+        s.perfPower = perfPower;
+        s.perfTemp = perfTemp;
+        s.perfScale = perfScale;
+        s.glyphScale = glyphScale;
 
         s.roleColors = roleColors;
         s.criticalOnDark = criticalOnDark;
@@ -441,6 +495,10 @@ public final class TrioSettings {
             case Prefs.KEY_STACKED_SIGNAL: stackedSignal = src.stackedSignal; return true;
             case Prefs.KEY_DATA_SIM_ONLY: dataSimOnly = src.dataSimOnly; return true;
             case Prefs.KEY_OVERLAY: overlayGlyph = src.overlayGlyph; return true;
+            case Prefs.KEY_PERF_POWER: perfPower = src.perfPower; return true;
+            case Prefs.KEY_PERF_TEMP: perfTemp = src.perfTemp; return true;
+            case Prefs.KEY_PERF_SCALE: perfScale = src.perfScale; return true;
+            case Prefs.KEY_GLYPH_SCALE: glyphScale = src.glyphScale; return true;
             case Prefs.KEY_ROLE_COLORS: roleColors = src.roleColors; return true;
             case Prefs.KEY_COLOR_CRITICAL_ON_DARK: criticalOnDark = src.criticalOnDark; return true;
             case Prefs.KEY_COLOR_CRITICAL_ON_LIGHT: criticalOnLight = src.criticalOnLight; return true;
@@ -497,6 +555,14 @@ public final class TrioSettings {
         s.stackedSignal = bundle.getBoolean(Prefs.KEY_STACKED_SIGNAL, Prefs.DEF_STACKED_SIGNAL);
         s.dataSimOnly = bundle.getBoolean(Prefs.KEY_DATA_SIM_ONLY, Prefs.DEF_DATA_SIM_ONLY);
         s.overlayGlyph = bundle.getBoolean(Prefs.KEY_OVERLAY, Prefs.DEF_OVERLAY);
+        s.perfPower = bundle.getBoolean(Prefs.KEY_PERF_POWER, Prefs.DEF_PERF_POWER);
+        s.perfTemp = bundle.getBoolean(Prefs.KEY_PERF_TEMP, Prefs.DEF_PERF_TEMP);
+        s.perfScale = Prefs.clamp(
+                bundle.getInt(Prefs.KEY_PERF_SCALE, Prefs.DEF_PERF_SCALE),
+                Prefs.MIN_PERF_SCALE, Prefs.MAX_PERF_SCALE);
+        s.glyphScale = Prefs.clamp(
+                bundle.getInt(Prefs.KEY_GLYPH_SCALE, Prefs.DEF_GLYPH_SCALE),
+                Prefs.MIN_GLYPH_SCALE, Prefs.MAX_GLYPH_SCALE);
 
         s.roleColors = bundle.getBoolean(Prefs.KEY_ROLE_COLORS, Prefs.DEF_ROLE_COLORS);
         s.criticalOnDark = bundle.getInt(Prefs.KEY_COLOR_CRITICAL_ON_DARK, Prefs.DEF_COLOR_CRITICAL_ON_DARK);
@@ -593,6 +659,10 @@ public final class TrioSettings {
         b.putBoolean(Prefs.KEY_STACKED_SIGNAL, stackedSignal);
         b.putBoolean(Prefs.KEY_DATA_SIM_ONLY, dataSimOnly);
         b.putBoolean(Prefs.KEY_OVERLAY, overlayGlyph);
+        b.putBoolean(Prefs.KEY_PERF_POWER, perfPower);
+        b.putBoolean(Prefs.KEY_PERF_TEMP, perfTemp);
+        b.putInt(Prefs.KEY_PERF_SCALE, perfScale);
+        b.putInt(Prefs.KEY_GLYPH_SCALE, glyphScale);
 
         b.putBoolean(Prefs.KEY_ROLE_COLORS, roleColors);
         b.putInt(Prefs.KEY_COLOR_CRITICAL_ON_DARK, criticalOnDark);
@@ -658,6 +728,21 @@ public final class TrioSettings {
                 // on showing its old state until some other write happened to
                 // recompose the row. issue 25.
                 && overlayGlyph == s.overlayGlyph
+                // The two performance readouts are stored settings like any
+                // other, and the same issue 25 trap applies: the settings screen
+                // holds the snapshot in a mutableStateOf whose default policy is
+                // equality, so omitting a field here means a write that changed
+                // only that field schedules no recomposition and the switch goes
+                // on showing its old state.
+                && perfPower == s.perfPower
+                && perfTemp == s.perfTemp
+                // The two size sliders are stored settings like any other, and
+                // the issue 25 trap above applies unchanged: with either one left
+                // out, moving that slider would change nothing the screen can
+                // see, no recomposition would be scheduled, and the row would go
+                // on showing the value it had.
+                && perfScale == s.perfScale
+                && glyphScale == s.glyphScale
                 && roleColors == s.roleColors
                 && criticalOnDark == s.criticalOnDark
                 && criticalOnLight == s.criticalOnLight
@@ -685,8 +770,14 @@ public final class TrioSettings {
     @Override
     public int hashCode() {
         // Fields are small ints and booleans; a cheap fold is enough. The class
-        // is used as a value only through equals() - nothing hashes it.
+        // is used as a value only through equals() - nothing hashes it - but the
+        // two performance switches are folded in anyway so that the contract
+        // holds if anything ever does.
         int h = (enabled ? 1 : 0) ^ (mobileTypeMode << 1) ^ signalMode ^ trioStyle;
+        h = h * 31 + (perfPower ? 1 : 0);
+        h = h * 31 + (perfTemp ? 1 : 0);
+        h = h * 31 + perfScale;
+        h = h * 31 + glyphScale;
         return h != 0 ? h : 1;
     }
 }

@@ -12,12 +12,12 @@
 
 | 层 | 文件 | 职责 |
 | --- | --- | --- |
-| 存储 / 默认 / 界限 | `app/src/main/java/io/github/yixing233/hyperduo/Prefs.java` | 30 个在用键（另有 1 个只读 legacy 键 `show_mobile_type`）、全部 `DEF_*` 默认与上下限，两侧共用的唯一真源 |
-| 快照 | `app/src/main/java/io/github/yixing233/hyperduo/TrioSettings.java` | 25 个 public 字段、`from`/`copy`/`applyKeyFrom`/`fromBundle`/`toBundle`，clamp 在读侧发生 |
-| 写入漏斗 | `app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsRepository.kt` | 20 个 setter，每个都「本地 commit → push 到远程 preferences → 广播」 |
+| 存储 / 默认 / 界限 | `app/src/main/java/io/github/yixing233/hyperduo/Prefs.java` | 39 个在用键（另有 2 个只读 legacy 键 `show_mobile_type` 与 `out_type_size`，共 41 个 `KEY_*` 常量）、全部 `DEF_*` 默认与上下限，两侧共用的唯一真源 |
+| 快照 | `app/src/main/java/io/github/yixing233/hyperduo/TrioSettings.java` | 39 个 public 字段、`from`/`copy`/`applyKeyFrom`/`fromBundle`/`toBundle`，clamp 在读侧发生 |
+| 写入漏斗 | `app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsRepository.kt` | 39 个 setter，每个都「本地 commit → push 到远程 preferences → 广播」 |
 | 渲染 | `app/src/main/java/io/github/yixing233/hyperduo/TrioRenderer.java` | 只读 `TrioSettings`，画圆环或矩形 |
 | Hook | `app/src/main/java/io/github/yixing233/hyperduo/TrioHooks.java` | 开关折叠槽位、交还原生图标、挂环外标签 |
-| 界面 | `app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsScreen.kt` | 4 个分页、25 个可写项、52 处 `enabled =`（第十一轮后；原为 20 / 33） |
+| 界面 | `app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsScreen.kt` | 4 个分页、39 个可写项、56 处 `enabled =`（第十四轮后实测计数；原为 20 / 33） |
 
 链路是单向的：`SettingsScreen`（唯一写入口 `update`，`SettingsScreen.kt:287-290`）→ `SettingsRepository` → SharedPreferences + 远程 preferences + 广播 → `TrioConfig` 快照 → `TrioRenderer` / `TrioHooks`。**渲染侧从不回写**，这条边界是干净的，问题全部出在「开关之间的语义」上。
 
@@ -48,12 +48,16 @@
 | 网络类型字重 | `type_weight` | `:842-853` | `:361`、`:585`、`:601` | `:1946`（环外标签用它）|
 | 底纹浓度 | `track_alpha` | `:854-862` | `:285`、`:311`、`:411`、`:518` | 不读 |
 | 调试日志 | `debug_log` | `:950-958` | 不读 | `:80-82` |
+| 充电功率 | `perf_power` | `:860-867` | 不读 | `TrioHooks.java:3667`（`perfText`；是否挂载由 `TrioAppearance.java:312` 的 `perfAnywhere()` 决定；`Float.isNaN` 那一项挡住「答不出功率」） |
+| 电池温度 | `perf_temp` | `:868-875` | 不读 | `TrioHooks.java:3687`（同上，两个读数共用一个视图） |
+| 图标整体尺寸 | `glyph_scale_pct` | `:913-932` | `TrioRenderer.java:136`（`inkScale(w, h, rect) * appearance.glyphFit()`，只影响适配系数） | 不读（但 `TrioAppearance.glyphFit()` 是两侧共用的那个乘数定义） |
+| 读数整体尺寸 | `perf_scale_pct` | `:876-898` | 不读 | `TrioHooks.java:3755`（`perfTextSize` 里取 `a.perfFit()`，最后乘在每一条返回值上） |
 
 **第一个整体印象**（下面的分类是**第十轮之前的快照**，那之后 `signal_mode`、`stacked_signal`、`data_sim_only`、`out_signal_size` 等键加入，第十一轮又加了 5 个；这里保留原文的分类结构，只在末尾补上本轮新键的归属）：
 
 - **两侧都读**：`show_wifi`、`show_mobile`、`show_value`、`show_bolt`、`mobile_type_mode`、`ring_stroke`、`arc_stroke`、`value_size`、`type_weight`，加上本轮加入的 `type_suffix_scale`（环内分段绘制、环外 `RelativeSizeSpan`）与 `out_signal_margin_dp`（`TrioHooks` 定位/占位 + `TrioPreviewView` 预览）。
-- **只有渲染侧读**：`trio_style`、`swap_wifi_value`、`track_alpha`、`value_weight`、`type_size`、`role_colors`、六个 `color_*`、`low_threshold`（第十轮后的 `out_signal_size` 也属此类）。
-- **只有 Hook 侧读**：`enabled`、`out_type_size`、`debug_log`（`TrioConfig.debugLog()`，`TrioHooks.java:80-81`），加上本轮的两个环外标签边距 `out_type_margin_left_dp` / `out_type_margin_right_dp`。
+- **只有渲染侧读**：`trio_style`、`swap_wifi_value`、`track_alpha`、`value_weight`、`type_size`、`role_colors`、六个 `color_*`、`low_threshold`（第十轮后的 `out_signal_size` 也属此类），以及第十四轮的 `glyph_scale_pct`（`TrioRenderer.drawInto` 把 `TrioAppearance.glyphFit()` 乘进适配系数；Hook 侧不读这个字段，只在挂 `TrioOverlay` 时走同一条 `drawState` 路径，而 `TrioOverlay` 刻意不拿它缩窗口）。
+- **只有 Hook 侧读**：`enabled`、`out_type_size`、`debug_log`（`TrioConfig.debugLog()`，`TrioHooks.java:80-81`），加上本轮的两个环外标签边距 `out_type_margin_left_dp` / `out_type_margin_right_dp`，第十三轮的两个性能读数 `perf_power` / `perf_temp`（两个键共用同一个 `PerfLabel` 视图，渲染器与预览都不看它们），以及第十四轮的 `perf_scale_pct`（只在 `perfTextSize` 里当乘数用）。
 
 `ring_stroke`/`arc_stroke`/`value_size` 在 Hook 侧只出现在 `TrioHooks.java:346-347` 的 debug 日志字符串里、不参与任何逻辑。**真正需要两个进程就同一份规则达成一致的** = 6 个结构开关（`enabled` 由 Hook 侧独占但语义上凌驾全部）加 `type_weight`（环外标签按它取字重，见 2.6）与 `type_suffix_scale`（两处必须给出同一个比例）。恰恰就是这几个，把复杂度撑起来了。
 
@@ -275,13 +279,13 @@ record KeyDef(String key, Kind kind, int def, int min, int max,
 | 6 | P1-3 `bar_stroke` + 迁移 | 中 | 老安装升级后矩形外观不变 |
 | 7 | P2 预览/写入/文档 | 中 | 预览与状态栏对照；全量设置改动后状态栏一致 |
 
-**注意**：仓库目前**没有任何自动化测试**（`docs/DEVELOPMENT.md:729`，`app/src` 下只有 `main`）。P0-1 这种「行为必须完全不变」的重构，最划算的投入是先补一个纯 JVM 单测（`app/src/test`）来锁 `appearance()` 的真值表——它不依赖 Android，写起来最便宜，而且正好是这个重构的核心。
+**注意**：仓库没有 Android 侧自动化测试（`app/src` 下只有 `main`；`tests/` 下后来补了三个纯 JVM 断言脚本，见 `docs/DEVELOPMENT.md` 「测试」一节）。P0-1 这种「行为必须完全不变」的重构，最划算的投入是先补一个纯 JVM 单测（`app/src/test`）来锁 `appearance()` 的真值表——它不依赖 Android，写起来最便宜，而且正好是这个重构的核心。
 
 ---
 
 ## 五、一句话总结
 
-乱的根源不是开关太多——25 个键里有 16 个只归一侧所有，归属本身是清楚的；乱的是**那几个跨进程的结构开关：它们的组合规则被逐字复制在 5 个地方，而且其中一条规则（矩形样式）与文档声明相矛盾、另一条规则（无 Wi-Fi 时数字自动居中）根本没有开关**。先把规则收敛成一个 `appearance()` 纯函数，界面分组与文案修正就没有阻力了；这块收敛同时也让「加一个设置要改 10 处」变成「改 4 处」。
+乱的根源不是开关太多——39 个键里有 23 个只归一侧所有（`glyph_scale_pct` 只有渲染侧读、`perf_scale_pct` 只有 Hook 侧读），归属本身是清楚的；乱的是**那几个跨进程的结构开关：它们的组合规则被逐字复制在 5 个地方，而且其中一条规则（矩形样式）与文档声明相矛盾、另一条规则（无 Wi-Fi 时数字自动居中）根本没有开关**。先把规则收敛成一个 `appearance()` 纯函数，界面分组与文案修正就没有阻力了；这块收敛同时也让「加一个设置要改 10 处」变成「改 4 处」。
 
 ---
 
@@ -330,13 +334,14 @@ record KeyDef(String key, Kind kind, int def, int min, int max,
 
 ### 6.5 未做的部分及理由
 
-- **P1-1 键元数据表**：收益是真金白银（clamp 等 19 处手写、`applyKeyFrom` 的 25 分支 switch），但它会把 `Prefs`、`TrioSettings`、`SettingsRepository`、`SettingsScreen` 四层同时翻掉，且没有自动化测试兜底。改造当时的目标是「让用户更快调到想要的样式」，这一步属于开发者侧收益，风险与收益不成比例，缓做。
+- **P1-1 键元数据表**：收益是真金白银（clamp 等 19 处手写、`applyKeyFrom` 的 25 分支 switch），但它会把 `Prefs`、`TrioSettings`、`SettingsRepository`、`SettingsScreen` 四层同时翻掉，且 Android 侧没有自动化测试兜底。改造当时的目标是「让用户更快调到想要的样式」，这一步属于开发者侧收益，风险与收益不成比例，缓做。
 - **P1-2 行内原因**：与 `gateHint` 的 Tooltip 机制不冲突，是一段独立的展示改动；当前 Tooltip 已能表达原因，行内小字属于体验加分项而非功能缺失。
 - **P2-2 写入路径收敛**：同上，属重构而非本次目标。
 
 ### 6.6 验证方式
 
-仓库**没有任何自动化测试**（`app/src` 下只有 `main`），所以验证分两层：
+仓库**没有 Android 侧自动化测试**（`app/src` 下只有 `main`），但 `tests/` 下已有三个纯 JVM 断言脚本
+（`wifi-presence.ps1`、`battery-presence.ps1`、`perf-layout.ps1`，见 `docs/DEVELOPMENT.md` 「测试」一节第 3 条），所以验证分两层：
 
 1. **构建**：`gradle -p C:\code\HyperDuo :app:assembleDebug --offline -q` 通过。
 2. **五条离线工装**（不入库，`work\` 下）：`gapcheck`（电量弧算术）、`slotcheck`（居中槽位优先级，用「非居中布局逐像素不变」当不变量）、`dualsimcheck`（双卡判定规则，故意把 `charging` 换回 `bolt` 造一份反例构建）、`simcheck`（订阅号↔槽位映射、单排兜底、**以及读的是 MIUI 电平而不是 AOSP 电平**；三构建对照）、`outringcheck`（环内/环外与两个新开关的真值表 + 环内逐像素不变）。五条**全部 `exit 0`**，即固定版通过、反例版按预期失败。改动渲染器或 `TrioAppearance` 后这些都要重跑，机制记录在 `docs\DEVELOPMENT.md:805-862` 与「测试」一节。
@@ -487,4 +492,33 @@ final float scale = Math.min(width / inkW, height / outSignalInkH(dotRow));
 - **P3 卡片拆分**：`group_type` 原来一张卡 8 条滑杆，混了「网络类型」与「环外信号」两个对象、两套门禁。拆成两张卡（新增 `group_out_signal` 小节标题）：信号大小与间距门禁是 `a.stackedOut()`，类型组门禁是 `typeOutOfRing`/`typeAnywhere()`，混排时用户找「信号间距」要在类型堆里翻。
 - **P5/P6 文案与单位**：`out_type_size` 的 summary 补上单位与范围（此前全表唯一不提单位的长度滑杆）；`value_size` 的 summary 说明「居中模式下数字最大放大 1.4 倍、38 及以上不再变大」（`centreSize = min(size×1.4, 52)` 的既有死区，此前无解释）；`IntSlider` 增 `valueTextSuffix`，五条 dp 滑杆的值显示从裸数字变为「12dp」。
 - **未动**：`out_type_margin_left/right` 的「左/右」命名（首轮用户在选择题里定过「左右分开、两个独立滑杆」的硬约束，RTL 镜像已在 summary 说明）；strip 预留模型；`type_weight`/`value_weight` 分立。
+
+### 6.12 第十三轮：状态栏性能读数
+
+新增两个布尔键 `perf_power`（充电功率）与 `perf_temp`（电池温度），默认都关。两者都是**只有 Hook 侧读**的键，渲染器与预览都不看它们——设置页两行开关的门禁也因此只跟总开关走。
+
+- **两个键共用同一个视图**：`TrioHooks.PerfLabel`，挂在电池容器上、位于环外类型标签与环外读数旁边。之所以不做成两个视图，是因为两项的可见性可以独立：只开一项就只有那一项，两个都关整块才摘掉（挂载门是 `TrioAppearance.perfAnywhere()` = `perfPower || perfTemp`，另加总开关 `a.glyph`）。
+- **两行开关都只用 `enabled = a.glyph` 门禁，刻意不写 `a.perfAnywhere()`**：两行共用同一个视图，用「两项的或」当门禁会让任一行在关掉自己的瞬间变灰、再也开不回来。这条与 §6.3 里「一个开关不能门控它自己」是同一条规则，落地时按它执行。
+- **采样走广播**：`BatteryPresence.java`（形状照抄 `WifiPresence.java`）注册粘性 `ACTION_BATTERY_CHANGED`，电流取 `BatteryManager.getIntProperty(BATTERY_PROPERTY_CURRENT_NOW)`，再在 SystemUI 里自续一个 3 秒看门狗。不用 sysfs / health HAL，是因为模块跑在 `android.uid.systemui`，那两条路对这个 uid 都是关着的。
+- **功率是电池自身电流 × 电压**，不是充电器协商的最大档位（协商值在电量爬升时几乎不变，用户要看的却是真实速率）；满电时电池电流是**一个小负数**，所以瓦数 clamp 在 0，永不显示负功率。不足 10W 保留一位小数、10W 及以上取整，整数拼串避免 `Locale` 差异。
+- **没接充电器时功率段整段消失**，而不是显示 `0W`——`0W` 挨着温度会被读成「读数坏了」，而它只表达「没在充电」。温度与充电器无关、照常显示，这条不对称正是两项要分成两个开关的原因。
+- **字号复用环外网络类型字号**（`out_type_size_dp`）作为基准，不给自己加滑杆：单项与邻居环外标签一样大，两项都开时按图标高度自适应缩小（`perfTextSize`）。（**这句话在第十四轮作废**：仍然以环外字号为基准，但在它之上新增了 `perf_scale_pct` 这条整体缩放滑杆，见 §6.13。）
+- **加入 `reserveOutRingStrip` 的同一条求和**，而不是另撑一次 padding——strip 是唯一能让原生图标让位的机制（§6.10 的教训：各视图各撑一次会互相挤掉）。锚链上 `labelAnchorIn` 先取可见的 `PerfLabel`，没有才退回 `readingAnchorIn`。
+- **未动 / 盲区**：预览卡仍是 8 格（八格一行已到宽度预算 340dp / 344dp），两个读数**没有预览格**，开关效果在预览里无反馈。
+
+### 6.13 第十四轮：两处整体尺寸滑杆
+
+用户要求给「整个字形」与「两项读数」各加一条整体缩放的滑杆。新增两个 int 键：`glyph_scale_pct`（默认 100，**60 – 100**，只有渲染侧读）与 `perf_scale_pct`（默认 100，**60 – 150**，只有 Hook 侧读）。两者都是**百分比乘数**，不是新的绝对尺寸。
+
+- **字形那条只能往小缩（上界 100），是被宿主的框决定的**：MIUI 给电池图标预留的区域只有 **28dp × 20dp**（模块无法改动它，那个框是系统画的）。100% 已经等于系统允许的最大值，再往上只会画到视野外，裁不裁由 MIUI 说了算——「要求得比盒子能装的更多」并不能让盒子变大。做 dp 滑杆也要先把它换算回「这个不归模块所有的盒子」的占比，所以直接做成百分比更诚实。
+- **乘在适配系数上，而不是乘在设计单位上**：`TrioRenderer.drawInto` 现在是
+  `final float scale = inkScale(w, h, rect) * appearance.glyphFit();`（`TrioRenderer.java:136`）。整块字形几何是同一个 120×120 的盒子，缩适配会让每一笔描边、每条弧、每个数字按同一比例变化，后面那次 `translate` 仍然把它居中；如果改成对设计单位另做一次 `canvas.scale`，`Paint.setStrokeWidth` 给的是设计单位下的常量，线宽与半径的缩放口径就会分家。
+- **`TrioOverlay` 刻意不拿它缩窗口**（这是本轮避开的那个陷阱）：独立窗口里的字形由 `drawState` 画，而 `drawState` 走的就是上面那条已经乘过 `glyphFit()` 的路径。窗口尺寸再按同一百分比缩一次，设置就被应用了两遍。正确形态是**宿主大小的透明窗口 + 居中的小字形**。
+- **读数那条乘在自适应结果之上，而不是替掉它**：`perf_scale_pct` 经 `TrioAppearance.perfFit()` 后**最后**乘在 `TrioHooks.perfTextSize` 的返回值上——`Math.max(base * PERF_MIN_SIZE_RATIO, Math.min(base, size)) * factor`——并且三条提前返回的兜底分支也各乘一次（`lines < 2 || host == null`、`fit <= 0f`、`lineHeight <= 0f` 都返回 `base * factor`）。**必须覆盖每一条答案**：只开一项读数时走的正是 `lines < 2` 那条分支，若只缩放组合态，单项时滑杆毫无反应，等用户打开第二个开关时读数会突然跳一下。乘在自适应之上而不是设成绝对 dp，则保证两项读数仍然跟着图标高度与 `out_type_size_dp` 走。
+- **两条滑杆的位置与门禁**：字形那条在「尺寸」页新增的**整体尺寸**小节里（`R.string.group_scale`），门禁只跟总开关（`enabled = a.glyph`）——它缩的就是字形本身，字形关掉就没有作用于其上的东西；它不门控任何行、也不被任何行门控。读数那条放在「常规」页性能读数卡片的末尾，门禁是 `a.glyph && a.perfAnywhere()`，并带 `gateHint(a.glyph to R.string.master_title, a.perfAnywhere() to R.string.perf_pair_title)` 的 tooltip——「两项读数都关着所以变灰」这件事离屏幕上的现象远了一步，需要说明。两条都用 `valueTextSuffix = "%"`。
+- **两条都是全新的键名，没有复用旧键**：框架不做类型转换，一个键一辈子只有一个类型（§6.2 第 3 条与 §P1-1 的教训）。`glyphScale`/`perfScale` 走全链：`Prefs` 常量与上下限 → `TrioSettings` 字段与 `defaults()`/`from()`/`copy()`/`applyKeyFrom`/`fromBundle`/`toBundle`/`equals`/`hashCode` → `TrioAppearance` 字段与 `glyphFit()`/`perfFit()` → `SettingsRepository.setGlyphScale`/`setPerfScale` 与 `syncAllToFramework()` 的两行 `putInt` → `SettingsScreen` 的两条 `IntSlider`。
+- **本轮计数**：`Prefs` 的 `KEY_*` 常量 39 → 41，在用的键 37 → 39，`TrioSettings` public 字段 37 → 39，`SettingsRepository` setter 37 → 39，设置页可写项 37 → 39；`SettingsScreen.kt` 的 `enabled =` 实测 51 → **56**（逐行数出来的，本轮新增 5 处：两个性能读数开关的 `enabled = a.glyph`、性能读数滑杆的 `enabled = a.glyph && a.perfAnywhere()`、字形滑杆的 `enabled = a.glyph`、以及 `TooltipBox` 的 `enabled = scaleHint != null`）。**顺带订正**：本表上方原先写的「第十三轮后 53 处」与树里对不上——按 `git show HEAD:…SettingsScreen.kt` 逐行数，第十三轮后其实只有 51 处，所以这一格改为按实测值书写。
+- **断言脚本跟着扩**：`tests\perf-layout.ps1` 从 38 条加到 **48** 条（`PASS: 48 cases over perfTextSize, perfLineSpacing and inkScale`），新增的 10 条专打这个乘数——单项读数也缩放、三条兜底分支也缩放、clamp 到 60 与 150 两端、以及 100% 回到未缩放的答案。抽取面同时收紧：垫片不再自己写 `perfScale / 100f`，而是把生产的 `TrioAppearance.perfFit()` 与 `Prefs.clamp(int,int,int)` **正则抽出来**，两个界限也从 `Prefs.java` 读出——原先的写法把生产的 clamp 删掉探针照样绿，而 clamp 正是广播路径唯一的防线。复核指出的两处覆盖缺陷同轮修掉：一个与既有用例重复的房间用例（近边界现在用 `(int) Math.ceil(lh * 2f) - 1` 取确切行数），以及一条**自指**的下限断言（原先是拿 `PERF_MIN_SIZE_RATIO` 算出期望值再比回去，改成 `eq("the legibility floor is 0.6 of the type size", PERF_MIN_SIZE_RATIO, 0.6f)`，把 0.6 当成外部事实陈述）。复核另留的两处盲区（M5「身份断言只是自洽检查、且 AWT 看不见字重」与 M6「布局期接线零覆盖」）随后补齐，脚本最终 **53** 条：身份断言改用一支**没经过 `perfLineHeight`** 的 paint 独立量一遍（否则把 `perfLineHeight` 乘上任意常数它都照样通过），字重分支改由源码契约钉锁住（AWT 对 PLAIN/BOLD 度量完全相同，度量断言无从下手），`refreshPerfLabel` 的四路条件与 `updatePerfLabel` 的「先比再写」同样按形状钉住，并用一条**终点用例**证明写回视图的行距能原样读回、重同步必然收敛（否则每个 layout pass 都会再 post 同步、状态栏无限重排）。`tests\battery-presence.ps1` 同轮把硬编码的分隔符也改成从源码读出，由 41 条变 42 条。
+- **预览的可见性两条不一样，要分开说**：**字形那条在预览里看得见**——`PreviewCard` 的每一格都是 `TrioPreviewView` → `TrioRenderer.drawInto(..., settings, ...)`，`settings` 就是当前快照，所以拖动滑杆时八个格子里的字形一起变小（已用桌面探针实测：`glyphScale` 100 → 60 时墨迹像素 5127 → 1948，`drawInto` 确实拿到了这个乘数）。**读数那条在预览里看不见**——预览的八格是七个字形态加「环外类型」「环外信号」两格，没有任何一格画性能读数。
+- **未动 / 盲区**：字形滑杆虽然预览可见，但**状态栏里的实际效果只有上机才能确认**；读数滑杆连预览都没有。本轮设备中途脱离 USB，两条都没在真机上过。
 

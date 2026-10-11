@@ -619,6 +619,14 @@ final class TrioOverlay {
         // the square that side implies - never a fixed figure, and never larger
         // than what the bar already had. The window exists to show the glyph
         // whole, not to blow it up.
+        //
+        // The overall-size setting is deliberately NOT applied here, even though
+        // the glyph inside will honour it. The drawing derives its own fit from
+        // the box it is handed, so shrinking this window to match the setting
+        // would hand the drawing a smaller box and it would shrink by the setting
+        // a second time. A host-sized window around a smaller centred glyph is
+        // the honest arrangement: the window is transparent and untouchable, and
+        // the glyph sits in the middle of it exactly as the geometry says.
         final int side = Math.min(hostWidth, hostHeight);
         final int width = Math.round(side * TrioGeometry.INK_W / TrioGeometry.INK_H);
         final int height = side;

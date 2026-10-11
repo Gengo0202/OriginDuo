@@ -64,6 +64,15 @@ class SettingsRepository(context: Context) {
     /** Draws the glyph in a window of its own - see [Prefs.KEY_OVERLAY]. */
     fun setOverlay(value: Boolean) = writeBoolean(Prefs.KEY_OVERLAY, value)
 
+    // ------------------------------------------------------- performance readouts
+
+    /** Charging power in the out-of-ring strip - see [Prefs.KEY_PERF_POWER]. */
+    fun setPerfPower(value: Boolean) = writeBoolean(Prefs.KEY_PERF_POWER, value)
+    /** Battery temperature in the out-of-ring strip - see [Prefs.KEY_PERF_TEMP]. */
+    fun setPerfTemp(value: Boolean) = writeBoolean(Prefs.KEY_PERF_TEMP, value)
+    /** Overall size of the two readouts, in percent - see [Prefs.KEY_PERF_SCALE]. */
+    fun setPerfScale(value: Int) = writeInt(Prefs.KEY_PERF_SCALE, value)
+
     // ----------------------------------------------------------------- colours
 
     fun setRoleColors(value: Boolean) = writeBoolean(Prefs.KEY_ROLE_COLORS, value)
@@ -112,6 +121,9 @@ class SettingsRepository(context: Context) {
     fun setTypeWeight(value: Int) = writeInt(Prefs.KEY_TYPE_WEIGHT, value)
     fun setTrackAlpha(value: Int) = writeInt(Prefs.KEY_TRACK_ALPHA, value)
 
+    /** Overall size of the trio glyph, in percent - see [Prefs.KEY_GLYPH_SCALE]. */
+    fun setGlyphScale(value: Int) = writeInt(Prefs.KEY_GLYPH_SCALE, value)
+
     // ---------------------------------------------------------------- advanced
 
     fun setDebugLog(value: Boolean) = writeBoolean(Prefs.KEY_DEBUG_LOG, value)
@@ -142,6 +154,10 @@ class SettingsRepository(context: Context) {
             prefs.putBoolean(Prefs.KEY_STACKED_SIGNAL, snapshot.stackedSignal)
             prefs.putBoolean(Prefs.KEY_DATA_SIM_ONLY, snapshot.dataSimOnly)
             prefs.putBoolean(Prefs.KEY_OVERLAY, snapshot.overlayGlyph)
+            prefs.putBoolean(Prefs.KEY_PERF_POWER, snapshot.perfPower)
+            prefs.putBoolean(Prefs.KEY_PERF_TEMP, snapshot.perfTemp)
+            prefs.putInt(Prefs.KEY_PERF_SCALE, snapshot.perfScale)
+            prefs.putInt(Prefs.KEY_GLYPH_SCALE, snapshot.glyphScale)
 
             prefs.putBoolean(Prefs.KEY_ROLE_COLORS, snapshot.roleColors)
             prefs.putInt(Prefs.KEY_COLOR_CRITICAL_ON_DARK, snapshot.criticalOnDark)

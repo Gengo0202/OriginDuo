@@ -844,6 +844,58 @@ private fun LazyListScope.generalTab(
                     enabled = a.glyph && !a.rect && a.wifi && a.value,
                 )
             }
+            // The performance readouts. They sit at the end of the card because
+            // they are the only rows here whose subject is the battery rather
+            // than the glyph: they draw in the same out-of-ring strip the
+            // network type uses, but nothing above them depends on them.
+            //
+            // Gated on the master switch and on nothing else. The two readouts
+            // share one view, so gating either row on the pair - which is what
+            // {@code a.perfAnywhere()} answers - would make it lock itself off
+            // the moment it was switched off: the rule would go false, the row
+            // would disable, and it could never be turned back on. A row may be
+            // gated by other switches but never by its own. Master-only gating
+            // carries no tooltip, exactly like the overlay and Wi-Fi rows above:
+            // "off because the master is off" is already visible on screen.
+            SwitchPreference(
+                checked = settings.perfPower,
+                onCheckedChange = { value -> update { it.setPerfPower(value) } },
+                title = stringResource(R.string.perf_power_title),
+                summary = stringResource(R.string.perf_power_summary),
+                insideMargin = SettingsItemMargin,
+                enabled = a.glyph,
+            )
+            SwitchPreference(
+                checked = settings.perfTemp,
+                onCheckedChange = { value -> update { it.setPerfTemp(value) } },
+                title = stringResource(R.string.perf_temp_title),
+                summary = stringResource(R.string.perf_temp_summary),
+                insideMargin = SettingsItemMargin,
+                enabled = a.glyph,
+            )
+            // The size of the pair. It is gated on the two switches above rather
+            // than on its own value - the rule the whole screen follows - because
+            // a reading that is not drawn has no size to set, so the row is dead
+            // until one of them comes on. The gate carries a tooltip since
+            // "greyed out because both readouts are off" is a step removed from
+            // what is on screen; the two switches themselves still gate on the
+            // master alone, so neither of them can be locked out.
+            val scaleHint = gateHint(
+                a.glyph to R.string.master_title,
+                a.perfAnywhere() to R.string.perf_pair_title,
+            )
+            TooltipBox(text = scaleHint.orEmpty(), enabled = scaleHint != null) {
+                IntSlider(
+                    value = settings.perfScale,
+                    min = Prefs.MIN_PERF_SCALE,
+                    max = Prefs.MAX_PERF_SCALE,
+                    title = stringResource(R.string.perf_scale_title),
+                    summary = stringResource(R.string.perf_scale_summary),
+                    enabled = a.glyph && a.perfAnywhere(),
+                    valueTextSuffix = "%",
+                    onValueChange = { value -> update { it.setPerfScale(value) } },
+                )
+            }
         }
     }
 }
@@ -858,6 +910,26 @@ private fun LazyListScope.geometryTab(
     // follow the arrangement actually on screen instead of a second copy of it.
     val a = TrioAppearance.of(settings)
 
+    item { SectionTitle(stringResource(R.string.group_scale)) }
+    item {
+        Card {
+            IntSlider(
+                value = settings.glyphScale,
+                min = Prefs.MIN_GLYPH_SCALE,
+                max = Prefs.MAX_GLYPH_SCALE,
+                title = stringResource(R.string.glyph_scale_title),
+                summary = stringResource(R.string.glyph_scale_summary),
+                // Gated on the master switch and nothing else: it sizes the glyph
+                // itself, so with the glyph off there is nothing on screen for it
+                // to act on. It is gated by no other row, and no row is gated by
+                // it, which keeps this slider from ever being the reason another
+                // one is unavailable.
+                enabled = a.glyph,
+                valueTextSuffix = "%",
+                onValueChange = { v -> update { it.setGlyphScale(v) } },
+            )
+        }
+    }
     item { SectionTitle(stringResource(R.string.group_stroke)) }
     item {
         Card {

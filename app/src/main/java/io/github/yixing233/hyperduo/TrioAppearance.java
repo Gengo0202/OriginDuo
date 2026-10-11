@@ -78,6 +78,33 @@ public final class TrioAppearance {
     public final boolean typeInRing;
     /** The network type is drawn as a status-bar view outside the glyph. */
     public final boolean typeOutOfRing;
+    /**
+     * The charging power is drawn in the out-of-ring strip.
+     *
+     * <p>Unlike every other flag here this one does not decide the whole view:
+     * the power and the temperature share one strip, and either flag alone is
+     * enough to bring it back. Use {@link #perfAnywhere} for that question and
+     * this one only for the power segment.
+     */
+    public final boolean perfPower;
+    /** The battery temperature is drawn in the same out-of-ring strip. */
+    public final boolean perfTemp;
+    /**
+     * Overall size of the two readouts, in percent of the adaptive fit.
+     *
+     * <p>Read by the hooked side only, but kept here with the rest so that every
+     * caller that sizes the reading asks one object rather than reaching back
+     * into the settings for a number the appearance already resolved.
+     */
+    public final int perfScale;
+    /**
+     * Overall size of the glyph, in percent of the fit the host box implies.
+     *
+     * <p>Shrink-only, so 100 is the largest value this can hold and the shipped
+     * look. The renderer multiplies its own scale by this; see
+     * {@code TrioRenderer.drawInto}.
+     */
+    public final int glyphScale;
 
     public final boolean roleColors;
     public final int criticalOnDark;
@@ -132,6 +159,10 @@ public final class TrioAppearance {
         typeMode = c.mobileTypeMode;
         typeInRing = c.mobileTypeMode == Prefs.MOBILE_TYPE_IN_RING;
         typeOutOfRing = c.mobileTypeMode == Prefs.MOBILE_TYPE_OUT_RING;
+        perfPower = c.perfPower;
+        perfTemp = c.perfTemp;
+        perfScale = c.perfScale;
+        glyphScale = c.glyphScale;
 
         roleColors = c.roleColors;
         criticalOnDark = c.criticalOnDark;
@@ -286,6 +317,37 @@ public final class TrioAppearance {
     /** Whether the network type is drawn at all, in either position. */
     public boolean typeAnywhere() {
         return typeMode != Prefs.MOBILE_TYPE_OFF;
+    }
+
+    /**
+     * Whether the performance strip is drawn at all.
+     *
+     * <p>The two readouts share one view and one reserved strip, so this is the
+     * question every caller that mounts or measures that view has to ask - never
+     * {@link #perfPower} or {@link #perfTemp} alone. Either switch brings the
+     * view back; with both off it is taken away entirely.
+     */
+    public boolean perfAnywhere() {
+        return perfPower || perfTemp;
+    }
+
+    /**
+     * The fit multiplier the glyph is drawn at, from {@link #glyphScale}.
+     *
+     * <p>Stated here rather than at the call site so the drawing, the window that
+     * shows the same glyph and the settings preview cannot disagree about what the
+     * slider means. An out-of-range value is clamped rather than trusted: the
+     * stored number is clamped on read, but the broadcast path builds an
+     * appearance from extras, and this is the one place a bad value would reach
+     * the canvas.
+     */
+    public float glyphFit() {
+        return Prefs.clamp(glyphScale, Prefs.MIN_GLYPH_SCALE, Prefs.MAX_GLYPH_SCALE) / 100f;
+    }
+
+    /** The same, for the reading: {@code perfScale} as a multiplier. */
+    public float perfFit() {
+        return Prefs.clamp(perfScale, Prefs.MIN_PERF_SCALE, Prefs.MAX_PERF_SCALE) / 100f;
     }
 
     /** The ring arrangement's slot assignment for one frame. */

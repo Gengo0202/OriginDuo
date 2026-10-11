@@ -80,6 +80,29 @@ public final class Prefs {
      * and never forgets a key, so the new route gets a key with no history.
      */
     public static final String KEY_OVERLAY = "glyph_window";
+    /**
+     * Overall size of the trio glyph, as a percentage of the size the host box
+     * already implies.
+     *
+     * <p><em>Shrink-only</em> - the range stops at 100 - because the bar's own
+     * box is the limit: MIUI measures the battery icon at
+     * {@code battery_meter_width} x {@code status_bar_icon_height} (28dp by 20dp
+     * on the test device) and the glyph is fitted inside it. Asking for more than
+     * the box holds cannot make the box grow, so the only honest thing a
+     * percentage above 100 could do is draw past the view's bounds, and whether
+     * that is clipped is MIUI's decision rather than this module's. The window
+     * route ({@link #KEY_OVERLAY}) draws whole glyphs of any height, but it is a
+     * separate switch with its own cost, and silently depending on it would make
+     * this slider behave differently for users who never turned it on.
+     *
+     * <p>A percentage rather than a dp: the drawing already scales to whatever
+     * box it is handed, so the setting that means anything is "how much of that
+     * fit to use". A dp size would have to be converted back into a share of a
+     * box the module does not own.
+     *
+     * <p>A brand-new key with a brand-new name.
+     */
+    public static final String KEY_GLYPH_SCALE = "glyph_scale_pct";
     public static final String KEY_SHOW_WIFI = "show_wifi";
     public static final String KEY_SHOW_MOBILE = "show_mobile";
     public static final String KEY_SHOW_VALUE = "show_value";
@@ -182,6 +205,55 @@ public final class Prefs {
      * <p>A brand-new key with a brand-new name.
      */
     public static final String KEY_DATA_SIM_ONLY = "data_sim_only";
+    /**
+     * Draws the battery's charging power - watts, with one decimal below 10W - in
+     * the status bar, in the same out-of-ring strip as the network type.
+     *
+     * <p>Only drawn while an external source is attached: an unplugged phone has
+     * no charging power, and the segment is dropped rather than shown as 0W. The
+     * number is the power actually going into the battery - its own current times
+     * its own voltage - which tapers as the battery fills, so it is deliberately
+     * not the charger's negotiated maximum, a value that stays put while the real
+     * power falls away.
+     *
+     * <p>Independent of {@link #KEY_PERF_TEMP}: the two readouts share one view,
+     * but each segment is drawn only while its own switch asks for it, and the
+     * pair is the reason this is two keys rather than one three-state choice.
+     *
+     * <p>A brand-new key with a brand-new name.
+     */
+    public static final String KEY_PERF_POWER = "perf_power";
+    /**
+     * Draws the battery's temperature in degrees Celsius in the status bar, beside
+     * the charging power.
+     *
+     * <p>Drawn whether or not a charger is attached: temperature is a property of
+     * the battery rather than of the charger, so this switch alone is enough to
+     * make the reading appear. Rounded to whole degrees on purpose - the tenths
+     * the platform reports move by a degree or more between samples, and a steady
+     * number is what makes a status-bar-sized value readable.
+     *
+     * <p>A brand-new key with a brand-new name.
+     */
+    public static final String KEY_PERF_TEMP = "perf_temp";
+    /**
+     * Overall size of the two performance readouts, as a percentage of the size
+     * {@link #KEY_OUT_TYPE_SIZE_DP} and the adaptive fit settle on.
+     *
+     * <p>A multiplier rather than a second absolute size: the pair is already
+     * sized by rule - two lines together come to one icon height - and an
+     * absolute setting would throw that rule away instead of tuning it. Because
+     * the multiplier is applied last, the reading still follows the icon it
+     * stands beside and still follows {@link #KEY_OUT_TYPE_SIZE_DP}; this only
+     * says how much of the answer to use.
+     *
+     * <p>Independent of {@link #KEY_GLYPH_SCALE}: the two resize different
+     * things and a user who wants both smaller should not have to work out which
+     * one moved.
+     *
+     * <p>A brand-new key with a brand-new name.
+     */
+    public static final String KEY_PERF_SCALE = "perf_scale_pct";
 
     public static final String KEY_ROLE_COLORS = "role_colors";
     public static final String KEY_COLOR_CRITICAL_ON_DARK = "color_critical_on_dark";
@@ -406,6 +478,25 @@ public final class Prefs {
     public static final boolean DEF_DATA_SIM_ONLY = false;
 
     /**
+     * Off by default: the status bar keeps the shipped size it had before the
+     * module drew a charging-power reading, and the reading is an opt-in.
+     */
+    public static final boolean DEF_PERF_POWER = false;
+    /** Off by default, for the same reason as {@link #DEF_PERF_POWER}. */
+    public static final boolean DEF_PERF_TEMP = false;
+
+    /**
+     * 100%: the shipped glyph keeps exactly the fit it had before it was
+     * settable, so an install that never touches the slider draws what it drew.
+     */
+    public static final int DEF_GLYPH_SCALE = 100;
+    /**
+     * 100%: the adaptive fit already balances the two readings against the icon,
+     * so the shipped state is that answer unscaled.
+     */
+    public static final int DEF_PERF_SCALE = 100;
+
+    /**
      * Off by default: the shipped look draws one row of dots for the current data
      * SIM, and the second row is an opt-in reading for a dual-SIM device.
      */
@@ -567,6 +658,29 @@ public final class Prefs {
     public static final int MAX_TYPE_WEIGHT = 900;
     public static final int MIN_TRACK_ALPHA = 0;
     public static final int MAX_TRACK_ALPHA = 255;
+    /**
+     * The glyph-size span, in percent of the fit the host box implies.
+     *
+     * <p>60..100: the ceiling is the box - see {@link #KEY_GLYPH_SCALE} for why
+     * growing past it was refused - and 60 is as small as the glyph goes while
+     * the level dots and the ring stroke are still separable at status-bar size.
+     */
+    public static final int MIN_GLYPH_SCALE = 60;
+    public static final int MAX_GLYPH_SCALE = 100;
+    /**
+     * The performance-readout size span, in percent of the size the adaptive fit
+     * settles on.
+     *
+     * <p>Wider than the glyph's span and allowed past 100 because this multiplies
+     * a <em>text</em> size rather than a fitted drawing: the pair has already been
+     * brought down to one icon height, so a user who wants it larger has room
+     * below the row's ceiling, and one who wants it smaller is going below a fit
+     * that is itself already below the lone reading's size. 60 matches the
+     * glyph's floor so the two sliders bottom out together; 150 is where the pair
+     * starts to reach the native icons beside it at the shipped type size.
+     */
+    public static final int MIN_PERF_SCALE = 60;
+    public static final int MAX_PERF_SCALE = 150;
     public static final int MIN_LOW_THRESHOLD = 5;
     public static final int MAX_LOW_THRESHOLD = 50;
 

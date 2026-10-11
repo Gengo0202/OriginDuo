@@ -127,7 +127,13 @@ final class TrioRenderer {
         // The two arrangements have different ink extents, so each is fitted to
         // the host view with its own box.
         final boolean rect = appearance.rect;
-        final float scale = inkScale(w, h, rect);
+        // The overall-size setting is applied to the fit rather than to the design
+        // units: the glyph's whole geometry is expressed in one 120x120 box, so
+        // scaling the fit scales every stroke, arc and digit by the same factor
+        // and the translate below keeps it centred. Doing it anywhere else - a
+        // second canvas.scale around the layout calls, say - would scale the
+        // stroke widths differently from the radii and the glyph would come apart.
+        final float scale = inkScale(w, h, rect) * appearance.glyphFit();
         if (scale <= 0f) {
             return;
         }

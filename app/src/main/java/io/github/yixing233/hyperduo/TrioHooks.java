@@ -2,6 +2,7 @@ package io.github.yixing233.hyperduo;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.Typeface;
 import android.os.Handler;
@@ -426,6 +427,10 @@ final class TrioHooks {
                     // must never happen inside a layout pass - and this runnable
                     // is already the deferred slot the rest of the re-fold uses.
                     syncOutSignal(v);
+                    // Between the two on purpose: the label chains through the
+                    // performance readout, which chains through the reading, so
+                    // each is measured before the one that stands outside it.
+                    syncPerfLabel(v);
                     syncOutTypeLabel(v);
                     v.invalidate();
                 }
@@ -648,13 +653,15 @@ final class TrioHooks {
                 }
             }
         }
-        // The out-of-ring label is ours alone, so taking it back out needs no
-        // state check - unlike the native slots above, MIUI has no opinion about
-        // whether it should exist.
+        // The out-of-ring label and the performance readout are ours alone, so
+        // taking them back out needs no state check - unlike the native slots
+        // above, MIUI has no opinion about whether they should exist.
         for (int i = 0; i < containers.size(); i++) {
             final Object container = containers.get(i);
             if (container instanceof View) {
-                removeOutTypeLabel(batteryContainerOf((View) container));
+                final View battery = batteryContainerOf((View) container);
+                removePerfLabel(battery);
+                removeOutTypeLabel(battery);
             }
         }
         for (int i = 0; i < containers.size(); i++) {
@@ -1399,6 +1406,10 @@ final class TrioHooks {
                     foldHostContainer(v);
                     v.requestLayout();
                     syncOutSignal(v);
+                    // Between the two on purpose: the label chains through the
+                    // performance readout, which chains through the reading, so
+                    // each is measured before the one that stands outside it.
+                    syncPerfLabel(v);
                     syncOutTypeLabel(v);
                     v.invalidate();
                 }
@@ -2134,6 +2145,7 @@ final class TrioHooks {
         // The reading first: the label stands against it when it is mounted, so
         // placing the label before it would place it against last frame's frame.
         refreshOutSignal(container);
+        refreshPerfLabel(container);
         refreshOutTypeLabel(container);
         final List<String> wanted = foldedSlots();
         final int count = container.getChildCount();
@@ -2699,8 +2711,11 @@ final class TrioHooks {
                 public void run() {
                     foldHostContainer(host);
                     // The reading is mounted and measured before the label, since
-                    // the label stands outside it whenever it is present.
+                    // the label stands outside it whenever it is present; the
+                    // performance readout sits between the two for the same
+                    // reason.
                     syncOutSignal(host);
+                    syncPerfLabel(host);
                     syncOutTypeLabel(host);
                 }
             });
@@ -2883,6 +2898,10 @@ final class TrioHooks {
                     // arrive here too: a SIM returning or the data SIM changing
                     // moves the bars without any draw pass of the glyph.
                     syncOutSignal(v);
+                    // Between the two on purpose: the label chains through the
+                    // performance readout, which chains through the reading, so
+                    // each is measured before the one that stands outside it.
+                    syncPerfLabel(v);
                     syncOutTypeLabel(v);
                     v.invalidate();
                 }
@@ -3199,9 +3218,9 @@ final class TrioHooks {
     }
 
     /**
-     * Hands one ink to the out-of-ring views under {@code container} - the
-     * label outright, the reading as a repaint request. The one-line body both
-     * tint paths share, so they cannot drift apart.
+     * Hands one ink to the out-of-ring views under {@code container} - the two
+     * text views outright, the reading as a repaint request. The one-line body
+     * both tint paths share, so they cannot drift apart.
      *
      * <p>Safe to call directly (no post) from the tint hook, which runs outside
      * any layout or draw pass; the draw-pass path above keeps its post because
@@ -3211,6 +3230,13 @@ final class TrioHooks {
         final OutTypeLabel label = findOutTypeLabel(container);
         if (label != null && label.getCurrentTextColor() != ink) {
             label.setTextColor(ink);
+        }
+        // The performance readout is a TextView like the label and needs the
+        // same treatment: setting the colour repaints it on the next frame, so
+        // unlike the reading below it wants no invalidate of its own.
+        final PerfLabel perf = findPerfLabel(container);
+        if (perf != null && perf.getCurrentTextColor() != ink) {
+            perf.setTextColor(ink);
         }
         final OutSignalView signal = findOutSignal(container);
         if (signal != null) {
@@ -3409,6 +3435,554 @@ final class TrioHooks {
         label.suffixScale = scalePercent;
     }
 
+    // ------------------------------------------------- performance readout
+
+    /**
+     * The break between the two readings in the one view.
+     *
+     * <p>A newline and not a space. The power and the temperature are separate
+     * quantities with separate switches, and stacking them keeps a pair of
+     * readings from crowding the native icons whose strip they were carved out
+     * of: the view grows taller and stays narrow instead of growing sideways.
+     * One reading is one line, the pair is two, and the view is the same
+     * either way.
+     */
+    private static final char PERF_BREAK = '\n';
+
+    /**
+     * The floor on the line-height multiplier used to fit two readings into
+     * the status bar.
+     *
+     * <p>The digits, the degree sign and the C are all cap-height with no
+     * descenders, so most of each line box is empty and can be given back;
+     * below this the two lines would touch instead. A pair that slightly
+     * overflows a pathologically short row is better than two that overlap.
+     */
+    private static final float PERF_MIN_LINE_SPACING = 0.72f;
+
+    /**
+     * The floor on how far the stacked pair may be shrunk to fit one icon.
+     *
+     * <p>The fit is derived from the row, so a row that is short for reasons
+     * of its own - an unusual density, a host measured before it settled -
+     * would otherwise be able to shrink the pair past legibility. Below this
+     * the pair is allowed to be taller than the icon instead.
+     */
+    private static final float PERF_MIN_SIZE_RATIO = 0.6f;
+
+    /**
+     * Scratch face for measuring what one line of the readout costs at a given
+     * size, so the size can be decided before any view is given it.
+     *
+     * <p>One shared instance and main-thread only: every caller is a posted
+     * runnable or a layout callback, and a {@code Paint} is not something to
+     * hand out per frame.
+     */
+    private static final Paint PERF_PROBE = new Paint();
+
+    /**
+     * The out-of-ring performance readout: charging power and battery
+     * temperature, in one view.
+     *
+     * <p>One view rather than two because the two readings are the same kind of
+     * thing standing in the same place. They share the strip the native icon row
+     * gives up, and with a view each they would have to be chained and reserved
+     * against one another to keep from being drawn through each other. With one
+     * view there is one width, one gap and one anchor, and the two switches only
+     * decide which segments the text is built from.
+     *
+     * <p>Being our own class gives {@link #findPerfLabel} a marker no MIUI view
+     * can match by accident, for the same reason {@link OutTypeLabel} is its own
+     * class rather than a tag on somebody else's.
+     */
+    private static final class PerfLabel extends TextView {
+        /** The glyph host the ink colour comes from. */
+        View host;
+
+        PerfLabel(Context context) {
+            super(context);
+        }
+    }
+
+    /**
+     * Mounts, updates or removes the performance readout for one glyph host.
+     *
+     * <p>Posted only, for the same reason as {@link #syncOutTypeLabel}: it may
+     * {@code addView}, which must never happen inside a layout pass. The switch
+     * check comes first so the ordinary path - both readouts off - pays for one
+     * child scan and nothing else.
+     */
+    private static void syncPerfLabel(View host) {
+        if (host == null) {
+            return;
+        }
+        final Object owner = batteryContainerOf(host);
+        if (!(owner instanceof ViewGroup)) {
+            return;
+        }
+        final ViewGroup container = (ViewGroup) owner;
+        final TrioAppearance a = TrioConfig.appearance();
+        final boolean wanted = a.glyph && a.perfAnywhere();
+        PerfLabel perf = findPerfLabel(container);
+        if (!wanted) {
+            removePerfLabel(container);
+            return;
+        }
+        final View anchor = meterIn(host, container);
+        if (anchor == null) {
+            removePerfLabel(container);
+            return;
+        }
+        // Only a guard: inkScale() is 0 exactly when the host has not been
+        // measured yet, and an unmeasured meter has no frame to place against.
+        // The next posted sync mounts the readout.
+        if (TrioRenderer.inkScale(host.getWidth(), host.getHeight()) <= 0f) {
+            removePerfLabel(container);
+            return;
+        }
+        if (perf == null) {
+            perf = createPerfLabel(container);
+        }
+        perf.host = host;
+        updatePerfLabel(container, perf, host, anchor);
+    }
+
+    /**
+     * Repositions an already-mounted readout. Runs inside
+     * {@code MiuiStatusIconContainer.onLayout}, so it may relayout the view but
+     * must never add or remove one.
+     *
+     * <p>Mirrors {@link #refreshOutTypeLabel}, including the reason each
+     * condition is handed back to the posted path instead of being done here:
+     * setting text, changing the text size, adjusting the letter spacing and
+     * taking the strip with {@code setPadding} all schedule a layout, and none of
+     * those may run from inside one.
+     */
+    private static void refreshPerfLabel(ViewGroup iconContainer) {
+        final Object owner = batteryContainerOf(iconContainer);
+        if (!(owner instanceof ViewGroup)) {
+            return;
+        }
+        final ViewGroup container = (ViewGroup) owner;
+        final PerfLabel perf = findPerfLabel(container);
+        if (perf == null) {
+            requestPerfSync(container);
+            return;
+        }
+        final View host = perf.host;
+        if (host == null || container.getWidth() <= 0 || container.getHeight() <= 0) {
+            return;
+        }
+        final View anchor = meterIn(host, container);
+        if (anchor == null) {
+            return;
+        }
+        if (TrioRenderer.inkScale(host.getWidth(), host.getHeight()) <= 0f) {
+            return;
+        }
+        final String text = perfText(TrioConfig.appearance());
+        if (text.length() == 0) {
+            // Every switch change and every reading change arrives through a
+            // posted sync, so the view is parked at GONE before this can see an
+            // empty string. Nothing to do, and nothing to lay out.
+            return;
+        }
+        // The line spacing belongs in this test as much as the text and the
+        // size do. perfLineSpacing reads the container's height, and that row
+        // is not a fixed height - MIUI lays it out at 88px with the shade
+        // closed and 134px with it open (dumpsys window displays) - while the
+        // host, and with it perfTextSize, is unchanged. On such a pass the text
+        // and the size both compare equal, so without this term nothing would be
+        // posted and the leading computed for the other row height would stay.
+        // refreshOutTypeLabel compares its own scale term for the same reason.
+        // Reading it here is safe from inside a layout pass: perfLineSpacing
+        // only reads the view's paint metrics and the container's height and
+        // padding.
+        if (perf.getVisibility() != View.VISIBLE
+                || !text.contentEquals(perf.getText())
+                || perf.getTextSize() != perfTextSize(text, container, host)
+                || perf.getLineSpacingMultiplier()
+                        != perfLineSpacing(perf, text, container)) {
+            requestPerfSync(container);
+            return;
+        }
+        // The strip belongs to the icon container and is taken with setPadding,
+        // which schedules a layout - illegal from in here. A container rebuilt by
+        // MIUI comes back with its own padding and an empty book, so hand that
+        // over to the posted path too.
+        final View icons = iconContainerIn(container);
+        if (icons != null && !OUT_PAD_SAVED.containsKey(icons)) {
+            requestPerfSync(container);
+            return;
+        }
+        final TrioState state = stateFor(host);
+        if (state != null) {
+            final int colour = state.foreground();
+            if (perf.getCurrentTextColor() != colour) {
+                perf.setTextColor(colour);
+            }
+        }
+        // Against the reading rather than against the meter, and in particular
+        // not through labelAnchorIn: that one answers "what is outermost" and
+        // would hand this view its own frame as its anchor.
+        placeOutTypeLabel(container, perf, readingAnchorIn(container, anchor));
+    }
+
+    /**
+     * Queues one {@link #syncPerfLabel} for the host under {@code container},
+     * without ever queuing an empty one: the runnable is a no-op unless a
+     * readout is switched on, a host is registered and that host has been
+     * measured.
+     */
+    private static void requestPerfSync(final ViewGroup container) {
+        if (!TrioConfig.appearance().perfAnywhere()) {
+            return;
+        }
+        final View host = hostIn(container);
+        if (host == null
+                || TrioRenderer.inkScale(host.getWidth(), host.getHeight()) <= 0f) {
+            return;
+        }
+        final View target = host;
+        container.post(new Runnable() {
+            @Override
+            public void run() {
+                syncPerfLabel(target);
+            }
+        });
+    }
+
+    /**
+     * The performance string to show, normalised to empty when no segment
+     * applies.
+     *
+     * <p>Built from segments rather than from one format because the power is a
+     * property of the charger and the temperature is a property of the battery.
+     * Power is dropped the moment no source is attached - an unplugged phone has
+     * no charging power, and "0.0W" standing next to a temperature would read as
+     * a broken reading rather than as an idle one - while the temperature stays
+     * whatever the charger is doing. That asymmetry is why the two are separate
+     * switches over one view.
+     */
+    private static String perfText(TrioAppearance a) {
+        if (!a.perfAnywhere()) {
+            return "";
+        }
+        final StringBuilder text = new StringBuilder();
+        // Both halves of the question, because they say different things: a
+        // source being attached is not the same as the platform being able to
+        // say how much power is going in. Attached with no reading - the shape
+        // this had before the sentinel existed - renders a confident "0.0W"
+        // that is not a reading at all.
+        //
+        // isNaN and not != POWER_UNKNOWN: the sentinel is a NaN, so != answers
+        // true for it and the gate would let the very value it exists to
+        // exclude through. Math.round then turns that NaN into 0 and the row
+        // reads "0.0W" - the exact claim this test is here to prevent.
+        if (a.perfPower && TrioState.sChargingAttached
+                && !Float.isNaN(TrioState.sChargePowerW)) {
+            text.append(powerText(TrioState.sChargePowerW));
+        }
+        if (a.perfTemp && TrioState.sBatteryTempC != TrioState.TEMP_UNKNOWN) {
+            if (text.length() > 0) {
+                // One reading per line: the pair stacks instead of running on,
+                // so the view never grows a second reading wide. With only the
+                // temperature on there is nothing to break from and the view
+                // stays one line tall.
+                text.append(PERF_BREAK);
+            }
+            // Written as a unicode escape so this file stays ASCII: the degree
+            // sign is the one character in the readout that no keyboard on the
+            // build machine is guaranteed to produce.
+            text.append(TrioState.sBatteryTempC).append("\u00B0C");
+        }
+        return text.toString();
+    }
+
+    /** How many readings the string holds, one per {@link #PERF_BREAK}. */
+    private static int perfLines(String text) {
+        int lines = 1;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == PERF_BREAK) {
+                lines++;
+            }
+        }
+        return lines;
+    }
+
+    /**
+     * The height one line of this face occupies at this size.
+     *
+     * <p>Measured on a probe rather than on the view: the size this feeds back
+     * is the one being decided, so taking the metrics from the view would make
+     * the answer depend on whether the view had already been given it.
+     */
+    private static float perfLineHeight(float size, int weight) {
+        PERF_PROBE.setTypeface(TrioRenderer.typefaceFor(weight));
+        PERF_PROBE.setTextSize(size);
+        final Paint.FontMetrics metrics = PERF_PROBE.getFontMetrics();
+        return metrics.descent - metrics.ascent;
+    }
+
+    /**
+     * The text size for the readout, adapted to the row it stands in.
+     *
+     * <p>One reading keeps the out-of-ring type's own size: it is a single
+     * line and already fits. A pair does not - two lines at that size are
+     * taller than the icon beside them - so the size is scaled down until the
+     * two of them together come to one icon height. That is what keeps the
+     * stack reading as one item next to the battery instead of as an overflow
+     * of the row, and it is why the pair is smaller than the lone reading
+     * rather than the same size drawn twice.
+     *
+     * <p>The icon's height is the <em>drawn</em> height, taken from the same
+     * fit the glyph is rendered with, so it follows the arrangement and the
+     * ring stroke the way the drawing does. The scaling stops at
+     * {@link #PERF_MIN_SIZE_RATIO}: a host measured before MIUI has settled it
+     * must not be able to shrink the reading past legibility.
+     *
+     * <p>The user's overall-size setting multiplies whatever the rules above
+     * settle on, and it is applied to every answer this method can give - the
+     * lone reading's base size and the unmeasurable-host fallbacks included. If
+     * it only scaled the pair, then with one switch on the slider would move
+     * nothing, and turning the second switch on would make the reading jump;
+     * applying it last also keeps it a correction on top of the layout rather
+     * than a second opinion about it.
+     */
+    private static float perfTextSize(String text, View container, View host) {
+        final float base = outTypeSizePx(container);
+        final TrioAppearance a = TrioConfig.appearance();
+        final float factor = a.perfFit();
+        final int lines = perfLines(text);
+        if (lines < 2 || host == null) {
+            return base * factor;
+        }
+        final float fit = TrioRenderer.inkScale(host.getWidth(), host.getHeight(), a.rect);
+        if (fit <= 0f) {
+            return base * factor;
+        }
+        final float inkH = a.rect ? TrioGeometry.RECT_INK_H : TrioGeometry.INK_H;
+        final float icon = inkH * fit;
+        final float lineHeight = perfLineHeight(base, a.typeWeight);
+        if (lineHeight <= 0f) {
+            return base * factor;
+        }
+        final float size = base * (icon / lines) / lineHeight;
+        return Math.max(base * PERF_MIN_SIZE_RATIO, Math.min(base, size)) * factor;
+    }
+
+    /**
+     * The line-height multiplier that squeezes a stack of readings into the
+     * row the status bar actually has.
+     *
+     * <p>One line always gets the normal multiplier back: there is nothing to
+     * fit and shrinking a single reading would only make it look like a
+     * different setting. Two lines share the container's height, and the
+     * multiplier is whatever makes them do so, floored so they cannot be driven
+     * into each other by a container that is too short even for that.
+     *
+     * <p>Ordinarily this returns 1f: {@link #perfTextSize} has already sized
+     * the pair to one icon height, and the container is at least that tall. It
+     * still has work when that is not true - the row is shorter than the stack
+     * it holds, which is what the size floor leaves behind once it is biting -
+     * and there the leading is what gives, after the size already has.
+     */
+    private static float perfLineSpacing(TextView view, String text,
+                                         View container) {
+        final int lines = perfLines(text);
+        if (lines < 2) {
+            return 1f;
+        }
+        final int room = container.getHeight()
+                - container.getPaddingTop() - container.getPaddingBottom();
+        if (room <= 0) {
+            return 1f;
+        }
+        // The view's own paint, read after the text size was set on it: the
+        // line height is whatever this typeface and this size actually give,
+        // not what a fresh default Paint would guess.
+        final Paint.FontMetrics metrics = view.getPaint().getFontMetrics();
+        final float lineHeight = metrics.descent - metrics.ascent;
+        if (lineHeight <= 0f) {
+            return 1f;
+        }
+        // setLineSpacing scales every line after the first, so the first line
+        // keeps its full height and what has to fit is one whole line plus the
+        // compressed ones below it. Dividing the room by the line count instead
+        // would spread that full height over all of them and leave the stack
+        // taller than the row.
+        final float aboveLast = room - lineHeight;
+        if (aboveLast <= 0f) {
+            return PERF_MIN_LINE_SPACING;
+        }
+        final float multiplier = aboveLast / (float) (lines - 1) / lineHeight;
+        if (multiplier >= 1f) {
+            return 1f;
+        }
+        return Math.max(PERF_MIN_LINE_SPACING, multiplier);
+    }
+
+    /**
+     * Whole watts from ten up, one decimal below.
+     *
+     * <p>Assembled from integers rather than through {@code String.format} so no
+     * {@link java.util.Locale} is needed at all: a status bar reading is five
+     * characters wide at most, and a comma decimal separator would be wider than
+     * the tenths are informative.
+     */
+    private static String powerText(float watts) {
+        final int tenths = Math.round(watts * 10f);
+        if (tenths >= 100) {
+            return (tenths / 10) + "W";
+        }
+        return (tenths / 10) + "." + (tenths % 10) + "W";
+    }
+
+    /** The performance readout already mounted on {@code container}, or null. */
+    private static PerfLabel findPerfLabel(ViewGroup container) {
+        final int count = container.getChildCount();
+        for (int i = 0; i < count; i++) {
+            final View child;
+            try {
+                child = container.getChildAt(i);
+            } catch (Throwable t) {
+                continue;
+            }
+            if (child instanceof PerfLabel) {
+                return (PerfLabel) child;
+            }
+        }
+        return null;
+    }
+
+    private static PerfLabel createPerfLabel(ViewGroup container) {
+        final PerfLabel perf = new PerfLabel(container.getContext());
+        perf.setGravity(Gravity.CENTER);
+        // Two lines, not the one setSingleLine(true) would pin it to: with both
+        // readings on the text carries a break, and a single-line view would
+        // draw the second reading off the end of its own box. The explicit
+        // measure below is what actually decides the height - this only stops
+        // the framework from doing something else with the break.
+        perf.setMaxLines(2);
+        perf.setIncludeFontPadding(false);
+        perf.setLetterSpacing(TrioGeometry.VALUE_LETTER_SPACING);
+        perf.setVisibility(View.GONE);
+        // WRAP_CONTENT on both axes: the size comes from the explicit measure
+        // below. The container never measures this child on its own -
+        // MiuiStatusBatteryContainer.onMeasure only touches its three named
+        // fields - so whatever we measure stands.
+        container.addView(perf, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        return perf;
+    }
+
+    private static void removePerfLabel(View container) {
+        if (!(container instanceof ViewGroup)) {
+            return;
+        }
+        final ViewGroup group = (ViewGroup) container;
+        // Hand the strip back before the early return below, for the same reason
+        // removeOutTypeLabel does: a view that was never mounted can still have
+        // left the padding behind if a previous mount was torn down elsewhere.
+        releaseOutTypeSpace(group);
+        final PerfLabel perf = findPerfLabel(group);
+        if (perf == null) {
+            return;
+        }
+        try {
+            group.removeView(perf);
+        } catch (Throwable ignored) {
+            // a container torn down under us is not worth crashing over
+        }
+        // The other out-of-ring views may still be mounted and still need their
+        // strip; the release above cannot tell, so the total is recomputed.
+        reserveOutRingStrip(group);
+    }
+
+    private static void updatePerfLabel(ViewGroup container, PerfLabel perf,
+                                        View host, View anchor) {
+        final TrioAppearance a = TrioConfig.appearance();
+        final TrioState state = stateFor(host);
+        if (state != null) {
+            // Pull the status values in before reading them: this runs from a
+            // posted runnable, but the state snapshot is only as fresh as the
+            // last call to refresh().
+            state.refresh();
+        }
+        final String text = perfText(a);
+        if (text.length() == 0) {
+            // Hidden rather than removed, and the strip handed back: with the
+            // reading gone there is nothing to reserve for, and holding the
+            // space open would leave a hole in the status bar.
+            releaseOutTypeSpace(container);
+            if (perf.getTranslationX() != 0f) {
+                perf.setTranslationX(0f);
+            }
+            if (perf.getVisibility() != View.GONE) {
+                perf.setVisibility(View.GONE);
+            }
+            // The type label and the reading may still be mounted and still need
+            // their strip; the bookkeeping above cannot tell, so it is asked.
+            reserveOutRingStrip(container);
+            return;
+        }
+        if (!text.contentEquals(perf.getText())) {
+            perf.setText(text);
+        }
+        // The out-of-ring type's own size is the base, not a setting of its
+        // own: the readings stand in the same strip as the out-of-ring label
+        // and have to match it, so a separate absolute size could only ever
+        // make them disagree. A pair is scaled down from that base to fit one
+        // icon; see perfTextSize. The one thing layered on top is the user's
+        // overall-size multiplier, which scales whatever the base and the fit
+        // settle on and so cannot break the match either.
+        final float size = perfTextSize(text, container, host);
+        if (perf.getTextSize() != size) {
+            // PX, not the SP that the one-argument overload would use: the
+            // status bar lays out in raw pixels.
+            perf.setTextSize(TypedValue.COMPLEX_UNIT_PX, size);
+        }
+        final Typeface typeface = TrioRenderer.typefaceFor(a.typeWeight);
+        if (perf.getTypeface() != typeface) {
+            perf.setTypeface(typeface);
+        }
+        // A stack of two readings has to fit the row the bar actually gives it,
+        // and it does not at the full line height: the status bar is 88px tall
+        // here and two lines of the shared type size are taller than that. The
+        // glyphs are all digits with no descenders, so the leading is what
+        // gives, down to a floor that still keeps the two lines from touching.
+        final float spacing = perfLineSpacing(perf, text, container);
+        if (perf.getLineSpacingMultiplier() != spacing) {
+            perf.setLineSpacing(0f, spacing);
+        }
+        final int colour = (state != null) ? state.foreground() : 0xFFFFFFFF;
+        if (perf.getCurrentTextColor() != colour) {
+            perf.setTextColor(colour);
+        }
+        if (perf.getVisibility() != View.VISIBLE) {
+            perf.setVisibility(View.VISIBLE);
+        }
+        perf.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        // Measured first: the strip the native row has to give up is this view's
+        // own width plus its gap, and reserveOutRingStrip counts the other
+        // out-of-ring views as well.
+        reserveOutRingStrip(container);
+        placeOutTypeLabel(container, perf, readingAnchorIn(container, anchor));
+        if (debugLog()) {
+            // The break is printed as a slash rather than literally: a raw
+            // newline in the message would split one reading over two logcat
+            // lines and make the numbers hard to line up with the frame they
+            // describe.
+            log(LOG_INFO, "performance: \"" + text.replace(PERF_BREAK, '/') + "\" size=" + size
+                    + " view=" + perf.getWidth() + "x" + perf.getHeight()
+                    + " at " + perf.getLeft() + "," + perf.getTop()
+                    + " anchor=" + anchor.getLeft() + ".." + anchor.getRight()
+                    + " container=" + container.getWidth() + "x" + container.getHeight());
+        }
+    }
+
     /**
      * Puts the label just outside the battery meter, on the side the container
      * reads away from: left of it in LTR, right of it in RTL. This is the gap
@@ -3488,8 +4062,19 @@ final class TrioHooks {
         // that would put the label at the container's far left for one pass. It
         // falls back to the row's edge - where it stood before the reading
         // existed - and the next placement chains it.
-        final boolean chainReading =
+        //
+        // Both of this module's own out-of-ring reading views chain here, not
+        // just the signal. The performance readout stands in the same strip and
+        // is placed before the label, so when the label was asked to chain off
+        // the signal alone it fell through to the icon row while the readout sat
+        // on that very edge: the two were laid out through each other. Naming
+        // the signal on its own line and the readout on another keeps each half
+        // of the test readable; the pair below is what decides.
+        final boolean chainSignal =
                 anchor instanceof OutSignalView && anchor.getWidth() > 0;
+        final boolean chainReadout =
+                anchor instanceof PerfLabel && anchor.getWidth() > 0;
+        final boolean chainReading = chainSignal || chainReadout;
         final int edge;
         if (chainReading) {
             edge = rtl ? anchor.getRight() : anchor.getLeft();
@@ -4008,14 +4593,35 @@ final class TrioHooks {
     }
 
     /**
-     * The view the out-of-ring label stands next to: the SIM reading when it is
-     * mounted, the battery meter otherwise.
+     * The view the out-of-ring label stands next to: the performance readout
+     * when it is mounted, the SIM reading when that is, the battery meter
+     * otherwise.
      *
      * <p>That is MIUI's own reading order - network type, then signal, then
-     * battery - so the label is always the outermost of the two and the two
-     * never claim the same strip.
+     * battery - so each view is always the outermost of the ones below it and no
+     * two ever claim the same strip. The performance readout joined the chain
+     * between the reading and the label, which is why this asks for it first:
+     * the label has to clear the readout as well as the reading.
      */
     private static View labelAnchorIn(ViewGroup container, View meter) {
+        final PerfLabel perf = findPerfLabel(container);
+        if (perf != null && perf.getVisibility() == View.VISIBLE) {
+            return perf;
+        }
+        return readingAnchorIn(container, meter);
+    }
+
+    /**
+     * The view the performance readout stands next to: the SIM reading when it
+     * is mounted, the battery meter otherwise.
+     *
+     * <p>Split out of {@link #labelAnchorIn} rather than written inline because
+     * the two are different questions. The label chains through whatever is
+     * outermost, while the readout has to ignore itself - asking
+     * {@code labelAnchorIn} from inside {@code updatePerfLabel} would hand the
+     * view its own frame as its anchor and it would place itself against itself.
+     */
+    private static View readingAnchorIn(ViewGroup container, View meter) {
         final OutSignalView signal = findOutSignal(container);
         if (signal != null && signal.getVisibility() == View.VISIBLE) {
             return signal;
@@ -4025,16 +4631,19 @@ final class TrioHooks {
 
     /**
      * Gives the native icon row exactly the room the out-of-ring views need: the
-     * reading and the label, plus the gap that separates each from the next
-     * thing. With neither mounted the strip is handed back entirely.
+     * reading, the performance readout and the label, plus the gap that
+     * separates each from the next thing. With none mounted the strip is handed
+     * back entirely.
      *
-     * <p>Both callers use this rather than reserving for themselves, because the
-     * strip is one number: whichever view is updated last would otherwise decide
-     * the padding for both of them.
+     * <p>All three callers use this rather than reserving for themselves, because
+     * the strip is one number: whichever view is updated last would otherwise
+     * decide the padding for all of them.
      */
     private static void reserveOutRingStrip(ViewGroup container) {
         final OutSignalView signal = findOutSignal(container);
         final boolean signalOn = signal != null && signal.getVisibility() == View.VISIBLE;
+        final PerfLabel perf = findPerfLabel(container);
+        final boolean perfOn = perf != null && perf.getVisibility() == View.VISIBLE;
         final OutTypeLabel label = findOutTypeLabel(container);
         final boolean labelOn = label != null && label.getVisibility() == View.VISIBLE;
         // The strip is a single scalar, so each view's facing margin has to be
@@ -4054,6 +4663,14 @@ final class TrioHooks {
         int total = 0;
         if (signalOn) {
             total += signal.getMeasuredWidth() + signalGap;
+        }
+        if (perfOn) {
+            // One width and one gap, because the readout is one view: the power
+            // and the temperature are segments of the same string, so there is
+            // nothing here to chain between them. The gap is the label's own -
+            // the readout is text standing in the label's strip and is spaced
+            // like it, and placeOutTypeLabel is given the same number.
+            total += perf.getMeasuredWidth() + labelInward;
         }
         if (labelOn) {
             // Both of the label's gaps are always drawn, so both are always

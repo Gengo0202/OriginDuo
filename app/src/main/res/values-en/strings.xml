@@ -8,6 +8,7 @@
     <string name="group_colors">Colors</string>
 
     <string name="group_stroke">Stroke</string>
+    <string name="group_scale">Overall size</string>
     <string name="group_text">Text</string>
     <string name="group_type">Network type</string>
     <string name="group_out_signal">Out-of-ring signal</string>
@@ -16,56 +17,70 @@
     <string name="tab_general">General</string>
 
     <string name="master_title">Enable trio icon</string>
-    <string name="master_summary">Master switch. Turn off to restore the stock battery and signal icons.</string>
+    <string name="master_summary">Master switch; turn off to restore the stock battery and signal icons.</string>
 
     <string name="trio_style_title">Trio style</string>
-    <string name="trio_style_summary">Which arrangement to draw. The ring is the default; the rectangular one puts a column of signal dots on each side of the centre and a battery bar across the bottom.</string>
+    <string name="trio_style_summary">The ring is the default; the rectangular one puts a column of signal dots on each side of the centre.</string>
     <string name="trio_style_ring">Ring</string>
     <string name="trio_style_rect">Rectangular</string>
 
     <string name="overlay_title">Draw in its own window</string>
-    <string name="overlay_summary">Draw the glyph in a window of its own, no longer clipped to the status bar\'s own height (about 43dp), so the whole icon can be shown. The lower part of the glyph then hangs outside the status bar background. Turn off to draw inside the bar again.</string>
+    <string name="overlay_summary">Draw in a window of its own, no longer clipped to the status bar\'s height (about 43dp).</string>
 
     <string name="show_wifi_title">Show Wi-Fi arcs</string>
-    <string name="show_wifi_summary">Draw the Wi-Fi arcs; the number of arcs follows the real signal level. Turn off to send the stock Wi-Fi icon back to its usual place in the status bar.</string>
+    <string name="show_wifi_summary">Draw the Wi-Fi arcs; the number of arcs follows the real signal level.</string>
 
     <string name="show_mobile_title">Show mobile dots</string>
-    <string name="show_mobile_summary">Draw four level dots for mobile network signal strength. Turn off to send the stock mobile icon back to its usual place in the status bar.</string>
+    <string name="show_mobile_summary">Draw four level dots for mobile network signal strength.</string>
 
     <string name="dual_sim_title">Dual-SIM signal</string>
-    <string name="dual_sim_summary">Draw two rows of dots instead of one: SIM 1 on top, SIM 2 below. The ring\'s top notch holds one thing at a time, and the order is dual-SIM, then the Wi-Fi arcs, then the in-ring network type - the rows come first and displace the arcs. Only the in-ring charging bolt outranks them, so it must be switched on to take the notch instead. Only applies when both SIMs are present and readable; a single SIM still draws one row for the current data SIM.</string>
+    <string name="dual_sim_summary">Draw two rows of dots instead of one: SIM 1 on top, SIM 2 below. Applies with two SIMs only.</string>
 
     <string name="show_value_title">Show battery number</string>
-    <string name="show_value_summary">Show the battery percentage inside the ring; replaced by a bolt while charging. Turn off to give the charging bolt back to the system as well.</string>
+    <string name="show_value_summary">Show the battery percentage inside the ring; replaced by a bolt while charging.</string>
 
     <string name="show_bolt_title">Bolt while charging</string>
-    <string name="show_bolt_summary">Turn off to drop the bolt from the ring and let the stock charging bolt show next to the battery icon instead.</string>
+    <string name="show_bolt_summary">Turn off to drop the bolt from the ring and keep the system\'s own charging icon.</string>
 
     <string name="show_mobile_type_title">Network type</string>
-    <string name="show_mobile_type_summary">Where to show the network type label: off, inside the ring, or as a separate icon elsewhere in the status bar.</string>
+    <string name="show_mobile_type_summary">Where the network type label goes: off, inside the ring, or drawn separately outside it.</string>
     <string name="mobile_type_off">Off</string>
     <string name="mobile_type_inside">In the ring</string>
     <string name="mobile_type_outside">Outside the ring</string>
 
     <string name="signal_mode_title">Signal position</string>
-    <string name="signal_mode_summary">Where the mobile signal reading lives. Inside the ring keeps the level dots along the bottom of the icon; outside moves it beside the battery icon, in whichever form the switch below selects.</string>
+    <string name="signal_mode_summary">Where the mobile signal reading lives: inside the ring keeps the level dots, outside moves it beside the battery icon.</string>
     <string name="signal_mode_inside">Inside the ring</string>
     <string name="signal_mode_outside">Outside the ring</string>
 
     <string name="stacked_signal_title">Stacked signal</string>
-    <string name="stacked_signal_summary">Draw the reading yourself while it is outside the ring: four bars of increasing height for one SIM, a row of dots below them for the other. With a single SIM, only the bars are drawn. Turned off, the system\'s own mobile signal icon is kept.</string>
+    <string name="stacked_signal_summary">Draw the reading yourself while it is outside the ring: bars for one SIM, dots for the other.</string>
 
     <string name="data_sim_only_title">Data SIM only</string>
-    <string name="data_sim_only_summary">With two SIMs, draw only the reading of the SIM that carries data and leave the other one out. A single SIM, or one whose data SIM cannot be read, is unaffected.</string>
+    <string name="data_sim_only_summary">With two SIMs, draw only the reading of the SIM that carries data.</string>
 
     <string name="out_signal_size_title">Out-of-ring signal size</string>
-    <string name="out_signal_size_summary">Overall height of the out-of-ring reading, in dp, so it converts itself to pixels on any screen density. 15dp is the same height as the status bar\'s own signal icon, and is the default; the slider covers 6–20dp. The same row is drawn at the same size whether or not the dot row follows it, so the two shapes never come out different sizes, and pulling the control centre down does not change it.</string>
+    <string name="out_signal_size_summary">Overall height of the out-of-ring reading, in dp. The default is 15dp - the same height as the status bar\'s own signal icon - and the slider covers 6–20dp. The same row is drawn at the same size whether or not the dot row follows it.</string>
 
     <string name="out_signal_margin_title">Out-of-ring signal gap</string>
-    <string name="out_signal_margin_summary">The gap between the out-of-ring reading and the battery icon, in dp. The default is 2dp and the slider covers 0–16dp. This gap is reserved: widening it moves the reading away from the battery and pushes the native icons over by the same amount, so the reading can never end up on top of them. The reading\'s own height is set by Out-of-ring signal size above; there is no separate position to tune.</string>
+    <string name="out_signal_margin_summary">The gap between the out-of-ring reading and the battery icon, in dp. The default is 2dp and the slider covers 0–16dp. The gap is reserved: widening it pushes the native icons over by the same amount, so the reading can never land on top of them.</string>
+
+    <string name="perf_power_title">Charging power</string>
+    <string name="perf_power_summary">Show the charging power beside the battery icon, from the battery\'s own current and voltage; below 10W one decimal is kept.</string>
+
+    <string name="perf_temp_title">Battery temperature</string>
+    <string name="perf_temp_summary">Show the battery temperature beside the battery icon, in whole degrees Celsius, stacked with the charging power.</string>
+
+    <string name="glyph_scale_title">Overall icon size</string>
+    <string name="glyph_scale_summary">The whole icon as a percentage of the box the status bar gives it; 100%% by default. That box is only about 20dp tall, so the slider can only shrink - 100%% means "as large as the system allows". Every stroke, arc and digit shrinks by the same factor, so the shape is unchanged.</string>
+
+    <string name="perf_scale_title">Overall reading size</string>
+    <string name="perf_scale_summary">The two readings as a percentage on top of their adaptive size; 100%% by default. With one reading on that size is the out-of-ring type size; with both on it has already been brought down to one icon height, and this scales that answer up or down.</string>
+
+    <string name="perf_pair_title">Charging power and battery temperature</string>
 
     <string name="value_centre_title">Centre the percentage</string>
-    <string name="value_centre_summary">Enlarge the percentage into the middle of the ring and always keep it there, freeing the top notch for something else. The notch holds one thing at a time, in the order dual-SIM (if on), then the Wi-Fi arcs, then the in-ring network type; with none of them the ring closes into a full circle. While the in-ring charging bolt is switched on, it takes the notch instead and the arcs are dropped.</string>
+    <string name="value_centre_summary">Enlarge the percentage into the middle of the ring; the top notch goes to dual-SIM, then the Wi-Fi arcs, then the in-ring type.</string>
 
     <string name="color_role_title">State colors</string>
     <string name="color_role_summary">Pick colors for low battery, charging and critical battery.</string>
@@ -92,10 +107,10 @@
 
     <string name="arc_stroke_title">Arc stroke</string>
     <string name="arc_stroke_summary">Stroke width of the Wi-Fi arcs.</string>
-    <string name="arc_stroke_summary_rect">Stroke width of the Wi-Fi arcs, and the vertical position of the group inside the top slot.</string>
+    <string name="arc_stroke_summary_rect">Stroke width of the Wi-Fi arcs, and the height of the group inside the top slot.</string>
 
     <string name="value_size_title">Number size</string>
-    <string name="value_size_summary">Font size of the battery percentage. While the percentage is centred it is enlarged at most 1.4x, so 38 and above no longer grow (the number in the notch still follows this setting).</string>
+    <string name="value_size_summary">Font size of the battery percentage. While centred it is enlarged at most 1.4x, so 38 and above no longer grow.</string>
 
     <string name="value_weight_title">Number weight</string>
     <string name="value_weight_summary">Stroke weight of the battery number, 100 lightest to 900 heaviest.</string>
@@ -104,13 +119,13 @@
     <string name="type_size_summary">Font size of the 3G/4G/5G label in the ring centre.</string>
 
     <string name="out_type_size_title">Out-of-ring type size</string>
-    <string name="out_type_size_summary">Font size of the 3G/4G/5G label shown outside the ring, in the status bar, in dp so it converts itself to pixels on any screen density; the default is 14dp and the slider covers 8–26dp. That label is drawn by the status bar itself, so the matching preview cell here is the only place its size is visible.</string>
+    <string name="out_type_size_summary">Font size of the 3G/4G/5G label shown outside the ring, in dp; the default is 14dp and the slider covers 8–26dp. The preview cell below is its only reference.</string>
 
     <string name="out_type_margin_left_title">Out-of-ring type margin, left</string>
-    <string name="out_type_margin_left_summary">The gap between the out-of-ring network type label and its outer side - the one facing away from the battery - in dp. The default is 2dp and the slider covers 0–16dp. Under an RTL language the whole row mirrors and this margin moves to the other side with it.</string>
+    <string name="out_type_margin_left_summary">The gap between the out-of-ring type label and its outer side, in dp. The default is 2dp and the slider covers 0–16dp. Under RTL the whole row mirrors.</string>
 
     <string name="out_type_margin_right_title">Out-of-ring type margin, right</string>
-    <string name="out_type_margin_right_summary">The gap between the out-of-ring network type label and its inner side - the one facing the battery and the out-of-ring reading - in dp. The default is 2dp and the slider covers 0–16dp. It mirrors under an RTL language too.</string>
+    <string name="out_type_margin_right_summary">The gap between the out-of-ring type label and its inner side, in dp. The default is 2dp and the slider covers 0–16dp. It mirrors under RTL too.</string>
 
     <string name="type_suffix_scale_title">The A in 5GA</string>
     <string name="type_suffix_scale_summary">When the network type ends in an A (such as 5GA), the size of that trailing A as a percentage of the main label\'s, sharing its baseline. The default is 65%% and the slider covers 50–100%%; 100%% stops the shrink. Applies both inside the ring and outside it.</string>

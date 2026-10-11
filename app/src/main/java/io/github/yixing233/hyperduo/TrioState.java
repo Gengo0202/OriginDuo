@@ -76,6 +76,50 @@ final class TrioState {
      */
     static volatile String sMobileType = "";
 
+    /**
+     * Whether an external power source is attached to the phone at all.
+     *
+     * <p>Not the same question as {@code status == CHARGING}: once the battery is
+     * full MIUI flips the status to {@code FULL} and stops pushing current. The
+     * power readout is gated on <em>this</em> flag rather than on the current
+     * being positive, so the segment does not blink out of the status bar at the
+     * moment the battery tops out.
+     */
+    static volatile boolean sChargingAttached = false;
+
+    /**
+     * The power currently going into the battery, in watts, or {@code 0} when
+     * nothing is.
+     *
+     * <p>The battery's own current times its own voltage, not the charger's
+     * negotiated limit - see {@code BatteryPresence.wattsOf}. Never negative: a
+     * phone held at 100 % draws a small backward current, and a negative wattage
+     * in the status bar reads as a defect rather than as "full".
+     *
+     * <p>{@link #POWER_UNKNOWN} is a third answer, and it is not the same as
+     * zero: zero means the battery is genuinely taking no power, while the
+     * sentinel means the platform could not be asked. The readout drops the
+     * segment in both cases rather than printing a confident "0.0W".
+     */
+    static volatile float sChargePowerW = 0f;
+
+    /** No temperature reading has arrived yet; draw nothing rather than "0°". */
+    static final int TEMP_UNKNOWN = Integer.MIN_VALUE;
+
+    /**
+     * The platform would not say how much power is going in; draw nothing
+     * rather than "0.0W".
+     *
+     * <p>Deliberately {@code NaN} so that a comparison against it is written
+     * {@code !=} and reads as "is a reading". A sentinel of {@code 0} could not
+     * be told apart from an honest zero, which is why the power path needed its
+     * own constant instead of reusing the temperature one's meaning.
+     */
+    static final float POWER_UNKNOWN = Float.NaN;
+
+    /** The battery temperature in whole degrees Celsius, or {@link #TEMP_UNKNOWN}. */
+    static volatile int sBatteryTempC = TEMP_UNKNOWN;
+
     /** How many SIM slots the reading covers; SIM 1 and SIM 2. */
     static final int SIM_SLOTS = 2;
 
@@ -235,6 +279,9 @@ final class TrioState {
         wifiPresent = sWifiPresent;
         islandHideBattery = sIslandHideBattery;
         mobileType = sMobileType;
+        // The three battery values are read straight from their statics by the
+        // readout's own refresh path, which runs on the layout pass rather than
+        // on refresh(), so there is nothing to mirror them into here.
 
         final int[] slots = sSlotLevels;
         slotLevels = new int[] { slots[0], slots[1] };
@@ -266,6 +313,9 @@ final class TrioState {
             final Context app = context.getApplicationContext();
             sContext = (app != null) ? app : context;
             WifiPresence.start(sContext);
+            // Same context, same reason: the battery broadcast is not routed
+            // through the hooked views, so it needs a receiver of its own.
+            BatteryPresence.start(sContext);
         } catch (Throwable ignored) {
             // leave it null; the reading stays on the single-row fallback
         }
