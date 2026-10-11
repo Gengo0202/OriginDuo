@@ -72,6 +72,8 @@ class SettingsRepository(context: Context) {
     fun setPerfTemp(value: Boolean) = writeBoolean(Prefs.KEY_PERF_TEMP, value)
     /** Overall size of the two readouts, in percent - see [Prefs.KEY_PERF_SCALE]. */
     fun setPerfScale(value: Int) = writeInt(Prefs.KEY_PERF_SCALE, value)
+    /** Weight of the two readouts - see [Prefs.KEY_PERF_WEIGHT]. */
+    fun setPerfWeight(value: Int) = writeInt(Prefs.KEY_PERF_WEIGHT, value)
 
     // ----------------------------------------------------------------- colours
 
@@ -157,6 +159,7 @@ class SettingsRepository(context: Context) {
             prefs.putBoolean(Prefs.KEY_PERF_POWER, snapshot.perfPower)
             prefs.putBoolean(Prefs.KEY_PERF_TEMP, snapshot.perfTemp)
             prefs.putInt(Prefs.KEY_PERF_SCALE, snapshot.perfScale)
+            prefs.putInt(Prefs.KEY_PERF_WEIGHT, snapshot.perfWeight)
             prefs.putInt(Prefs.KEY_GLYPH_SCALE, snapshot.glyphScale)
 
             prefs.putBoolean(Prefs.KEY_ROLE_COLORS, snapshot.roleColors)

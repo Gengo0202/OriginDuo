@@ -873,29 +873,12 @@ private fun LazyListScope.generalTab(
                 insideMargin = SettingsItemMargin,
                 enabled = a.glyph,
             )
-            // The size of the pair. It is gated on the two switches above rather
-            // than on its own value - the rule the whole screen follows - because
-            // a reading that is not drawn has no size to set, so the row is dead
-            // until one of them comes on. The gate carries a tooltip since
-            // "greyed out because both readouts are off" is a step removed from
-            // what is on screen; the two switches themselves still gate on the
-            // master alone, so neither of them can be locked out.
-            val scaleHint = gateHint(
-                a.glyph to R.string.master_title,
-                a.perfAnywhere() to R.string.perf_pair_title,
-            )
-            TooltipBox(text = scaleHint.orEmpty(), enabled = scaleHint != null) {
-                IntSlider(
-                    value = settings.perfScale,
-                    min = Prefs.MIN_PERF_SCALE,
-                    max = Prefs.MAX_PERF_SCALE,
-                    title = stringResource(R.string.perf_scale_title),
-                    summary = stringResource(R.string.perf_scale_summary),
-                    enabled = a.glyph && a.perfAnywhere(),
-                    valueTextSuffix = "%",
-                    onValueChange = { value -> update { it.setPerfScale(value) } },
-                )
-            }
+            // The readout's own size and weight live on the Geometry page, not
+            // here: they are numbers in the same sense the stroke and type sizes
+            // are, and a page of switches is not where a slider belongs. They sit
+            // under the same 整体尺寸 heading as the glyph's own scale, because
+            // the reading is drawn beside the glyph and the two are adjusted
+            // against each other.
         }
     }
 }
@@ -928,6 +911,42 @@ private fun LazyListScope.geometryTab(
                 valueTextSuffix = "%",
                 onValueChange = { v -> update { it.setGlyphScale(v) } },
             )
+            // The pair's size and weight. Both are gated on the two readout
+            // switches rather than on their own values - the rule the whole
+            // screen follows - because a reading that is not drawn has no size
+            // or weight to set, so the rows are dead until one of the switches
+            // comes on. The gate carries a tooltip since "greyed out because both
+            // readouts are off" is a step removed from what is on screen; the two
+            // switches themselves still gate on the master alone, so neither of
+            // them can be locked out.
+            val perfHint = gateHint(
+                a.glyph to R.string.master_title,
+                a.perfAnywhere() to R.string.perf_pair_title,
+            )
+            TooltipBox(text = perfHint.orEmpty(), enabled = perfHint != null) {
+                IntSlider(
+                    value = settings.perfScale,
+                    min = Prefs.MIN_PERF_SCALE,
+                    max = Prefs.MAX_PERF_SCALE,
+                    title = stringResource(R.string.perf_scale_title),
+                    summary = stringResource(R.string.perf_scale_summary),
+                    enabled = a.glyph && a.perfAnywhere(),
+                    valueTextSuffix = "%",
+                    onValueChange = { value -> update { it.setPerfScale(value) } },
+                )
+            }
+            TooltipBox(text = perfHint.orEmpty(), enabled = perfHint != null) {
+                IntSlider(
+                    value = settings.perfWeight,
+                    min = Prefs.MIN_PERF_WEIGHT,
+                    max = Prefs.MAX_PERF_WEIGHT,
+                    step = WEIGHT_STEP,
+                    title = stringResource(R.string.perf_weight_title),
+                    summary = stringResource(R.string.perf_weight_summary),
+                    enabled = a.glyph && a.perfAnywhere(),
+                    onValueChange = { value -> update { it.setPerfWeight(value) } },
+                )
+            }
         }
     }
     item { SectionTitle(stringResource(R.string.group_stroke)) }

@@ -76,6 +76,8 @@
 
     <string name="perf_scale_title">读数整体尺寸</string>
     <string name="perf_scale_summary">两项读数在自适应大小之上的百分比，默认 100%%。只开一项时是环外类型字号，两项都开时已经自动缩到两行合起来一个图标高，这里再整体放大或缩小。</string>
+    <string name="perf_weight_title">读数字重</string>
+    <string name="perf_weight_summary">两项读数文字的粗细，默认 700，可调 100–900。改粗会让字变高，组合态的自适应字号会跟着重算，两行仍合起来一个图标高。</string>
 
     <string name="perf_pair_title">充电功率与电池温度</string>
 

@@ -3498,6 +3498,20 @@ final class TrioHooks {
     private static final class PerfLabel extends TextView {
         /** The glyph host the ink colour comes from. */
         View host;
+        /**
+         * The weight the current typeface was built from, or -1 before the first
+         * pass.
+         *
+         * <p>Remembered as the number rather than compared as a {@code Typeface},
+         * because {@code Typeface.create} is only documented to answer an equal
+         * face and two weights that map to the same style would compare equal
+         * while still needing no work. It is the fifth thing the re-sync test
+         * asks about: the weight reaches the canvas through the typeface and
+         * through the line height, and on a row where the size is pinned at
+         * {@link #PERF_MIN_SIZE_RATIO} the size term cannot see a weight change
+         * at all - without this the slider would do nothing there.
+         */
+        int weight = -1;
 
         PerfLabel(Context context) {
             super(context);
@@ -3598,11 +3612,22 @@ final class TrioHooks {
         // Reading it here is safe from inside a layout pass: perfLineSpacing
         // only reads the view's paint metrics and the container's height and
         // padding.
+        //
+        // The weight is the fourth term for a sharper version of the same
+        // reason. It reaches the screen through the typeface and through the
+        // line height, and on the rows where the size is pinned at
+        // PERF_MIN_SIZE_RATIO - which is where this device sits by default - a
+        // weight change leaves the size identical, so neither the text nor the
+        // size term would notice it and the slider would appear dead. The
+        // stored number is also what updatePerfLabel gates its setTypeface on,
+        // so the two must be asking about the same value.
+        final int weight = TrioConfig.appearance().perfTypeWeight();
         if (perf.getVisibility() != View.VISIBLE
                 || !text.contentEquals(perf.getText())
                 || perf.getTextSize() != perfTextSize(text, container, host)
                 || perf.getLineSpacingMultiplier()
-                        != perfLineSpacing(perf, text, container)) {
+                        != perfLineSpacing(perf, text, container)
+                || perf.weight != weight) {
             requestPerfSync(container);
             return;
         }
@@ -3737,9 +3762,14 @@ final class TrioHooks {
      *
      * <p>The icon's height is the <em>drawn</em> height, taken from the same
      * fit the glyph is rendered with, so it follows the arrangement and the
-     * ring stroke the way the drawing does. The scaling stops at
-     * {@link #PERF_MIN_SIZE_RATIO}: a host measured before MIUI has settled it
-     * must not be able to shrink the reading past legibility.
+     * ring stroke the way the drawing does. It also carries the glyph's own
+     * overall-size setting: that slider shrinks what is painted inside MIUI's
+     * reserved box without moving the box, so measuring the box alone would
+     * leave the pair sized to an icon that is no longer there - at 60% the
+     * glyph is 36px tall while the stack beside it still laid out for 60px.
+     * The scaling stops at {@link #PERF_MIN_SIZE_RATIO}: a host measured
+     * before MIUI has settled it must not be able to shrink the reading past
+     * legibility.
      *
      * <p>The user's overall-size setting multiplies whatever the rules above
      * settle on, and it is applied to every answer this method can give - the
@@ -3747,7 +3777,15 @@ final class TrioHooks {
      * it only scaled the pair, then with one switch on the slider would move
      * nothing, and turning the second switch on would make the reading jump;
      * applying it last also keeps it a correction on top of the layout rather
-     * than a second opinion about it.
+     * than a second opinion about it. The lone reading is deliberately left out
+     * of the glyph coupling above: it has no icon-height identity to keep, so
+     * following the glyph there would only resize text that already fits.
+     *
+     * <p>The weight comes in through {@link #perfLineHeight} rather than being
+     * a separate step, because the weight is what decides the line height: a
+     * lighter face is shorter, so a heavier setting would overflow the very
+     * identity this method exists to keep. It is the readout's own weight, not
+     * the type label's - see {@link Prefs#KEY_PERF_WEIGHT}.
      */
     private static float perfTextSize(String text, View container, View host) {
         final float base = outTypeSizePx(container);
@@ -3762,13 +3800,70 @@ final class TrioHooks {
             return base * factor;
         }
         final float inkH = a.rect ? TrioGeometry.RECT_INK_H : TrioGeometry.INK_H;
-        final float icon = inkH * fit;
-        final float lineHeight = perfLineHeight(base, a.typeWeight);
+        final float icon = inkH * fit * a.glyphFit();
+        final float lineHeight = perfLineHeight(base, a.perfTypeWeight());
         if (lineHeight <= 0f) {
             return base * factor;
         }
         final float size = base * (icon / lines) / lineHeight;
         return Math.max(base * PERF_MIN_SIZE_RATIO, Math.min(base, size)) * factor;
+    }
+
+    /**
+     * The width the readout is laid out at - deliberately not the width of the
+     * text currently in it.
+     *
+     * <p>Roboto's figures are proportional, so a reading's width follows its
+     * digits: {@code 0.0W} is wider than {@code 6.1W}, and on this device that
+     * was 102px against 92px. The strip the native icons give up is measured
+     * from this view, and MIUI takes it with {@code setPadding}, so a live width
+     * meant every power update - about once a second while charging - re-padded
+     * the icon row and shoved every native icon on that side of the bar. The
+     * strip has to be a function of what the readout <em>is</em>, not of what it
+     * currently says.
+     *
+     * <p>So the width is taken from the widest form the current text could take:
+     * every digit replaced by the widest digit this face has. Only the number of
+     * digits is left - {@code 9.9W} to {@code 10W} still changes the reserve
+     * once, which is a step and not a flicker.
+     *
+     * <p>Measuring through the paint rather than by laying the view out with a
+     * probe string is what keeps this off the layout path, at the cost of
+     * leaving the letter spacing out. That makes the answer a few pixels wide of
+     * the drawn text at the shipped -0.04em, which is the safe direction: the
+     * reserve may be a hair generous, and it must never be short.
+     */
+    private static int perfWidth(PerfLabel perf, String text) {
+        final Paint paint = perf.getPaint();
+        if (paint == null || text.length() == 0) {
+            return perf.getMeasuredWidth();
+        }
+        // Asked of the face rather than assumed: the widest digit is not the
+        // same at every weight, and a wrong guess would leave the reserve short.
+        char widest = '0';
+        float best = -1f;
+        for (char c = '0'; c <= '9'; c++) {
+            final float w = paint.measureText(String.valueOf(c));
+            if (w > best) {
+                best = w;
+                widest = c;
+            }
+        }
+        // Per line, and the widest one wins. Measuring the whole string in one
+        // call would add the two lines together - the break is just a character
+        // to the paint - and reserve the reading at twice its real width.
+        final StringBuilder probe = new StringBuilder(text.length());
+        float width = 0f;
+        for (int i = 0; i <= text.length(); i++) {
+            if (i == text.length() || text.charAt(i) == PERF_BREAK) {
+                width = Math.max(width, paint.measureText(probe.toString()));
+                probe.setLength(0);
+                continue;
+            }
+            final char c = text.charAt(i);
+            probe.append(c >= '0' && c <= '9' ? widest : c);
+        }
+        return (int) Math.ceil(width);
     }
 
     /**
@@ -3943,9 +4038,17 @@ final class TrioHooks {
             // status bar lays out in raw pixels.
             perf.setTextSize(TypedValue.COMPLEX_UNIT_PX, size);
         }
-        final Typeface typeface = TrioRenderer.typefaceFor(a.typeWeight);
-        if (perf.getTypeface() != typeface) {
-            perf.setTypeface(typeface);
+        // The readout's own weight, not the type label's: this view is status-bar
+        // text standing beside MIUI's figures, while the type weight also feeds
+        // the label drawn inside the ring. Recorded as the number so the re-sync
+        // test can ask the same question, and compared that way rather than by
+        // Typeface identity - Typeface.create is only documented to answer an
+        // equal face, so an identity compare could either miss a real change or
+        // re-set the same face on every pass.
+        final int weight = a.perfTypeWeight();
+        if (perf.weight != weight) {
+            perf.setTypeface(TrioRenderer.typefaceFor(weight));
+            perf.weight = weight;
         }
         // A stack of two readings has to fit the row the bar actually gives it,
         // and it does not at the full line height: the status bar is 88px tall
@@ -4670,7 +4773,15 @@ final class TrioHooks {
             // nothing here to chain between them. The gap is the label's own -
             // the readout is text standing in the label's strip and is spaced
             // like it, and placeOutTypeLabel is given the same number.
-            total += perf.getMeasuredWidth() + labelInward;
+            //
+            // The width is perfWidth's, not getMeasuredWidth's. This scalar is
+            // what MIUI is told to give up, through setPadding on the icon row,
+            // so measuring the live text here made the whole strip - and every
+            // native icon on this side of the bar - move whenever a digit
+            // changed. perfWidth answers for the widest form the text could
+            // take, so the same reading reserves the same strip while its value
+            // drifts inside that form.
+            total += perfWidth(perf, perf.getText().toString()) + labelInward;
         }
         if (labelOn) {
             // Both of the label's gaps are always drawn, so both are always

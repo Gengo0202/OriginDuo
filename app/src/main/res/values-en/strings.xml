@@ -76,6 +76,8 @@
 
     <string name="perf_scale_title">Overall reading size</string>
     <string name="perf_scale_summary">The two readings as a percentage on top of their adaptive size; 100%% by default. With one reading on that size is the out-of-ring type size; with both on it has already been brought down to one icon height, and this scales that answer up or down.</string>
+    <string name="perf_weight_title">Reading weight</string>
+    <string name="perf_weight_summary">How heavy the two readings are drawn; 700 by default, 100-900. A heavier face is taller, so the combined size is worked out again to keep the two lines inside one icon height.</string>
 
     <string name="perf_pair_title">Charging power and battery temperature</string>
 

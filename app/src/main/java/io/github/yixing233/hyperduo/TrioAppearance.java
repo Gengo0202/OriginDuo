@@ -98,6 +98,15 @@ public final class TrioAppearance {
      */
     public final int perfScale;
     /**
+     * How heavy the two readouts are drawn, on the platform's 100..900 scale.
+     *
+     * <p>A setting of its own rather than a second reader of {@link #typeWeight}:
+     * the readout is status-bar text beside MIUI's own figures, and the type
+     * weight also drives the label drawn inside the ring. Kept here with the rest
+     * so the hooked side asks one object for both the size and the weight.
+     */
+    public final int perfWeight;
+    /**
      * Overall size of the glyph, in percent of the fit the host box implies.
      *
      * <p>Shrink-only, so 100 is the largest value this can hold and the shipped
@@ -162,6 +171,7 @@ public final class TrioAppearance {
         perfPower = c.perfPower;
         perfTemp = c.perfTemp;
         perfScale = c.perfScale;
+        perfWeight = c.perfWeight;
         glyphScale = c.glyphScale;
 
         roleColors = c.roleColors;
@@ -348,6 +358,18 @@ public final class TrioAppearance {
     /** The same, for the reading: {@code perfScale} as a multiplier. */
     public float perfFit() {
         return Prefs.clamp(perfScale, Prefs.MIN_PERF_SCALE, Prefs.MAX_PERF_SCALE) / 100f;
+    }
+
+    /**
+     * The weight the two readouts are drawn at, from {@link #perfWeight}.
+     *
+     * <p>Stated here for the same reason {@link #glyphFit} is: the broadcast path
+     * builds an appearance from extras, and this is the one place a bad weight
+     * would reach the typeface. Not a second reader of {@link #typeWeight} - the
+     * readout is status-bar text and the type weight also feeds the in-ring label.
+     */
+    public int perfTypeWeight() {
+        return Prefs.clamp(perfWeight, Prefs.MIN_PERF_WEIGHT, Prefs.MAX_PERF_WEIGHT);
     }
 
     /** The ring arrangement's slot assignment for one frame. */

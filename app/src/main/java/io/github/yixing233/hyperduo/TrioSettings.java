@@ -182,6 +182,17 @@ public final class TrioSettings {
      */
     public int perfScale;
     /**
+     * How heavy the two readouts are drawn, on the 100..900 scale the platform's
+     * own typeface weights use. 700 is the shipped bold.
+     *
+     * <p>Not a second reader of {@code typeWeight}: the readout is status-bar text
+     * standing next to MIUI's own figures, while {@code typeWeight} also drives
+     * the label drawn inside the ring, and the two want different answers. It is
+     * also a layout input - the line height is measured from the weight - so
+     * changing it re-runs the pair's fit.
+     */
+    public int perfWeight;
+    /**
      * Overall size of the trio glyph, as a percentage of the fit the host box
      * implies. Shrink-only; see {@link Prefs#KEY_GLYPH_SCALE}.
      */
@@ -208,6 +219,7 @@ public final class TrioSettings {
         s.perfPower = Prefs.DEF_PERF_POWER;
         s.perfTemp = Prefs.DEF_PERF_TEMP;
         s.perfScale = Prefs.DEF_PERF_SCALE;
+        s.perfWeight = Prefs.DEF_PERF_WEIGHT;
         s.glyphScale = Prefs.DEF_GLYPH_SCALE;
 
         s.roleColors = Prefs.DEF_ROLE_COLORS;
@@ -282,6 +294,9 @@ public final class TrioSettings {
         s.perfScale = Prefs.clamp(
                 p.getInt(Prefs.KEY_PERF_SCALE, Prefs.DEF_PERF_SCALE),
                 Prefs.MIN_PERF_SCALE, Prefs.MAX_PERF_SCALE);
+        s.perfWeight = Prefs.clamp(
+                p.getInt(Prefs.KEY_PERF_WEIGHT, Prefs.DEF_PERF_WEIGHT),
+                Prefs.MIN_PERF_WEIGHT, Prefs.MAX_PERF_WEIGHT);
         s.glyphScale = Prefs.clamp(
                 p.getInt(Prefs.KEY_GLYPH_SCALE, Prefs.DEF_GLYPH_SCALE),
                 Prefs.MIN_GLYPH_SCALE, Prefs.MAX_GLYPH_SCALE);
@@ -435,6 +450,7 @@ public final class TrioSettings {
         s.perfPower = perfPower;
         s.perfTemp = perfTemp;
         s.perfScale = perfScale;
+        s.perfWeight = perfWeight;
         s.glyphScale = glyphScale;
 
         s.roleColors = roleColors;
@@ -498,6 +514,7 @@ public final class TrioSettings {
             case Prefs.KEY_PERF_POWER: perfPower = src.perfPower; return true;
             case Prefs.KEY_PERF_TEMP: perfTemp = src.perfTemp; return true;
             case Prefs.KEY_PERF_SCALE: perfScale = src.perfScale; return true;
+        case Prefs.KEY_PERF_WEIGHT: perfWeight = src.perfWeight; return true;
             case Prefs.KEY_GLYPH_SCALE: glyphScale = src.glyphScale; return true;
             case Prefs.KEY_ROLE_COLORS: roleColors = src.roleColors; return true;
             case Prefs.KEY_COLOR_CRITICAL_ON_DARK: criticalOnDark = src.criticalOnDark; return true;
@@ -560,6 +577,9 @@ public final class TrioSettings {
         s.perfScale = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_PERF_SCALE, Prefs.DEF_PERF_SCALE),
                 Prefs.MIN_PERF_SCALE, Prefs.MAX_PERF_SCALE);
+        s.perfWeight = Prefs.clamp(
+                bundle.getInt(Prefs.KEY_PERF_WEIGHT, Prefs.DEF_PERF_WEIGHT),
+                Prefs.MIN_PERF_WEIGHT, Prefs.MAX_PERF_WEIGHT);
         s.glyphScale = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_GLYPH_SCALE, Prefs.DEF_GLYPH_SCALE),
                 Prefs.MIN_GLYPH_SCALE, Prefs.MAX_GLYPH_SCALE);
@@ -662,6 +682,7 @@ public final class TrioSettings {
         b.putBoolean(Prefs.KEY_PERF_POWER, perfPower);
         b.putBoolean(Prefs.KEY_PERF_TEMP, perfTemp);
         b.putInt(Prefs.KEY_PERF_SCALE, perfScale);
+        b.putInt(Prefs.KEY_PERF_WEIGHT, perfWeight);
         b.putInt(Prefs.KEY_GLYPH_SCALE, glyphScale);
 
         b.putBoolean(Prefs.KEY_ROLE_COLORS, roleColors);
@@ -742,6 +763,11 @@ public final class TrioSettings {
                 // see, no recomposition would be scheduled, and the row would go
                 // on showing the value it had.
                 && perfScale == s.perfScale
+                // The readout's weight is a stored setting too, and issue 25
+                // applies to it exactly as it does to the size above: the slider
+                // has to be able to see its own write, or the row snaps back to
+                // the old number on the next recomposition.
+                && perfWeight == s.perfWeight
                 && glyphScale == s.glyphScale
                 && roleColors == s.roleColors
                 && criticalOnDark == s.criticalOnDark
@@ -777,6 +803,7 @@ public final class TrioSettings {
         h = h * 31 + (perfPower ? 1 : 0);
         h = h * 31 + (perfTemp ? 1 : 0);
         h = h * 31 + perfScale;
+        h = h * 31 + perfWeight;
         h = h * 31 + glyphScale;
         return h != 0 ? h : 1;
     }

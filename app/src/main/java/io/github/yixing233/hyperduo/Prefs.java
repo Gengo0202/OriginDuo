@@ -254,6 +254,23 @@ public final class Prefs {
      * <p>A brand-new key with a brand-new name.
      */
     public static final String KEY_PERF_SCALE = "perf_scale_pct";
+    /**
+     * How heavy the two performance readouts are drawn, on the same 100..900
+     * scale {@link #KEY_TYPE_WEIGHT} uses.
+     *
+     * <p>A key of its own rather than a second reader of {@code type_weight}:
+     * the readout stands in the status bar next to MIUI's own text, while the
+     * network type it borrows its size from is also drawn inside the ring, and
+     * the two want different answers - the ring's label is artwork and the
+     * strip's is text at 43dp. Sharing one key is exactly what this key fixes,
+     * the same reasoning {@link #KEY_OUT_TYPE_SIZE_DP} records for size.
+     *
+     * <p>The weight also decides the line height - see the {@code PERF_}-weight
+     * path in {@code TrioHooks} - so it is a layout input as well as a look.
+     *
+     * <p>A brand-new key with a brand-new name.
+     */
+    public static final String KEY_PERF_WEIGHT = "perf_weight";
 
     public static final String KEY_ROLE_COLORS = "role_colors";
     public static final String KEY_COLOR_CRITICAL_ON_DARK = "color_critical_on_dark";
@@ -495,6 +512,13 @@ public final class Prefs {
      * so the shipped state is that answer unscaled.
      */
     public static final int DEF_PERF_SCALE = 100;
+    /**
+     * 700 = {@code Typeface.BOLD} at the platform's own mapping, the weight the
+     * reference status bar draws its figures at, and the same default the type
+     * label uses. The readout borrows the label's look, so it borrows its
+     * default too.
+     */
+    public static final int DEF_PERF_WEIGHT = 700;
 
     /**
      * Off by default: the shipped look draws one row of dots for the current data
@@ -681,6 +705,17 @@ public final class Prefs {
      */
     public static final int MIN_PERF_SCALE = 60;
     public static final int MAX_PERF_SCALE = 150;
+    /**
+     * The performance readout's weight span, matching the type label's.
+     *
+     * <p>100..900 is the range {@code Typeface.create(base, weight, false)}
+     * understands on every API this module runs on; the two ends are the
+     * platform's thinnest and heaviest. The readout is two lines at 43dp, so a
+     * user can take it lighter than the reference's bold when the strip is
+     * crowded, which is the reason the setting exists at all.
+     */
+    public static final int MIN_PERF_WEIGHT = 100;
+    public static final int MAX_PERF_WEIGHT = 900;
     public static final int MIN_LOW_THRESHOLD = 5;
     public static final int MAX_LOW_THRESHOLD = 50;
 

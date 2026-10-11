@@ -26,17 +26,90 @@ if(!$perfLineHeight){throw 'Production perfLineHeight missing'}
 $outTypeSizePx=[regex]::Match($hooks,'(?s)private static float outTypeSizePx\(View container\) \{.*?\n    \}').Value
 if(!$outTypeSizePx){throw 'Production outTypeSizePx missing'}
 
+# The reserve width. It is the fix for the icon row that used to step sideways
+# every time the wattage changed: the strip MIUI is asked to give up is one
+# scalar for every reading view and it arrives through setPadding, so measuring
+# the live text made the whole row move with the digits. Spliced, not restated -
+# the answer this function gives is the thing under test.
+$perfWidth=[regex]::Match($hooks,'(?s)private static int perfWidth\(PerfLabel perf, String text\) \{.*?\n    \}').Value
+if(!$perfWidth){throw 'Production perfWidth missing'}
+
 # The overall-size multiplier, spliced rather than restated. A probe that wrote
 # its own `perfScale / 100f` would keep passing if production's clamp were
 # dropped or its scale factor changed, and the multiplier is the whole point of
 # this round. The three bounds come from Prefs for the same reason.
 $perfFit=[regex]::Match($appear,'(?s)public float perfFit\(\) \{.*?\n    \}').Value
 if(!$perfFit){throw 'Production perfFit missing'}
+# The glyph's own multiplier, for the same reason: the reading is sized to the
+# height the glyph is actually painted at, and that height shrinks with the
+# glyph slider. Restating `glyphScale / 100f` here would leave the coupling
+# untested the moment production's clamp or divisor moved.
+$glyphFit=[regex]::Match($appear,'(?s)public float glyphFit\(\) \{.*?\n    \}').Value
+if(!$glyphFit){throw 'Production glyphFit missing'}
+# The readout's own weight, spliced for the same reason as the multipliers: the
+# reading stopped following the type label's weight when it got a slider of its
+# own, and perfLineHeight takes the weight as an argument because the weight is
+# what decides the line height. Restating the clamp here would let the probe
+# keep passing after the bounds moved, and passing the label's weight instead
+# would measure a face the reading is not drawn in.
+$perfTypeWeight=[regex]::Match($appear,'(?s)public int perfTypeWeight\(\) \{.*?\n    \}').Value
+if(!$perfTypeWeight){throw 'Production perfTypeWeight missing'}
 $clamp=[regex]::Match($prefs,'(?s)static int clamp\(int value, int min, int max\) \{.*?\n    \}').Value
 if(!$clamp){throw 'Production Prefs.clamp missing'}
 $minPerfScale=[regex]::Match($prefs,'static final int MIN_PERF_SCALE = ([0-9]+);').Groups[1].Value
 $maxPerfScale=[regex]::Match($prefs,'static final int MAX_PERF_SCALE = ([0-9]+);').Groups[1].Value
+$minGlyphScale=[regex]::Match($prefs,'static final int MIN_GLYPH_SCALE = ([0-9]+);').Groups[1].Value
+$maxGlyphScale=[regex]::Match($prefs,'static final int MAX_GLYPH_SCALE = ([0-9]+);').Groups[1].Value
+$minPerfWeight=[regex]::Match($prefs,'static final int MIN_PERF_WEIGHT = ([0-9]+);').Groups[1].Value
+$maxPerfWeight=[regex]::Match($prefs,'static final int MAX_PERF_WEIGHT = ([0-9]+);').Groups[1].Value
+$defPerfWeight=[regex]::Match($prefs,'static final int DEF_PERF_WEIGHT = ([0-9]+);').Groups[1].Value
 if(!$minPerfScale -or !$maxPerfScale){throw 'could not read the perf-scale bounds from Prefs'}
+if(!$minGlyphScale -or !$maxGlyphScale){throw 'could not read the glyph-scale bounds from Prefs'}
+if(!$minPerfWeight -or !$maxPerfWeight -or !$defPerfWeight){throw 'could not read the perf-weight bounds from Prefs'}
+
+# The weight the readout is drawn at reaching production's own call sites. The
+# desktop face cannot see a weight at all (AWT answers identical metrics for
+# plain and bold), so a metric assertion can never catch the readout being drawn
+# at the type label's weight instead of its own - which is exactly what it did
+# before the slider existed. These patterns are the lock instead.
+foreach($needle in @(
+    'perfLineHeight\(base, a\.perfTypeWeight\(\)\)',
+    'perf\.setTypeface\(TrioRenderer\.typefaceFor\(weight\)\)',
+    'perf\.weight != weight',
+    'perf\.weight = weight'
+)){
+    if(-not [regex]::IsMatch($hooks, $needle)){throw "production is missing: $needle"}
+}
+# ...and the reading must NOT be built from the type label's weight, which is the
+# regression the splice above exists to prevent.
+if([regex]::IsMatch($hooks, 'final int weight = a\.typeWeight;')){throw 'the readout still follows the type label weight'}
+if([regex]::IsMatch($hooks, 'perfLineHeight\([^)]*a\.typeWeight\)')){throw 'the readout line height still follows the type label weight'}
+# The re-sync test has to ask about the weight too, or the slider does nothing on
+# the rows where the size is pinned at the floor - a weight change leaves the
+# size identical there, so no other term can see it.
+$resync=[regex]::Match($hooks,'(?s)if \(perf\.getVisibility\(\) != View\.VISIBLE.*?requestPerfSync\(container\);').Value
+if(-not $resync){throw 'could not read the re-sync test out of TrioHooks'}
+foreach($term in @('perf\.getVisibility\(\)','contentEquals','getTextSize','getLineSpacingMultiplier','perf\.weight != weight')){
+    if(-not [regex]::IsMatch($resync, $term)){throw "the re-sync test does not ask about: $term"}
+}
+
+# The reserved strip must not be measured off the live text. It is what MIUI is
+# told to give up, through setPadding, so a width that follows the digits
+# re-pads the icon row and shoves every native icon on that side of the bar
+# whenever the reading changes - about once a second while charging. perfWidth
+# answers for the widest form the text could take instead. The strip is the only
+# consumer, so the lock is on that call site.
+$strip=[regex]::Match($hooks,'(?s)if \(perfOn\) \{.*?\n        \}').Value
+if(-not $strip){throw 'could not read the reading branch out of reserveOutRingStrip'}
+if(-not [regex]::IsMatch($strip,'perfWidth\(perf,')){throw 'the reserved strip is not measured through perfWidth'}
+if([regex]::IsMatch($strip,'perf\.getMeasuredWidth\(\)')){throw 'the reserved strip still follows the live text width'}
+# perfWidth itself must widen every digit and split on the line break: measuring
+# the whole string in one call adds the two lines together and reserves the
+# reading at twice its real width.
+if(-not [regex]::IsMatch($hooks,'(?s)private static int perfWidth\(PerfLabel perf, String text\) \{.*?\n    \}')){throw 'Production perfWidth missing'}
+$widthBody=[regex]::Match($hooks,'(?s)private static int perfWidth\(PerfLabel perf, String text\) \{.*?\n    \}').Value
+if(-not [regex]::IsMatch($widthBody,'PERF_BREAK')){throw 'perfWidth does not split on the line break'}
+if(-not [regex]::IsMatch($widthBody,'c >= .0. && c <= .9.')){throw 'perfWidth does not widen the digits'}
 
 # The renderer's four measurement methods, so the probe measures with the same
 # arithmetic the glyph is drawn with rather than with a re-implementation.
@@ -169,6 +242,49 @@ public class Paint {
         return out;
     }
 
+    /**
+     * Summed per character, the way the desktop shims do it, and scaled from
+     * REFERENCE for the same reason the metrics are.
+     *
+     * <p>Note for the digit cases below: on this face every digit is exactly
+     * 556/1000 wide (measured), so replacing a digit with the widest digit is a
+     * no-op here and could not be observed through it. The checks that the
+     * substitution really happens therefore use a face whose digits differ,
+     * which is what a real status-bar face does; this one stays faithful to AWT
+     * so the line height and spacing cases keep measuring real metrics.
+     */
+    public float measureText(String text) {
+        if (text == null || text.length() == 0) {
+            return 0f;
+        }
+        java.awt.Canvas probe = new java.awt.Canvas();
+        java.awt.FontMetrics fm = probe.getFontMetrics(font());
+        float total = 0f;
+        for (int i = 0; i < text.length(); i++) {
+            final char c = text.charAt(i);
+            if (digitWidths != null && c >= '0' && c <= '9') {
+                total += digitWidths[c - '0'];
+            } else {
+                total += fm.charWidth(c);
+            }
+        }
+        return total * (textSize / REFERENCE);
+    }
+
+    private float[] digitWidths;
+
+    /**
+     * Test hook: per-digit widths at REFERENCE, or null to measure the real
+     * face. The wide-awake status-bar faces draw their digits at different
+     * widths - the device log shows "0.0W" at 102px and "6.1W" at 92px, same
+     * character count - and that difference is the whole reason the reserve
+     * used to step sideways. AWT's SansSerif gives all ten digits the same 556,
+     * so the substitution perfWidth makes is unobservable through it; setting a
+     * table here is what lets the cases below see it. Left null everywhere else
+     * so the line-height and spacing cases still measure real metrics.
+     */
+    public void setDigitWidths(float[] widths) { digitWidths = widths; }
+
     /** Font size the metrics are measured at, before scaling to textSize. */
     private static final float REFERENCE = 1000f;
 }
@@ -197,6 +313,8 @@ public class View {
     public int getPaddingBottom() { return paddingBottom; }
 
     public Resources getResources() { return resources; }
+
+    public int getMeasuredWidth() { return width; }
 
     public void setSize(int w, int h) { width = w; height = h; }
 
@@ -270,10 +388,14 @@ final class TrioGeometry {
 Emit 'io/github/yixing233/hyperduo/Prefs.java' @"
 package io.github.yixing233.hyperduo;
 
-/** The two bounds the fit multiplier clamps itself to, read from the real Prefs. */
+/** The bounds the two fit multipliers and the weight clamp themselves to, read from the real Prefs. */
 final class Prefs {
     static final int MIN_PERF_SCALE = $minPerfScale;
     static final int MAX_PERF_SCALE = $maxPerfScale;
+    static final int MIN_GLYPH_SCALE = $minGlyphScale;
+    static final int MAX_GLYPH_SCALE = $maxGlyphScale;
+    static final int MIN_PERF_WEIGHT = $minPerfWeight;
+    static final int MAX_PERF_WEIGHT = $maxPerfWeight;
 
     $clamp
 }
@@ -282,14 +404,18 @@ final class Prefs {
 Emit 'io/github/yixing233/hyperduo/TrioAppearance.java' @"
 package io.github.yixing233.hyperduo;
 
-/** Only the fields the size fit reads, plus the real multiplier. */
+/** Only the fields the size fit reads, plus the real accessors. */
 final class TrioAppearance {
     boolean rect;
     int typeWeight = 400;
     int outTypeSize = 14;
     int perfScale = 100;
+    int glyphScale = 100;
+    int perfWeight = $defPerfWeight;
 
+    $glyphFit
     $perfFit
+    $perfTypeWeight
 }
 "@
 
@@ -347,7 +473,13 @@ public class PerfLayoutTest {
 
     $perfLineSpacing
 
+    $perfWidth
+
     $outTypeSizePx
+
+    /** Stands in for TrioHooks.PerfLabel: a text view with a frame and a paint. */
+    static final class PerfLabel extends TextView {
+    }
 
     static int checks;
 
@@ -600,7 +732,153 @@ public class PerfLayoutTest {
         eq("and 100 restores the unscaled answer, so the shipped look is the default",
                 perfTextSize(pair, container, sized), size);
 
-        System.out.println("PASS: " + checks + " cases over perfTextSize, perfLineSpacing and inkScale");
+        // ---- the pair is sized to the icon that is actually painted. The glyph
+        // slider shrinks what is drawn inside MIUI's reserved box without moving
+        // the box, so a fit measured off the box alone would keep the stack at
+        // the height of an icon that is no longer there. These cases pin the
+        // coupling; the slider's own bounds are read from Prefs above.
+        //
+        // The host is chosen so that BOTH readings land between the floor and the
+        // base size. That window is narrow and it is why the case uses 10% rather
+        // than the whole span: at two lines the fit is `base * (icon / 2) / line`
+        // clamped to [0.6 * base, base], so a host that is unclamped at 100% is
+        // already on the floor by 60% - the floor is absolute and does not shrink
+        // with the glyph, so the full span is not linearly observable. What is
+        // observable is the ratio wherever neither clamp is in play.
+        TrioConfig.appearance().glyphScale = 100;
+        final float pairFull = perfTextSize(pair, container, box(1000, 90));
+        ok("the coupling case really is off both clamps",
+                pairFull < base && pairFull > base * PERF_MIN_SIZE_RATIO);
+        TrioConfig.appearance().glyphScale = 90;
+        final float pairNine = perfTextSize(pair, container, box(1000, 90));
+        close("shrinking the glyph shrinks the pair by the same factor",
+                pairNine, pairFull * 0.9f, 0.05f);
+        // Not merely a lower answer: the pair tracks the icon that is painted, so
+        // a host that draws the same icon asks for the same text size. The drawn
+        // height is taken from the renderer's own fit and the geometry constants
+        // rather than from perfTextSize, so this compares two hosts instead of
+        // restating the formula the size is computed from.
+        final float drawnNine = Math.round(TrioGeometry.INK_H * TrioRenderer.inkScale(1000, 90, false) * 0.9f);
+        TrioConfig.appearance().glyphScale = 100;
+        close("a host drawing the same icon at 100% agrees",
+                perfTextSize(pair, container, box(1000, (int) drawnNine)), pairNine, 0.05f);
+        TrioConfig.appearance().glyphScale = 90;
+        TrioConfig.appearance().glyphScale = Prefs.MIN_GLYPH_SCALE;
+        final float pairSmall = perfTextSize(pair, container, box(1000, 90));
+        ok("and at the smallest glyph the pair is smaller still", pairSmall < pairNine);
+        // The legibility floor is absolute: it is about the text being readable,
+        // not about how big the icon is, so it does not shrink with the glyph.
+        // A row this small is already on the floor at either setting, which is
+        // the documented trade - legibility wins over matching the icon.
+        final float flooredSmall = perfTextSize(pair, container, box(10, 10));
+        TrioConfig.appearance().glyphScale = 100;
+        close("the legibility floor does not shrink with the glyph",
+                flooredSmall, perfTextSize(pair, container, box(10, 10)), 0.001f);
+        // A lone reading is deliberately left out of the coupling: it has no
+        // icon-height identity to keep and already fits, so it stays at the
+        // out-of-ring type size whatever the glyph slider says.
+        TrioConfig.appearance().glyphScale = Prefs.MIN_GLYPH_SCALE;
+        eq("a lone reading ignores the glyph slider",
+                perfTextSize(single, container, sized), base);
+        TrioConfig.appearance().glyphScale = 100;
+
+        // ---- the readout's own weight. The desktop face is the reason this
+        // section is nearly all clamps: AWT answers byte-identical metrics for
+        // plain and bold (asc=1006 desc=220 at 1000pt), so no measurement here
+        // can tell one weight from another and a metric assertion would pass
+        // whatever the reading was drawn at. What IS observable is the accessor
+        // production feeds to perfLineHeight and to the typeface, so the clamp
+        // is pinned through it; the wiring itself is pinned by the source
+        // contracts run above, which is the only place it can be pinned at all.
+        TrioConfig.appearance().perfWeight = $defPerfWeight;
+        eq("the default weight is the readout's own default",
+                TrioConfig.appearance().perfTypeWeight(), $defPerfWeight);
+        TrioConfig.appearance().perfWeight = 1000;
+        eq("a weight over the ceiling clamps to it",
+                TrioConfig.appearance().perfTypeWeight(), $maxPerfWeight);
+        TrioConfig.appearance().perfWeight = 0;
+        eq("a weight under the floor clamps to it",
+                TrioConfig.appearance().perfTypeWeight(), $minPerfWeight);
+        // The stored number is clamped on read, but the broadcast path builds an
+        // appearance straight from extras and this number reaches the canvas.
+        // Both bounds are read out of Prefs, so moving one is an explicit change.
+        eq("the weight ceilings agree with the nine-step range",
+                $maxPerfWeight - $minPerfWeight, 800);
+        TrioConfig.appearance().perfWeight = 700;
+        // A weight change must not move the size on a row where the floor is
+        // already biting: the floor is absolute, so the answer is the same
+        // whatever the face. This is the documented trade and it is also why the
+        // weight needed its own term in the re-sync test.
+        close("the floor does not move with the weight",
+                perfTextSize(pair, container, box(10, 10)), base * PERF_MIN_SIZE_RATIO * 1f, 0.001f);
+
+        // ---- the reserved strip. This is the fix for the icon row that stepped
+        // sideways whenever the wattage changed: the strip MIUI is asked to give
+        // up is one scalar shared by every view in it and it arrives through
+        // setPadding, so measuring the live text moved the whole row with the
+        // digits - about once a second while charging. What is pinned here is
+        // that the answer is a function of what the reading IS (its widest
+        // possible form) and not of what it happens to say right now.
+        final PerfLabel label = new PerfLabel();
+        label.getPaint().setTextSize(base);
+        label.setSize(77, 40);
+
+        // The digits are given distinct widths. AWT's SansSerif gives all ten
+        // digits the same 556, which would make the substitution invisible:
+        // with equal digits "0.0W" and "6.1W" reserve the same width whether or
+        // not the widest digit was substituted, so the equality below would hold
+        // for the wrong reason. Real status-bar faces are proportional - the
+        // device log shows "0.0W" at 102px against "6.1W" at 92px - and this
+        // table stands in for that.
+        final float[] widths = new float[10];
+        for (int d = 0; d < 10; d++) { widths[d] = 500f; }
+        widths[4] = 900f;
+        widths[6] = 600f;
+        widths[1] = 520f;
+        label.getPaint().setDigitWidths(widths);
+
+        ok("the reserve is wider than the literal, so the substitution is observable",
+                perfWidth(label, "0.0W") > (int) Math.ceil(label.getPaint().measureText("0.0W")));
+        eq("every digit is measured at the widest one",
+                perfWidth(label, "0.0W"), perfWidth(label, "4.4W"));
+        eq("so two different wattages reserve the same strip",
+                perfWidth(label, "0.0W"), perfWidth(label, "6.1W"));
+        final int widened = (int) Math.ceil(label.getPaint().measureText("4.4W"));
+        eq("and the answer is the ceiling of that widened width",
+                perfWidth(label, "0.0W"), widened);
+        ok("the widened width is not a whole number, so rounding up is observable",
+                label.getPaint().measureText("4.4W") != widened);
+        // Digits can still change count - "9.9W" to "10W" - and that is a step
+        // in the strip, not a flicker. The reserve has to follow the count.
+        ok("a longer number still reserves more",
+                perfWidth(label, "10W") < perfWidth(label, "100W"));
+        // Per line. Measuring the whole string in one call would add the two
+        // lines together - the break is just a character to the paint - and
+        // reserve the pair at the sum of its lines instead of its widest.
+        ok("the pair's strip is not the sum of its lines",
+                perfWidth(label, pair) < perfWidth(label, "6.1W") + perfWidth(label, "31\u00B0C"));
+        eq("it is exactly the wider of the two lines",
+                perfWidth(label, pair), Math.max(perfWidth(label, "6.1W"), perfWidth(label, "31\u00B0C")));
+        // The widest digit is asked of the face rather than assumed to be '0':
+        // it is not the same at every weight. Swapping the face changes which
+        // digit is widest and how wide it is, and the answer has to follow both.
+        final float[] nines = new float[10];
+        for (int d = 0; d < 10; d++) { nines[d] = 500f; }
+        nines[9] = 700f;
+        label.getPaint().setDigitWidths(nines);
+        eq("a different face widens to its own widest digit",
+                perfWidth(label, "0.0W"), perfWidth(label, "9.9W"));
+        ok("and the answer really did change with the face",
+                perfWidth(label, "0.0W") != widened);
+        // Nothing to measure: fall back to the frame rather than to no strip.
+        eq("an empty reading falls back to the frame it already has", perfWidth(label, ""), 77);
+        // On a face whose digits are all one width the substitution is a no-op,
+        // and the reserve still may not come out short of what is drawn.
+        label.getPaint().setDigitWidths(null);
+        ok("with uniform digits the reserve is still at least the literal",
+                perfWidth(label, "0.0W") >= (int) Math.ceil(label.getPaint().measureText("0.0W")));
+
+        System.out.println("PASS: " + checks + " cases over perfTextSize, perfLineSpacing, perfWidth and inkScale");
     }
 }
 "@

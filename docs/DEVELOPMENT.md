@@ -244,14 +244,14 @@ adb shell am start -n io.github.yixing233.hyperduo/.ui.MainActivity
 ## 配置通道
 
 设置走 libxposed 的 remote preferences，组名 / 文件名同为 `Prefs.NAME = "hyperduo_settings"`；
-键与默认值集中在 `Prefs.java`，上下界也在那里（第十四轮后共 41 个 `KEY_*` 常量，其中
-`KEY_SHOW_MOBILE_TYPE` 与 `KEY_OUT_TYPE_SIZE` 是只读的迁移遗留键，实际读写的 39 个键见配置项参考）。
+键与默认值集中在 `Prefs.java`，上下界也在那里（第十五轮后共 42 个 `KEY_*` 常量，其中
+`KEY_SHOW_MOBILE_TYPE` 与 `KEY_OUT_TYPE_SIZE` 是只读的迁移遗留键，实际读写的 40 个键见配置项参考）。
 
 - **写侧**（设置 App）：`HyperDuoApp.onServiceBind` 拿到 `XposedService`，之后每次改动都
   `getRemotePreferences(NAME).edit().putX(...).commit()`，并把同一份写进本应用的
   `SharedPreferences`（即 `shared_prefs\hyperduo_settings.xml`）。服务是异步绑定、也可能随时
   死亡，所以 `SettingsRepository` 每次写入都实时取 `HyperDuoApp.xposedService`，**不缓存
-  service**；绑定成功时还会 `syncAllToFramework()` 全量重放这 39 个键，补齐框架缺席期间的改动。
+  service**；绑定成功时还会 `syncAllToFramework()` 全量重放这 40 个键，补齐框架缺席期间的改动。
   **每新增一个键都必须同时加到 `syncAllToFramework()`**，否则该键在框架重连后不会下发。
 - **读侧**（hook 进程）：remote `SharedPreferences` 是**只读**的，但支持
   `registerOnSharedPreferenceChangeListener`，框架会实时投递变更。`TrioConfig` 注册一个监听器，
@@ -604,7 +604,9 @@ Wi-Fi 搬进缺口仍是 canvas 变换（`translate` + `scale`）完成的，几
 而非移除 —— 网络类型随 modem 来去，每次布局 add/remove 太吵。
 
 `type_size` 只作用环内，`out_type_size_dp` 只作用环外，二者**不再共用**；`type_weight` 是两者
-共用的。设置页的门禁因此是 `a.typeInRing` / `a.typeOutOfRing` / `a.typeAnywhere()`，不再是
+共用的。**但它只管网络类型这一处文字**：第十五轮起环外的性能读数（充电功率 / 电池温度）有自己
+的 `perf_weight`，与环内、环外标签都无关（见「环外性能读数」）。设置页的门禁因此是
+`a.typeInRing` / `a.typeOutOfRing` / `a.typeAnywhere()`，不再是
 裸的 `mobileTypeMode == X` 比较。`show_mobile_type` 是废弃的旧布尔键，`out_type_size` 是
 废弃的旧像素键，均仅用于迁移读取（见配置项参考）。
 
@@ -708,7 +710,9 @@ sRGB 亮度判断，三组角色色各有深/浅两套。前景 tint 自身仍�
 `TrioPreviewView.setOutTypeOnly(true)` / `setOutSignalOnly(true)` 自己画。标签那格必须与
 `TrioHooks.outTypeSizePx` 同口径——字号取 `out_type_size_dp` 乘密度、字重取 `typeWeight`、按 px 而非 sp，
 再把宿主 20dp 图标盒按预览自身的高度等比换算（`HOST_ICON_HEIGHT_DP = 20f`，与 `docs` 里
-`status_bar_icon_height` 一致），结尾 A 的缩放取 `type_suffix_scale`。`out_type_size` 在设置页
+`status_bar_icon_height` 一致），结尾 A 的缩放取 `type_suffix_scale`。（这里的 `typeWeight` 说的是
+**网络类型标签**；环外的性能读数有自己的 `perf_weight`，且**没有预览格**——见「环外性能读数」。）
+`out_type_size` 在设置页
 别处**没有任何可见反馈**，这一格就是它的唯一所见即所得参照；口径一旦和钩子侧不一致，预览就
 开始骗人，比没有预览更糟。信号那格同理：按 `out_signal_size_dp × density` 与参照纵横比定出
 读数尺寸，再把 `out_signal_margin_dp` 换算成读数到格子右边缘的距离（右边缘即电池在真实那一行里
@@ -1064,6 +1068,12 @@ int dataSlot, int[] out)` 是唯一的读数解析处。两卡都有读数 ⇒ `
 画）。性能读数（`PerfLabel`，见「状态栏性能读数」）加入的是同一条求和，而不是给自己另外预留——
 它只在自己开着时才有一份宽度，所以不会在关掉时留下空洞。
 
+**这条求和里的每一项都必须是「这个视图是什么」的函数，不能是「它此刻写着什么」的函数**：
+`getMeasuredWidth()` 看似顺手，但它跟着文本内容变，而性能读数的文本大约每秒换一次
+（`0.0W` ↔ `6.1W`）。预留值一跳，`setPadding` 就重排一次，左侧的原生图标整体被推走——第十五轮
+的「图标右跳」正是这么来的。读数那一项因此改走 `perfWidth(...)`：按最宽的可能形态量、逐行量、
+向上取整（详见「环外性能读数」）。其余几项的宽度不随内容变，仍可直接读实测宽。
+
 **两条边距都必须计入，这一条修过一次**：原先只在**没有**读数时才把外侧缝算进去，理由是
 「有读数时两视图之间的缝已经由内侧那条覆盖了」。但外侧缝画的是标签另一侧的空隙，有读数时
 照样存在，于是预留宽度比实际占的窄 —— 把边距调大时图标不动，滑杆看起来失灵。默认值下
@@ -1168,6 +1178,33 @@ view 是否已经被赋过值。
 分支：如果它只缩放组合态，那么单项时滑杆没有任何反应，等用户打开第二个开关时才突然跳一下。
 它乘的是**自适应结果**而不是替掉它，所以两项读数仍然跟着图标高度与 `out_type_size_dp` 走；
 范围 60 – 150 也因此比字形的 60 – 100 宽——它缩放的是一个字号，不是一块被宿主框限死的绘制。
+
+**字重是这两项读数自己的键（第十五轮，`perf_weight`）**：`TrioAppearance.perfTypeWeight()` 把
+`perfWeight` 经 `Prefs.clamp(perfWeight, Prefs.MIN_PERF_WEIGHT, Prefs.MAX_PERF_WEIGHT)` 后交给
+`perfLineHeight(base, a.perfTypeWeight())`。它**刻意不复用 `type_weight`**：那个键同时驱动网络类型
+标签，而这两项是状态栏上的读数，两者没有任何理由被绑在一起——尤其用户想调粗读数时，不应该顺手
+把环外的 5G 标签也改粗。
+
+**它必然成为 `refreshPerfLabel` 重同步条件的第五个分句**。字重改变画面的路径有两条：typeface
+本身、以及它带来的行高。当字号被钉在 `PERF_MIN_SIZE_RATIO` 下限时（本机默认就落在这个档位），
+改字重不会改变字号，于是既有的「文本变了没」与「尺寸变了没」两个分句都看不见它，滑杆会像死了一样。
+条件因此是五路：`perf.getText() != text`、`perf.getTextSize() != perfTextSize(...)`、
+`perf.getLineSpacingMultiplier() != perfLineSpacing(...)`，加上 `perf.weight != weight`
+（`weight = TrioConfig.appearance().perfTypeWeight()`）——`PerfLabel` 里的 `int weight = -1`
+记的正是当前这支 typeface 是照哪个字重建的。
+
+**预留宽度必须是「读数是什么」的函数，而不是「此刻写着什么」的函数**（第十五轮修复的跳字 bug）：
+`reserveOutRingStrip` 原先拿 `perf.getMeasuredWidth()`（**当前文本的实测宽**）求和。而
+`BatteryPresence` 大约每秒发布一次新瓦数，`0.0W`（102px）与 `6.1W`（92px）之间来回时，每一次变化都会
+经 `setPadding` 重排 MIUI 的图标行，把左边的原生图标整体推一下——设备日志里同一个文件内就出现
+预留值在 `102` / `108` 之间交替。现在换成 `perfWidth(perf, perf.getText().toString())`：借视图自己的
+`Paint` 量出这段文字**可能**变成的最宽形态——把每一位数字都换成该字体里最宽的那个数字
+（把十个数字各量一遍问出来，而不是假定 `'0'` 或 `'8'`），并且**逐行量**（`\n` 对 paint 只是一个字符，
+整串量会把两行加在一起、预留出两倍的实际宽度），最后 `(int) Math.ceil(width)`。走 paint 而不是真的
+layout 一段探针字符串，是为了**不踏上布局这条路**；代价是没算进字距
+（`VALUE_LETTER_SPACING = -0.04em`），所以答案比真正画出来的宽几个像素——**这是安全的方向**：
+预留宁可略宽，绝不能短。此后只有**数字位数**还能改变预留，那是阶跃、不是闪烁。这条规则与
+`reserveOutRingStrip` 自身一起由 `tests\perf-layout.ps1` 钉住。
 
 **采样**在 `BatteryPresence.java`（形状照抄 `WifiPresence.java`）：注册一个粘性的
 `ACTION_BATTERY_CHANGED` 接收器，再在 SystemUI 里自续一个 3 秒的看门狗（模块跑在
@@ -1305,6 +1342,7 @@ hook 组 10 拦 `setIsHideBattery`，把值记进 `TrioState.sIslandHideBattery`
 | `perf_temp` | `false` | —（在同一处追加电池温度读数，单位摄氏度、取整；不接充电器同样显示） |
 | `glyph_scale_pct` | `100` | 60 – 100（三合一字形的整体缩放百分比。乘在 `TrioRenderer.drawInto` 那个适配系数上——`inkScale(...) * appearance.glyphFit()`——所以整块 120×120 几何里每一笔描边、弧线与数字按同一比例缩放，`translate` 的居中不变。上界只有 100 是因为宿主给电池图标的框只有 28dp × 20dp，超过 100 只会画到视野外、裁不裁由 MIUI 说了算；下界 60 避免缩到看不见。`TrioOverlay` **刻意不**拿它缩窗口——窗口里那个字形由 `drawState` 画，而 `drawState` 已经乘过这一项，再缩一次就是双重缩放） |
 | `perf_scale_pct` | `100` | 60 – 150（两项性能读数的整体缩放百分比，**最后**一步乘在 `TrioHooks.perfTextSize` 的答案上——`Math.max(base * PERF_MIN_SIZE_RATIO, Math.min(base, size)) * factor`——并且同样乘上三条兜底分支（`base * factor`），所以单项读数、测不出宿主、测不出行高这三种答案都会跟着动。它是「自适应结果之上的倍数」而不是第二个绝对字号，因此两项读数仍然跟着图标与 `out_type_size_dp` 走。范围比字形那条宽、且允许超过 100，是因为它乘的是字号而不是一个被框限死的绘制） |
+| `perf_weight` | `700` | 100 – 900（两项性能读数文字的笔画粗细，`TrioAppearance.perfTypeWeight()` clamp 后交给 `perfLineHeight`。**独立于 `type_weight`**：后者驱动的是网络类型标签字重，与状态栏上这两项读数无关。改粗会同时改变行高，所以 `refreshPerfLabel` 的重同步条件里有它的第五个分句；预留宽度另由 `perfWidth` 按最宽形态量出，见「环外性能读数」） |
 
 ## 已知限制
 
@@ -1376,21 +1414,33 @@ work\overview\                         全部支持样式的状态总览图（�
    方法改名或改签名就报错退出，所以它们锁的是真源码而不是副本。`tests\wifi-presence.ps1` 锁
    `WifiPresence.resolve/publish` 的 18 组真值表；`tests\battery-presence.ps1` 锁 `BatteryPresence`
    的瓦数换算与哨兵、`TrioHooks.perfText` 的分段与两项一行规则、`perfLines`，以及 `publish` 的
-   去重（含 `NaN` 陷阱）；`tests\perf-layout.ps1` 锁自适应字号 `perfTextSize` 与行距 `perfLineSpacing`
+   去重（含 `NaN` 陷阱）；`tests\perf-layout.ps1` 锁自适应字号 `perfTextSize`、行距 `perfLineSpacing`
+   与第十五轮的 `perfWidth` / `perfTypeWeight`
    —— 后者就是「两行合起来是一个图标高」那条身份断言，并且**把被否决的算法也钉住**
    （`room / (lines - 1)` 与 `room / lines` 两种分摊都被显式排除）。这条身份最初两边都用生产的
    `perfLineHeight`，因此只是**自洽检查**：若该函数整体带上一个会被字号公式约掉的因子，它照样成立；
    现在同一句话再用一支**从没经过 `perfLineHeight`** 的 paint 量一遍（`2 * (descent - ascent)` 对
    图标高），并断言两者互相吻合，这才让它成为独立事实。第十四轮给它补了 10 条断言覆盖
-   `perf_scale_pct` 这个乘数（单项读数也缩放、三条兜底分支也缩放、clamp 到 60 与 150 两端），
-   现在打印 `PASS: 53 cases over perfTextSize, perfLineSpacing and inkScale`；同一轮还修掉了复核
+   `perf_scale_pct` 这个乘数（单项读数也缩放、三条兜底分支也缩放、clamp 到 60 与 150 两端）；
+   第十五轮再补 11 条，覆盖 `perfWeight` 的两端 clamp 与默认值；随后又补 12 条**执行级**用例，把
+   `perfWidth` 从「只有一条源码契约钉」抬到「真的跑过」——那条钉原本断言生产里写的是
+   `perfWidth(perf,` 而不是 `perf.getMeasuredWidth()`，钉的是字面而不是答案，实现返回什么都算过。
+   这 12 条覆盖：替换最宽数字确实让预留变宽、每个数字都按最宽的那个量、两个不同瓦数预留**同宽**
+   （抗抖动核心）、答案是加宽后的 `(int) Math.ceil` 且该值非整数（取整方向可观测）、位数变化仍是台阶、
+   **两行的预留等于较宽的那一行而不是两行之和**、最宽数字是问字体而不是假定 `'0'`（换一张字宽表答案
+   跟着变）、空文本回落到视图已有的 frame、等宽字体下不偏短。为了让「替换」可观测，探针对垫片 `Paint`
+   注入了 `setDigitWidths(float[])`：桌面 SansSerif 的十个数字都是 556/1000（实测），替换在这张脸上是
+   恒等操作；真实状态栏字体是比例宽度（设备日志 `0.0W`=102px 对 `6.1W`=92px），那张表就是它的替身。
+   现在共 **76** 条，打印
+   `PASS: 76 cases over perfTextSize, perfLineSpacing, perfWidth and inkScale`；同一轮还修掉了复核
    指出的两处重复覆盖（近边界用例改用 `(int) Math.ceil(lh * 2f) - 1` 算确切行数）与一条自指的
    下限断言（改用 `eq("the legibility floor is 0.6 of the type size", PERF_MIN_SIZE_RATIO, 0.6f)`
    把下限当成外部事实来陈述）。此外它还补了三条**纯函数够不到的接线**，用源码契约钉而不是调用来锁：
    `perfLineHeight` 里 `PERF_PROBE.setTypeface(TrioRenderer.typefaceFor(weight))` 必须还在（否则
    字重分支消失，而桌面 AWT 对 PLAIN/BOLD 报告完全相同的度量，任何基于度量的断言都测不到它）、
-   `refreshPerfLabel` 的四路重同步条件里必须还有 `perf.getLineSpacingMultiplier()` 与
-   `perfLineSpacing(perf, text, container)` 的比较、`updatePerfLabel` 里必须还是「先比再写」
+   `refreshPerfLabel` 的**五路**重同步条件里必须还有 `perf.getLineSpacingMultiplier()` 与
+   `perfLineSpacing(perf, text, container)` 的比较，以及第十五轮加的 `perf.weight != weight`、
+   `updatePerfLabel` 里必须还是「先比再写」
    （`if (perf.getLineSpacingMultiplier() != spacing) { perf.setLineSpacing(0f, spacing); }`）。
    另有一条**终点用例**盖住 M6 担心的隐患：把算出的行距写回视图后，`getLineSpacingMultiplier()`
    必须原样读回、与重新计算的值相等 —— 若这个比较永不收敛，每个 layout pass 都会再 post 一次同步，
