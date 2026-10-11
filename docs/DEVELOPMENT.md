@@ -1445,6 +1445,13 @@ work\overview\                         全部支持样式的状态总览图（�
    另有一条**终点用例**盖住 M6 担心的隐患：把算出的行距写回视图后，`getLineSpacingMultiplier()`
    必须原样读回、与重新计算的值相等 —— 若这个比较永不收敛，每个 layout pass 都会再 post 一次同步，
    状态栏将无限重排；垫片按 Android 的方式逐位存回，四舍五入的垫片会正好掩盖它。
+   这 12 条 `perfWidth` 用例做过**负对照**：把实现分别改坏成「不替换数字」「两行相加」「恒不更新最宽
+   数字」「去掉向上取整」，四条各自死在不同断言上（第一条死在源码钉 `perfWidth does not widen the digits`，
+   其余三条死在 `the pair's strip is not the sum of its lines`、`the reserve is wider than the literal`、
+   `the answer is the ceiling of that widened width: got <126> want <127>`），所以这一组不是重复覆盖。
+   **做负对照时必须用 `git checkout --` 还原源码，不要用 `Get-Content -Raw` 读回再写**：PS 5.1 按 ANSI
+   代码页解码，会把 Java 文件里仅有的几个非 ASCII 注释字符（`—`、`→`）写成乱码，文件仍能编译、探针仍
+   通过，但字节已经变了。
    `tests\glyph-scale.ps1` 锁**整体尺寸**这条端到端的线：它用 `tests\shims` 的桌面垫片把真
    `TrioRenderer` 画进 Java2D 位图，然后数**真正落笔的像素**，所以它不是公式层面的自洽检查，而是
    「这个设置确实到达了画布」。17 条断言里：相邻档位（100/90/80/70/60）墨迹必须逐档递减；墨迹**面积**
