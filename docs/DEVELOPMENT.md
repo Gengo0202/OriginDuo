@@ -1360,7 +1360,7 @@ work\overview\                         全部支持样式的状态总览图（�
 ## 测试
 
 仓库**没有 Android 侧自动化测试**（`app\src` 下只有 `main`，没有 `test` / `androidTest` source set），
-但 `tests\` 下有三个**纯 JVM 断言脚本**（见下面第 3 条）。回归验证靠三条通道：
+但 `tests\` 下有四个**纯 JVM 断言脚本**（见下面第 3 条）。回归验证靠三条通道：
 
 1. **离线 JVM 预览**（`work\preview\`，不入库）：一套只服务工装的 `android.*` 桌面垫片 + 入口
    `PreviewMain`，直接编译 `Prefs.java` / `TrioSettings.java` / `TrioGeometry.java` /
@@ -1394,8 +1394,23 @@ work\overview\                         全部支持样式的状态总览图（�
    （`if (perf.getLineSpacingMultiplier() != spacing) { perf.setLineSpacing(0f, spacing); }`）。
    另有一条**终点用例**盖住 M6 担心的隐患：把算出的行距写回视图后，`getLineSpacingMultiplier()`
    必须原样读回、与重新计算的值相等 —— 若这个比较永不收敛，每个 layout pass 都会再 post 一次同步，
-   状态栏将无限重排；垫片按 Android 的方式逐位存回，四舍五入的垫片会正好掩盖它。三个脚本都只读源码、写到 `work\`
-   下编译，不碰 `app\src`。
+   状态栏将无限重排；垫片按 Android 的方式逐位存回，四舍五入的垫片会正好掩盖它。
+   `tests\glyph-scale.ps1` 锁**整体尺寸**这条端到端的线：它复用 `work\preview\src` 的桌面垫片把真
+   `TrioRenderer` 画进 Java2D 位图，然后数**真正落笔的像素**，所以它不是公式层面的自洽检查，而是
+   「这个设置确实到达了画布」。17 条断言里：相邻档位（100/90/80/70/60）墨迹必须逐档递减；墨迹**面积**
+   随系数平方下降、**包围盒宽高**随系数线性下降（后两条才是「等比缩小」而不是「细节熔掉」的证据）；
+   满档要铺满它被测量的宿主、最低档要离开四边并保持居中（这条抓的是 translate 没跟着缩放、图形缩在
+   角落）；clamp 两端各渲染一次并与 floor/ceiling 的像素**逐位相同**；矩形样式单测一遍，免得乘数只接
+   进了一种布局。另有四条**源码契约钉**：`final float scale = inkScale(w, h, rect) * appearance.glyphFit();`
+   必须原样存在、`glyphFit()` 必须仍走 `Prefs.clamp(glyphScale, …) / 100f`、`TrioAppearance` 的构造
+   必须仍从 `c.glyphScale` 取值 —— 像素能看出「缩小了」，但看不出「是在 fit 上缩的而不是在别处」。
+   **负控实测**：把乘数整条删掉、把 clamp 去掉、把 `canvas.scale(scale, scale)` 改成
+   `canvas.scale(scale * glyphFit(), scale)`（非等比）、去掉 `/ 100f`、把构造改成常量 100 —— 五条全部
+   `EXIT=1`。其中最要紧的一条是**保留契约钉那一行字面量、但把它的值丢弃**（另起一个未缩放的局部变量
+   交给 `canvas.scale`）：源码钉照样通过，只有像素断言 `the painted area falls with the square of the
+   factor: got <0.6736883167543373> want <0.36000001430511475>` 抓到它 —— 这证明像素那部分独立承重，
+   不是给契约钉当装饰。
+   四个脚本都只读源码、写到 `work\` 下编译，不碰 `app\src`。
    **注意它们不会被自动发现**，要手动跑：
    `powershell -NoProfile -ExecutionPolicy Bypass -File tests\battery-presence.ps1`。
    PS 5.1 下**必须**这样经由 `cmd`（或让脚本自己吞掉 javac 的 stderr）运行：javac 会往 stderr 写

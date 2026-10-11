@@ -279,7 +279,7 @@ record KeyDef(String key, Kind kind, int def, int min, int max,
 | 6 | P1-3 `bar_stroke` + 迁移 | 中 | 老安装升级后矩形外观不变 |
 | 7 | P2 预览/写入/文档 | 中 | 预览与状态栏对照；全量设置改动后状态栏一致 |
 
-**注意**：仓库没有 Android 侧自动化测试（`app/src` 下只有 `main`；`tests/` 下后来补了三个纯 JVM 断言脚本，见 `docs/DEVELOPMENT.md` 「测试」一节）。P0-1 这种「行为必须完全不变」的重构，最划算的投入是先补一个纯 JVM 单测（`app/src/test`）来锁 `appearance()` 的真值表——它不依赖 Android，写起来最便宜，而且正好是这个重构的核心。
+**注意**：仓库没有 Android 侧自动化测试（`app/src` 下只有 `main`；`tests/` 下后来补了四个纯 JVM 断言脚本，见 `docs/DEVELOPMENT.md` 「测试」一节）。P0-1 这种「行为必须完全不变」的重构，最划算的投入是先补一个纯 JVM 单测（`app/src/test`）来锁 `appearance()` 的真值表——它不依赖 Android，写起来最便宜，而且正好是这个重构的核心。
 
 ---
 
@@ -340,8 +340,8 @@ record KeyDef(String key, Kind kind, int def, int min, int max,
 
 ### 6.6 验证方式
 
-仓库**没有 Android 侧自动化测试**（`app/src` 下只有 `main`），但 `tests/` 下已有三个纯 JVM 断言脚本
-（`wifi-presence.ps1`、`battery-presence.ps1`、`perf-layout.ps1`，见 `docs/DEVELOPMENT.md` 「测试」一节第 3 条），所以验证分两层：
+仓库**没有 Android 侧自动化测试**（`app/src` 下只有 `main`），但 `tests/` 下已有四个纯 JVM 断言脚本
+（`wifi-presence.ps1`、`battery-presence.ps1`、`perf-layout.ps1`、`glyph-scale.ps1`，见 `docs/DEVELOPMENT.md` 「测试」一节第 3 条），所以验证分两层：
 
 1. **构建**：`gradle -p C:\code\HyperDuo :app:assembleDebug --offline -q` 通过。
 2. **五条离线工装**（不入库，`work\` 下）：`gapcheck`（电量弧算术）、`slotcheck`（居中槽位优先级，用「非居中布局逐像素不变」当不变量）、`dualsimcheck`（双卡判定规则，故意把 `charging` 换回 `bolt` 造一份反例构建）、`simcheck`（订阅号↔槽位映射、单排兜底、**以及读的是 MIUI 电平而不是 AOSP 电平**；三构建对照）、`outringcheck`（环内/环外与两个新开关的真值表 + 环内逐像素不变）。五条**全部 `exit 0`**，即固定版通过、反例版按预期失败。改动渲染器或 `TrioAppearance` 后这些都要重跑，机制记录在 `docs\DEVELOPMENT.md:805-862` 与「测试」一节。
@@ -519,6 +519,7 @@ final float scale = Math.min(width / inkW, height / outSignalInkH(dotRow));
 - **两条都是全新的键名，没有复用旧键**：框架不做类型转换，一个键一辈子只有一个类型（§6.2 第 3 条与 §P1-1 的教训）。`glyphScale`/`perfScale` 走全链：`Prefs` 常量与上下限 → `TrioSettings` 字段与 `defaults()`/`from()`/`copy()`/`applyKeyFrom`/`fromBundle`/`toBundle`/`equals`/`hashCode` → `TrioAppearance` 字段与 `glyphFit()`/`perfFit()` → `SettingsRepository.setGlyphScale`/`setPerfScale` 与 `syncAllToFramework()` 的两行 `putInt` → `SettingsScreen` 的两条 `IntSlider`。
 - **本轮计数**：`Prefs` 的 `KEY_*` 常量 39 → 41，在用的键 37 → 39，`TrioSettings` public 字段 37 → 39，`SettingsRepository` setter 37 → 39，设置页可写项 37 → 39；`SettingsScreen.kt` 的 `enabled =` 实测 51 → **56**（逐行数出来的，本轮新增 5 处：两个性能读数开关的 `enabled = a.glyph`、性能读数滑杆的 `enabled = a.glyph && a.perfAnywhere()`、字形滑杆的 `enabled = a.glyph`、以及 `TooltipBox` 的 `enabled = scaleHint != null`）。**顺带订正**：本表上方原先写的「第十三轮后 53 处」与树里对不上——按 `git show HEAD:…SettingsScreen.kt` 逐行数，第十三轮后其实只有 51 处，所以这一格改为按实测值书写。
 - **断言脚本跟着扩**：`tests\perf-layout.ps1` 从 38 条加到 **48** 条（`PASS: 48 cases over perfTextSize, perfLineSpacing and inkScale`），新增的 10 条专打这个乘数——单项读数也缩放、三条兜底分支也缩放、clamp 到 60 与 150 两端、以及 100% 回到未缩放的答案。抽取面同时收紧：垫片不再自己写 `perfScale / 100f`，而是把生产的 `TrioAppearance.perfFit()` 与 `Prefs.clamp(int,int,int)` **正则抽出来**，两个界限也从 `Prefs.java` 读出——原先的写法把生产的 clamp 删掉探针照样绿，而 clamp 正是广播路径唯一的防线。复核指出的两处覆盖缺陷同轮修掉：一个与既有用例重复的房间用例（近边界现在用 `(int) Math.ceil(lh * 2f) - 1` 取确切行数），以及一条**自指**的下限断言（原先是拿 `PERF_MIN_SIZE_RATIO` 算出期望值再比回去，改成 `eq("the legibility floor is 0.6 of the type size", PERF_MIN_SIZE_RATIO, 0.6f)`，把 0.6 当成外部事实陈述）。复核另留的两处盲区（M5「身份断言只是自洽检查、且 AWT 看不见字重」与 M6「布局期接线零覆盖」）随后补齐，脚本最终 **53** 条：身份断言改用一支**没经过 `perfLineHeight`** 的 paint 独立量一遍（否则把 `perfLineHeight` 乘上任意常数它都照样通过），字重分支改由源码契约钉锁住（AWT 对 PLAIN/BOLD 度量完全相同，度量断言无从下手），`refreshPerfLabel` 的四路条件与 `updatePerfLabel` 的「先比再写」同样按形状钉住，并用一条**终点用例**证明写回视图的行距能原样读回、重同步必然收敛（否则每个 layout pass 都会再 post 同步、状态栏无限重排）。`tests\battery-presence.ps1` 同轮把硬编码的分隔符也改成从源码读出，由 41 条变 42 条。
+- **新增第四个断言脚本 `tests\glyph-scale.ps1`（17 条）专门锁字形这条乘数**：`perf-layout.ps1` 只覆盖 `perfFit()`，而 `glyphFit()` 此前只有 `work\_scaleprobe\` 里一个**不入库**的临时探针证明过，`work\` 被 `.gitignore` 排除，随时可能被当垃圾清掉。新脚本复用 `work\preview\src` 的桌面垫片，把真 `TrioRenderer.drawInto` 画进 Java2D 位图后**数真正落笔的像素**——这是端到端断言，与公式自洽无关：一个从不落笔的实现也能满足任何公式层面的等式。断言含「相邻档位逐档递减」「墨迹面积随系数平方下降、包围盒宽高随系数线性下降」（后两条才区分「等比缩小」与「细节熔掉」）、「满档铺满宿主」「最低档离边且仍居中」（抓 `translate` 没跟着缩放）、「clamp 两端与 floor/ceiling 逐位相同」「矩形样式单测」。另有四条**源码契约钉**（`inkScale(w, h, rect) * appearance.glyphFit()` 原样存在、`glyphFit()` 仍走 `Prefs.clamp(...) / 100f`、构造仍读 `c.glyphScale`）——像素能看出「变小了」，看不出「是在 fit 上缩的而不是在别处」。七条负控全部 `EXIT=1`，其中最要紧的一条是**保留契约钉那行字面量、但把它的值丢弃**（另起未缩放的局部变量交给 `canvas.scale`）：源码钉照样通过，只有像素断言 `got <0.6736883167543373> want <0.36000001430511475>` 抓到它，证明像素那部分独立承重。
 - **预览的可见性两条不一样，要分开说**：**字形那条在预览里看得见**——`PreviewCard` 的每一格都是 `TrioPreviewView` → `TrioRenderer.drawInto(..., settings, ...)`，`settings` 就是当前快照，所以拖动滑杆时八个格子里的字形一起变小（已用桌面探针实测：`glyphScale` 100 → 60 时墨迹像素 5127 → 1948，`drawInto` 确实拿到了这个乘数）。**读数那条在预览里看不见**——预览的八格是七个字形态加「环外类型」「环外信号」两格，没有任何一格画性能读数。
-- **未动 / 盲区**：字形滑杆虽然预览可见，但**状态栏里的实际效果只有上机才能确认**；读数滑杆连预览都没有。本轮设备中途脱离 USB，两条都没在真机上过。
+- **未动 / 盲区**：字形滑杆虽然预览可见、且已有入库的像素级探针 `tests\glyph-scale.ps1` 证明这个乘数确实到达了画布，但**状态栏里的实际效果只有上机才能确认**；读数滑杆连预览都没有。本轮设备中途脱离 USB，两条都没在真机上过。
 
