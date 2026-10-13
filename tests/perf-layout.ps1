@@ -111,6 +111,26 @@ $widthBody=[regex]::Match($hooks,'(?s)private static int perfWidth\(PerfLabel pe
 if(-not [regex]::IsMatch($widthBody,'PERF_BREAK')){throw 'perfWidth does not split on the line break'}
 if(-not [regex]::IsMatch($widthBody,'c >= .0. && c <= .9.')){throw 'perfWidth does not widen the digits'}
 
+# Neither teardown path may hand the strip back on its own way out. The strip is
+# shared: removing the out-of-type label or the readout is the common case on
+# every sync (the out-of-type label is off by default), and a release before the
+# null check returns the icons' padding without restoring whatever else is still
+# mounted. The next reserve puts it back, so the padding ping-pongs once per
+# power update - about once a second while charging - and the whole native icon
+# row slides in and out. reserveOutRingStrip totals what is actually on screen and
+# releases the strip itself when that total is zero, so it is the only writer
+# allowed to answer this question.
+foreach($pair in @(
+    @('removeOutTypeLabel', 'OutTypeLabel'),
+    @('removePerfLabel', 'PerfLabel')
+)){
+    $name=$pair[0]
+    $body=[regex]::Match($hooks,"(?s)private static void $name\(View container\) \{.*?\n    \}").Value
+    if(-not $body){throw "Production $name missing"}
+    if([regex]::IsMatch($body,'releaseOutTypeSpace\(')){throw "$name still releases the strip before it knows what is mounted"}
+    if(-not [regex]::IsMatch($body,'reserveOutRingStrip\(')){throw "$name no longer recomputes the strip"}
+}
+
 # The renderer's four measurement methods, so the probe measures with the same
 # arithmetic the glyph is drawn with rather than with a re-implementation.
 $inkScale1=[regex]::Match($rend,'(?s)static float inkScale\(int w, int h\) \{.*?\n    \}').Value

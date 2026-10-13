@@ -1070,9 +1070,20 @@ int dataSlot, int[] out)` 是唯一的读数解析处。两卡都有读数 ⇒ `
 
 **这条求和里的每一项都必须是「这个视图是什么」的函数，不能是「它此刻写着什么」的函数**：
 `getMeasuredWidth()` 看似顺手，但它跟着文本内容变，而性能读数的文本大约每秒换一次
-（`0.0W` ↔ `6.1W`）。预留值一跳，`setPadding` 就重排一次，左侧的原生图标整体被推走——第十五轮
-的「图标右跳」正是这么来的。读数那一项因此改走 `perfWidth(...)`：按最宽的可能形态量、逐行量、
-向上取整（详见「环外性能读数」）。其余几项的宽度不随内容变，仍可直接读实测宽。
+（`0.0W` ↔ `6.1W`）。预留值一跳，`setPadding` 就重排一次，左侧的原生图标整体被推走。读数那一项
+因此改走 `perfWidth(...)`：按最宽的可能形态量、逐行量、向上取整（详见「环外性能读数」）。其余几项
+的宽度不随内容变，仍可直接读实测宽。
+
+**但「图标右跳」还有第二个、更凶的来源：teardown 路径的抢先释放。** 上机仪器化把每个分量打出来
+才发现，`perfWidth` 在 28 帧里恒定 `101`，而图标行的 `paddingEnd` 在 `107 ↔ 0` 之间以功率更新的
+节奏（约 1.4 s）乒乓——`removeOutTypeLabel` / `removePerfLabel` 原先的第一步都是
+`releaseOutTypeSpace(group)`，**排在判空之前**；视图为 null 时直接 `return`，不再重新 reserve。
+这两个方法在每次 sync 都被调用（环外类型默认关闭，「根本没有 label」是常态），紧接着
+`reserveOutRingStrip` 又把 total 重新 reserve，于是整排原生图标每轮横移 107px 再弹回。
+**⇒ `reserveOutRingStrip` 是 strip 的唯一权威**：它按实际 VISIBLE 的视图求和，`total <= 0` 时自己
+会调 `releaseOutTypeSpace`。两个 teardown 方法现在都只做「判空 → 非 null 时 `removeView` →
+无条件 `reserveOutRingStrip(group)`」，`tests\perf-layout.ps1` 对这两个方法体各钉一条源码契约
+（体内禁止 `releaseOutTypeSpace(`、必须有 `reserveOutRingStrip(`）。
 
 **两条边距都必须计入，这一条修过一次**：原先只在**没有**读数时才把外侧缝算进去，理由是
 「有读数时两视图之间的缝已经由内侧那条覆盖了」。但外侧缝画的是标签另一侧的空隙，有读数时
@@ -1193,7 +1204,7 @@ view 是否已经被赋过值。
 （`weight = TrioConfig.appearance().perfTypeWeight()`）——`PerfLabel` 里的 `int weight = -1`
 记的正是当前这支 typeface 是照哪个字重建的。
 
-**预留宽度必须是「读数是什么」的函数，而不是「此刻写着什么」的函数**（第十五轮修复的跳字 bug）：
+**预留宽度必须是「读数是什么」的函数，而不是「此刻写着什么」的函数**：
 `reserveOutRingStrip` 原先拿 `perf.getMeasuredWidth()`（**当前文本的实测宽**）求和。而
 `BatteryPresence` 大约每秒发布一次新瓦数，`0.0W`（102px）与 `6.1W`（92px）之间来回时，每一次变化都会
 经 `setPadding` 重排 MIUI 的图标行，把左边的原生图标整体推一下——设备日志里同一个文件内就出现
@@ -1205,6 +1216,19 @@ layout 一段探针字符串，是为了**不踏上布局这条路**；代价是
 （`VALUE_LETTER_SPACING = -0.04em`），所以答案比真正画出来的宽几个像素——**这是安全的方向**：
 预留宁可略宽，绝不能短。此后只有**数字位数**还能改变预留，那是阶跃、不是闪烁。这条规则与
 `reserveOutRingStrip` 自身一起由 `tests\perf-layout.ps1` 钉住。
+
+**这条是必要条件，不是充分条件**：上机仪器化（`reserveOutRingStrip` 打印每个分量）显示
+`perfWidth` 在 28 帧里恒为 `101`，而图标行的 paddingEnd 仍在 `107 ↔ 0` 之间以功率更新的节奏乒乓。
+真正的凶手是 `removeOutTypeLabel` / `removePerfLabel` 里**抢先的 `releaseOutTypeSpace`**（排在判空
+之前，视图为 null 时直接 return、不再重新 reserve），修法与后果见上文「两个视图共用一条 strip」
+一段。**排查这类「谁在动」的问题时，先把分量打出来，不要从症状反推原因**——这一次从像素反推出的
+`3–8px` 位移，实际是 `107px` 的整行横移被状态栏边界裁掉之后的残影。
+
+**功率的符号不可移植**：`wattsOf` 取 `Math.abs(currentMicroAmps)` 而不是保留正负。本平台（小米 14 /
+HyperOS）在 `USB powered: true`、`status: charging`、`charge_counter` 上升的情况下，`current_now`
+连采 8 次**全部为负**（`-115000` … `-204000` µA），与 AOSP 的正号约定相反；按符号判断「在放电」会把
+每一个真实充电电流都折成 0，状态栏一直停在 `0.0W`，只有采样抖动恰好落在正值时才闪出一次真数。
+幅值才是真正在流动的电流，调用方本来就只在接充电器时绘制，真零仍是真零。
 
 **采样**在 `BatteryPresence.java`（形状照抄 `WifiPresence.java`）：注册一个粘性的
 `ACTION_BATTERY_CHANGED` 接收器，再在 SystemUI 里自续一个 3 秒的看门狗（模块跑在
@@ -1442,6 +1466,11 @@ work\overview\                         全部支持样式的状态总览图（�
    `perfLineSpacing(perf, text, container)` 的比较，以及第十五轮加的 `perf.weight != weight`、
    `updatePerfLabel` 里必须还是「先比再写」
    （`if (perf.getLineSpacingMultiplier() != spacing) { perf.setLineSpacing(0f, spacing); }`）。
+   第十五轮又补了两条同类的钉，锁的是**图标右跳那个缺陷的两个 teardown 方法**：
+   `removeOutTypeLabel` 与 `removePerfLabel` 的方法体里**禁止**出现 `releaseOutTypeSpace(`、
+   **必须**出现 `reserveOutRingStrip(`。它们同样够不到——两个方法都要真的挂载视图才会跑——但正是
+   这两句让「判空之前先把 strip 交还」这个写法无论怎么改回来都会被拦下；负对照插入抢先释放后探针以
+   `removeOutTypeLabel still releases the strip before it knows what is mounted` 退出。
    另有一条**终点用例**盖住 M6 担心的隐患：把算出的行距写回视图后，`getLineSpacingMultiplier()`
    必须原样读回、与重新计算的值相等 —— 若这个比较永不收敛，每个 layout pass 都会再 post 一次同步，
    状态栏将无限重排；垫片按 Android 的方式逐位存回，四舍五入的垫片会正好掩盖它。

@@ -3314,21 +3314,25 @@ final class TrioHooks {
             return;
         }
         final ViewGroup group = (ViewGroup) container;
-        // Hand the strip back before the early return below: a label that was
-        // never mounted can still have left the padding behind if a previous
-        // mount was torn down through a different path.
-        releaseOutTypeSpace(group);
         final OutTypeLabel label = findOutTypeLabel(group);
-        if (label == null) {
-            return;
+        if (label != null) {
+            try {
+                group.removeView(label);
+            } catch (Throwable ignored) {
+                // a container torn down under us is not worth crashing over
+            }
         }
-        try {
-            group.removeView(label);
-        } catch (Throwable ignored) {
-            // a container torn down under us is not worth crashing over
-        }
-        // The reading may still be mounted and still need its strip; the release
-        // above cannot tell, so the total is recomputed.
+        // Recompute rather than release first. The strip is shared with the
+        // performance readout, and this method runs on every sync - including
+        // the common case where there is no label at all because the out-of-ring
+        // type is switched off. Releasing here and returning early handed the
+        // padding back and left the readout's strip unrestored: the icon row was
+        // dropped and re-padded once per power update, about once a second while
+        // charging, which slid every native icon on that side of the bar.
+        // reserveOutRingStrip is authoritative - it totals whatever is actually
+        // on screen and hands the strip back itself when that total is zero - so
+        // there is nothing for a pre-emptive release to fix and everything for it
+        // to break.
         reserveOutRingStrip(group);
     }
 
@@ -3977,21 +3981,21 @@ final class TrioHooks {
             return;
         }
         final ViewGroup group = (ViewGroup) container;
-        // Hand the strip back before the early return below, for the same reason
-        // removeOutTypeLabel does: a view that was never mounted can still have
-        // left the padding behind if a previous mount was torn down elsewhere.
-        releaseOutTypeSpace(group);
         final PerfLabel perf = findPerfLabel(group);
-        if (perf == null) {
-            return;
+        if (perf != null) {
+            try {
+                group.removeView(perf);
+            } catch (Throwable ignored) {
+                // a container torn down under us is not worth crashing over
+            }
         }
-        try {
-            group.removeView(perf);
-        } catch (Throwable ignored) {
-            // a container torn down under us is not worth crashing over
-        }
-        // The other out-of-ring views may still be mounted and still need their
-        // strip; the release above cannot tell, so the total is recomputed.
+        // Recompute rather than release first, for the same reason
+        // removeOutTypeLabel does: the strip is shared, this runs on every sync
+        // including the ones where no readout is mounted, and a release here
+        // would hand the icons' padding back only to be re-reserved for whatever
+        // else is still on screen. reserveOutRingStrip is the authority - it
+        // totals what is actually mounted and releases the strip itself when
+        // that total is zero.
         reserveOutRingStrip(group);
     }
 

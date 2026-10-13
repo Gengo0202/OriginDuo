@@ -35,6 +35,11 @@ if(!$perfBreak){throw 'could not read PERF_BREAK from TrioHooks'}
 # The sentinels and the two gates have to agree with the production source, or
 # the harness would pass on a contract the app no longer honours.
 if($batt -notmatch 'return TrioState\.POWER_UNKNOWN;'){throw 'wattsOf no longer returns the power sentinel'}
+# The sign of current_now is not portable: this platform answers negative while
+# charging, so the reading is the magnitude. Without Math.abs the probe below
+# would be asserting a shape the source does not have.
+if($batt -notmatch 'Math\.abs\(currentMicroAmps\)'){throw 'wattsOf no longer takes the magnitude of the current'}
+if($batt -match 'if \(!\(watts > 0f\)\)'){throw 'wattsOf still clamps a negative current to zero'}
 if($batt -notmatch 'Float\.compare\(beforeWatts, TrioState\.sChargePowerW\) != 0'){throw 'publish no longer de-duplicates NaN-safe'}
 # isNaN, not != : the sentinel is a NaN, and NaN != NaN is true, so an
 # inequality gate would admit the very value it exists to exclude.
@@ -89,13 +94,18 @@ public class BatteryTest {
  }
 
  public static void main(String[] args){
-  // ---- wattsOf: the arithmetic, the clamp, and the two ways of not knowing.
+  // ---- wattsOf: the arithmetic, the sign, and the two ways of not knowing.
   // The device's own observed numbers: 44000 uA at 4381 mV is 0.19 W.
   eq("live charging current", Math.round(wattsOf(44000, 4381) * 100), 19L);
   eq("typical fast charge", Math.round(wattsOf(2500000, 4400) * 10), 110L);
-  // The exact shape seen on this phone at 100 percent: negative current while
-  // a charger is still attached. It must clamp to a real zero, not to "unknown".
-  eq("negative current clamps to zero", wattsOf(-164000, 4400), 0f);
+  // The exact shape this phone reports WHILE CHARGING, measured on it:
+  // current_now = -204000 uA at 4008 mV with USB powered and status charging.
+  // The sign is not portable, so the magnitude is the reading; treating the
+  // minus as "discharging" is what pinned the status bar on 0.0W.
+  eq("charging answers negative here", Math.round(wattsOf(-204000, 4008) * 100), 82L);
+  eq("a negative current is the same watts as its magnitude",
+     wattsOf(-204000, 4008), wattsOf(204000, 4008));
+  eq("the 100 percent shape is no longer zero", Math.round(wattsOf(-164000, 4400) * 100), 72L);
   eq("zero current is a real zero", wattsOf(0, 4400), 0f);
   // NaN is never equal to itself, so the sentinel is probed with isNaN.
   eq("unknown current", Float.isNaN(wattsOf(Integer.MIN_VALUE, 4400)), true);

@@ -153,28 +153,29 @@ final class BatteryPresence {
      * session and would sit there unchanged while the real power tapered away,
      * which is the opposite of what a performance readout is for.
      *
-     * <p>Negative current is clamped to zero rather than reported. On this
-     * platform a phone held at 100 % on a charger answers with a small negative
-     * current - the charger has stopped pushing and the phone is running off the
-     * battery again - and "-0.7W" in the status bar would read as a defect. When
-     * nothing is going into the battery the honest answer is 0.
+     * <p>The sign of {@code current_now} is not portable, so only its magnitude
+     * is used. This platform answers with a <em>negative</em> current while the
+     * battery is charging - measured at -204000 uA against 4008 mV with USB
+     * powered, status charging and the charge counter rising - while other
+     * platforms answer positive for the same situation. Reading the sign as
+     * "discharging" therefore turned every real charging current into 0 and the
+     * status bar sat on "0.0W" until a sampling glitch happened to land on a
+     * positive value. The magnitude is the current actually flowing either way,
+     * and the caller only draws it while something is attached.
      *
      * <p>Not being able to ask is a different answer, and it is
      * {@link TrioState#POWER_UNKNOWN} rather than 0. {@code getIntProperty}
      * answers {@code Integer.MIN_VALUE} when the platform does not implement the
      * property, and the voltage is absent on a device that does not report it;
      * folding either into 0 would put a "0.0W" next to the temperature that
-     * claims a reading the platform never gave.
+     * claims a reading the platform never gave. A real zero stays a real zero:
+     * no current flowing is 0 W and is drawn as such.
      */
     private static float wattsOf(int currentMicroAmps, int voltageMilliVolts) {
         if (currentMicroAmps == Integer.MIN_VALUE || voltageMilliVolts <= 0) {
             return TrioState.POWER_UNKNOWN;
         }
-        final float watts = currentMicroAmps * (voltageMilliVolts / 1000f) / 1000000f;
-        if (!(watts > 0f)) {
-            return 0f;
-        }
-        return watts;
+        return Math.abs(currentMicroAmps) * (voltageMilliVolts / 1000f) / 1000000f;
     }
 
     private static void publish(boolean attached, float watts, int temperature) {

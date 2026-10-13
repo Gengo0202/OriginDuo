@@ -48,11 +48,11 @@
 | 网络类型字重 | `type_weight` | `:842-853` | `:361`、`:585`、`:601` | `:1946`（环外标签用它）|
 | 底纹浓度 | `track_alpha` | `:854-862` | `:285`、`:311`、`:411`、`:518` | 不读 |
 | 调试日志 | `debug_log` | `:950-958` | 不读 | `:80-82` |
-| 充电功率 | `perf_power` | `:860-867` | 不读 | `TrioHooks.java:3667`（`perfText`；是否挂载由 `TrioAppearance.java:312` 的 `perfAnywhere()` 决定；`Float.isNaN` 那一项挡住「答不出功率」） |
-| 电池温度 | `perf_temp` | `:868-875` | 不读 | `TrioHooks.java:3687`（同上，两个读数共用一个视图） |
-| 图标整体尺寸 | `glyph_scale_pct` | `:896-913` | `TrioRenderer.java:136`（`inkScale(w, h, rect) * appearance.glyphFit()`，只影响适配系数） | 不读（但 `TrioAppearance.glyphFit()` 是两侧共用的那个乘数定义） |
-| 读数整体尺寸 | `perf_scale_pct` | `:926-937` | 不读 | `TrioHooks.java:3755`（`perfTextSize` 里取 `a.perfFit()`，最后乘在每一条返回值上） |
-| 读数字重 | `perf_weight` | `:938-949` | 不读 | `TrioHooks.java:3836`（`perfWidth` 与 `refreshPerfLabel`；`a.perfTypeWeight()` 既进 `perfLineHeight` 也进预留宽度的比较） |
+| 充电功率 | `perf_power` | `:861-868` | 不读 | `TrioHooks.java:3696`（`perfText`；是否挂载由 `TrioAppearance.java:340` 的 `perfAnywhere()` 决定；`Float.isNaN` 那一项挡住「答不出功率」） |
+| 电池温度 | `perf_temp` | `:869-876` | 不读 | `TrioHooks.java:3715`（同上，两个读数共用一个视图） |
+| 图标整体尺寸 | `glyph_scale_pct` | `:897-914` | `TrioRenderer.java:136`（`inkScale(w, h, rect) * appearance.glyphFit()`，只影响适配系数） | 不读（但 `TrioAppearance.glyphFit()` 是两侧共用的那个乘数定义；第十四轮起 `perfTextSize` 也把它折进 `icon`） |
+| 读数整体尺寸 | `perf_scale_pct` | `:927-938` | 不读 | `TrioHooks.java:3797`（`perfTextSize` 里取 `a.perfFit()`，最后乘在每一条返回值上） |
+| 读数字重 | `perf_weight` | `:939-950` | 不读 | `TrioHooks.java:3840`（`perfWidth`）与 `:4052`（`updatePerfLabel` 的 `setTypeface`）；`a.perfTypeWeight()`（`TrioAppearance.java:371`）既进 `perfLineHeight`，也进预留宽度的比较，还是第五路重同步分句 |
 
 **第一个整体印象**（下面的分类是**第十轮之前的快照**，那之后 `signal_mode`、`stacked_signal`、`data_sim_only`、`out_signal_size` 等键加入，第十一轮又加了 5 个；这里保留原文的分类结构，只在末尾补上本轮新键的归属）：
 
@@ -532,11 +532,11 @@ final float scale = Math.min(width / inkW, height / outSignalInkH(dotRow));
 - **它是一条独立的键，不复用 `type_weight`**：`type_weight` 驱动的是**网络类型标签**（环内分段绘制与环外 `RelativeSizeSpan` 都按它取字重），而这两项是状态栏上的读数。把两者绑在一起意味着「想把读数调粗」会顺手把环外的 5G 标签也改粗，反之亦然——它们之间没有任何语义联系，只是碰巧都叫「字重」。
 - **字重必须自己成为重同步的第五个分句**：`PerfLabel` 新增 `int weight = -1`，记住当前这支 typeface 是照哪个字重建的；`refreshPerfLabel` 的条件因此从四路变五路，多出 `|| perf.weight != weight`（`weight = TrioConfig.appearance().perfTypeWeight()`）。原因是字重改变画面有两条路径——typeface 本身、以及它带来的行高——而**当字号被钉在 `PERF_MIN_SIZE_RATIO` 下限时（本机默认就在这个档位）改字重不改变字号**，既有的「文本变了没」与「尺寸变了没」两个分句都看不见它，滑杆会像死了一样。`perfTextSize` 同时改用读数自己的字重量行高：`perfLineHeight(base, a.perfTypeWeight())`，不再借用类型标签的 `typeWeight`。
 - **缺陷本身：`reserveOutRingStrip` 原先拿 `perf.getMeasuredWidth()` 当读数的预留宽**。那是**当前文本的实测宽**，而 `BatteryPresence` 大约每秒发布一次新瓦数，`0.0W`（102px）与 `6.1W`（92px）之间来回时预留值就跟着跳；每次跳动都经 `setPadding` 重排 MIUI 的图标行，左侧的原生图标被整体推一下——表现就是「图标一直往右跑，回不去」。设备日志里同一个文件内预留值在 `102` 与 `108` 之间交替，是这条判断的现场证据。
-- **修法是让预留宽度成为「读数是什么」的函数，而不是「它此刻写着什么」的函数**：新增 `private static int perfWidth(PerfLabel perf, String text)`（`TrioHooks.java:3836`），借视图自己的 `Paint` 量出这段文字**可能**变成的最宽形态。三处细节各自针对一个坑：①把每一位数字换成**该字体里最宽的那个数字**——把十个数字各量一遍问出来，而不是假定 `'0'` 或 `'8'`（不同字体里最宽的数字不同）；②**逐行量**——`\n` 对 paint 只是一个字符，整串量会把两行加在一起、预留出两倍的实际宽度；③`(int) Math.ceil(width)` 向上取整。调用点因此是 `total += perfWidth(perf, perf.getText().toString()) + labelInward;`（`TrioHooks.java:4784`）。
+- **修法是让预留宽度成为「读数是什么」的函数，而不是「它此刻写着什么」的函数**：新增 `private static int perfWidth(PerfLabel perf, String text)`（`TrioHooks.java:3840`），借视图自己的 `Paint` 量出这段文字**可能**变成的最宽形态。三处细节各自针对一个坑：①把每一位数字换成**该字体里最宽的那个数字**——把十个数字各量一遍问出来，而不是假定 `'0'` 或 `'8'`（不同字体里最宽的数字不同）；②**逐行量**——`\n` 对 paint 只是一个字符，整串量会把两行加在一起、预留出两倍的实际宽度；③`(int) Math.ceil(width)` 向上取整。调用点因此是 `total += perfWidth(perf, perf.getText().toString()) + labelInward;`（`TrioHooks.java:4788`）。
 - **为什么是 paint 而不是真的 layout 一段探针字符串**：探针方案会**踏上布局这条路**，而 `reserveOutRingStrip` 就在布局/同步的链上；paint 度量是纯计算。代价是没算进字距（`VALUE_LETTER_SPACING = -0.04em`），所以答案比真正画出来的宽几个像素——**这是安全的方向**：预留宁可略宽，绝不能短（短了图标会被压在读数上）。此后只有**数字位数**还能改变预留，那是阶跃、不是闪烁。
 - **顺带把滑杆挪到该在的页**：「读数整体尺寸」原在「常规」页性能读数卡片末尾，现在与新增的「读数字重」一起放进「尺寸」页的**整体尺寸**小节（`R.string.group_scale`），紧跟字形那条之后。理由写在源码注释里：它们和描边粗细、字号是一类东西（都是**数字**），而一页开关不是滑杆该待的地方。两条读数滑杆共用同一个 `perfHint` tooltip。`generalTab` 末尾只留下一条注释说明它们搬去了哪里。
 - **本轮计数**：`Prefs` 的 `KEY_*` 常量 41 → **42**，在用的键 39 → **40**，`TrioSettings` public 字段 39 → **40**，`SettingsRepository` setter 39 → **40**，设置页可写项 39 → **40**；`SettingsScreen.kt` 的 `enabled =` 实测 56 → **58**（逐行数出来的，本轮新增 2 处：字重滑杆的 `enabled = a.glyph && a.perfAnywhere()` 与它那个 `TooltipBox` 的 `enabled = perfHint != null`——挪动的那条滑杆把两处 `enabled =` 原样带走，不改变计数）。
 - **断言脚本跟着扩**：`tests\perf-layout.ps1` 从 53 条加到 **64** 条，随后又加到 **76** 条（`PASS: 76 cases over perfTextSize, perfLineSpacing, perfWidth and inkScale`）。前 11 条覆盖 `perfTypeWeight` 的两端 clamp 与默认值；后 12 条**执行** `perfWidth` 本身，而在此之前这条修复只有一条源码契约钉（断言生产里写的是 `perfWidth(perf,` 而不是 `perf.getMeasuredWidth()`）——钉的是字面而不是答案，实现返回什么都算过。12 条覆盖最宽数字替换确实变宽、每个数字按最宽量、两个不同瓦数预留**同宽**（抗抖动核心）、`(int) Math.ceil` 的取整方向且该值非整数、位数变化仍是台阶、**两行的预留等于较宽的那一行而不是两行之和**、最宽数字是问字体不是假定 `'0'`（换一张字宽表答案跟着变）、空文本回落到视图已有 frame、等宽字体下不偏短。为了让「替换」可观测，探针给垫片 `Paint` 注入了 `setDigitWidths(float[])`：桌面 SansSerif 十个数字都是 556/1000（实测），替换在这张脸上是恒等操作，无论实现对不对都通过；真实状态栏字体是比例宽度（设备日志 `0.0W`=102px 对 `6.1W`=92px），那张表就是它的替身。五路重同步条件里的 `perf.weight != weight` 也一并按形状钉住。
-- **未动 / 盲区**：本轮结束时**字重滑杆与抗抖动修复都没有在真机上确认过**——设备再次中途脱离 USB，而这两项恰好都属于「只有上机才看得见」的那一类（读数没有预览格，跳字也只有在真状态栏里逐帧看才认得出）。`perfWidth` 的算术由断言脚本兜底，但「图标不再右跳」这句话目前只有设备日志这一条间接证据。
+- **未动 / 盲区**：字重滑杆与抗抖动修复都已在真机上确认过。字重滑杆在尺寸页逐档可见；**但 `perfWidth` 单独并不足以止住跳动**——上机仪器化（在 `reserveOutRingStrip` 里打印每个分量）显示 `perfWidth` 在 28 帧里恒为 `101`，而图标行的 `paddingEnd` 仍在 `107 ↔ 0` 之间以功率更新的节奏乒乓。真正的成因是 `removeOutTypeLabel` / `removePerfLabel` 里**抢先的 `releaseOutTypeSpace`**（排在判空之前，视图为 null 时直接 return、不再重新 reserve），改由 `reserveOutRingStrip` 单独当权威之后 `strip release` 计数归 0、14 张连续截帧里左侧原生图标钉死在 `832-844|846-878|890-927`。详见 `1003-todo.md` §30.6。**教训：从症状反推病因会走错——这一次从像素反推出的 3–8px 位移，实际是 107px 的整行横移被状态栏边界裁掉之后的残影。**
 
 
