@@ -813,6 +813,41 @@ live host（宿主匹配只认状态栏那一行），于是它的容器什么�
 `Keyguard` 的容器**放行：这些容器照常折叠自己的图标。只放开折叠这一项——采样仍只认权威状态栏
 容器（`isStatusBarContainer`），绘制路径也不变。
 
+### 独立窗口绘制：窗口类型与被判为可疑覆盖层的那一段
+
+`TrioOverlay` 另开一个只有图标那么大、不接收触摸的窗口（`glyph_window` 开关）。这个窗口用的是
+**系统级 overlay 类型**，因此会被平台的触摸遮挡判定盯上 —— 这一段记两件事：类型怎么选，
+以及为什么还必须再打一个私有标记。
+
+**窗口类型优先 `TYPE_STATUS_BAR_SUB_PANEL`（2017）**：MIUI 的 `StatusBar1`
+（`(0,0)(fillx121)`）与 `TYPE_STATUS_BAR_ADDITIONAL`（2041）同在一个 base layer（161000），
+**后加者赢**；而 `StatusBar1` 会在配置变更与 SystemUI 重启时重新加窗，于是 2041 会被它盖住。
+`windowType()` 因此先反射取 2017，取不到才退 2041，再取不到用 `TYPE_FALLBACK = 2038`；
+结果缓存进 `sWindowType`，进程存活期内不再重试。
+
+**★ 但 2017 恰恰不在平台的类型白名单里**：`InputMonitor.isTrustedOverlay(int type)` 认的
+类型里**有 `TYPE_STATUS_BAR_ADDITIONAL`，没有 `TYPE_STATUS_BAR_SUB_PANEL`**（AOSP
+`android-14.0.0_r1`，`InputMonitor.java:740-753`）；而 `WindowState.getTouchOcclusionMode()`
+对状态栏类型走的是 `BLOCK_UNTRUSTED`（它们不是 system-alert 类型，所以拿不到 `USE_OPACITY`
+这条捷径）。合起来的结果是：窗口虽然不可触摸、只占一个图标的宽、位于状态栏、且属于 SystemUI，
+仍会被读作「可能劫持触摸的覆盖层」，落在它下面的触摸被标记为 obscured —— 带防护的应用
+（被报告的就是 LSPosed 的权限请求界面，issue #28 / #33）看到这个标记就拒绝响应。
+
+**修法是给窗口打 `PRIVATE_FLAG_TRUSTED_OVERLAY`**（`1 << 29`）。它经 Binder 到服务端
+（`WindowManagerService` 把该位转成 `InputConfig.TRUSTED_OVERLAY`），是否采信由
+`WindowState.shouldWindowHandleBeTrusted(...)` 决定 —— 除了这一位，还要求该 session 有
+`INTERNAL_SYSTEM_WINDOW` 权限；SystemUI 进程满足这一条。标记必须在**设置窗口 flags 的同一处**
+定下来（`markTrustedOverlay(params)` 紧跟 `params.flags = …`），这样日志里那句
+`overlay: added type=… privateFlags=0x…` 就能就地证明它生效。
+
+**两个名字都必须走反射**：`PRIVATE_FLAG_TRUSTED_OVERLAY` 与 `privateFlags` 都是 `@hide`，
+本机 `android.jar` 的 `javap -p 'android.view.WindowManager$LayoutParams'` 里
+**连 `TYPE_STATUS_BAR_SUB_PANEL` 都找不到**，所以 `params.privateFlags |= …` 这种直写
+根本编译不过。`markTrustedOverlay` 因此读常量、再 `field.getInt(params) | trusted` 写回 ——
+**必须是「或」而不是赋值**，否则会把平台自己拥有的那些位抹掉；常量读不到（老平台）时原样放过，
+不凭空造一个位。这条接线由 `tests\overlay-window.ps1` 用三种平台形状（字段与常量都在 / 只有字段 /
+都没有）各编一遍来锁。
+
 ### 实时刷新
 
 等级来自 `transformResId`，但**指示器消失时那个方法不再被调用** —— MIUI 关掉 Wi-Fi 后不再重绑
@@ -1422,7 +1457,7 @@ work\overview\                         全部支持样式的状态总览图（�
 ## 测试
 
 仓库**没有 Android 侧自动化测试**（`app\src` 下只有 `main`，没有 `test` / `androidTest` source set），
-但 `tests\` 下有四个**纯 JVM 断言脚本**（见下面第 3 条）。回归验证靠三条通道：
+但 `tests\` 下有五个**纯 JVM 断言脚本**（见下面第 3 条）。回归验证靠三条通道：
 
 1. **离线 JVM 预览**（`work\preview\`，不入库）：一套只服务工装的 `android.*` 桌面垫片 + 入口
    `PreviewMain`，直接编译 `Prefs.java` / `TrioSettings.java` / `TrioGeometry.java` /
@@ -1496,14 +1531,31 @@ work\overview\                         全部支持样式的状态总览图（�
    交给 `canvas.scale`）：源码钉照样通过，只有像素断言 `the painted area falls with the square of the
    factor: got <0.6736883167543373> want <0.36000001430511475>` 抓到它 —— 这证明像素那部分独立承重，
    不是给契约钉当装饰。
-   四个脚本都只读源码、写到 `work\` 下编译，不碰 `app\src`。
-   **垫片放在 `tests\shims`（入库）而不是 `work\preview\src`（`work\` 被 gitignore）**：第四个脚本
+   `tests\overlay-window.ps1` 锁**独立窗口那个私有标记**的整条接线（第三十轮，issue #28 / #33）。
+   这条修复在桌面上特别别扭：平台的 `WindowManager.LayoutParams` 可能**两个隐藏名字都有、只有
+   `privateFlags` 字段、或两个都没有**，而「有没有」是编译期事实 —— 一个测试类编不了三种平台。
+   所以脚本的做法是**整棵重建 `work\overlaywindow\{src,classes}` 三次**，每次换成一种形状的
+   `android.view.WindowManager` 桩，把同一份 `OverlayTest.java` 编一遍再跑：形状「字段 + 常量」
+   9 条、形状「只有字段」3 条、形状「都没有」4 条。断言里 `owned=0x08` 代表「平台自己拥有的位」，
+   用来证明写回的是**或**而不是赋值；形状「只有字段」那组则证明没有常量时**窗口一个位都不动**。
+   另有八条**源码契约钉**补在形状断言够不到的地方：两个隐藏名字必须仍按字符串反射读、**禁止**
+   `params.privateFlags`（这是编译不过的写法，也正是 PR #29 第一版被作者自己换掉的原因）、必须是
+   `field.getInt(params) | trusted`、必须有 `if (trusted == 0) {`、`FLAG_NOT_TOUCHABLE` 必须还在、
+   `markTrustedOverlay(params);` 必须出现在设置窗口 flags 之后、`TYPE_STATUS_BAR_SUB_PANEL` 仍必须
+   优先尝试。**负对照实测五条全部 `EXIT=1`**：改成赋值死在第 2 条、删掉零判死在第 5 条、写成直写
+   死在「不可直写」那条、把常量 `| 1` **只改位而保留全部字面量** 则由**执行级**用例抓到
+   （`the flag reads back what the platform declares: got <536870913> want <536870912>`），
+   换回 HEAD 版死于抽取那一句。最后一条是要紧的：它证明形状断言独立承重，不是给源码钉当装饰。
+   五个脚本都只读源码、写到 `work\` 下编译，不碰 `app\src`。
+   **垫片放在 `tests\shims`（入库）而不是 `work\preview\src`（`work\` 被 gitignore）**：`tests\glyph-scale.ps1`
    编译的是**真 `TrioRenderer`**，需要 `android/graphics/{Canvas,Paint,Path,RectF,Color,PorterDuff,
    Typeface}`、`android/view/View`、`android/{content/SharedPreferences,os/Bundle}` 与两个同名桌面替身
    （`TrioConfig`/`TrioState`）。这些垫片原先只在 `work\preview\src` 里有一份，而那棵树是**不入库**的，
    于是「把这条证明入库」的目的会被自己拆掉——工作区一清理，脚本就跑不起来。
    `tests\perf-layout.ps1` 也曾经从 `work/preview/src` 拷 `Typeface.java`，同样已改指 `tests\shims`。
-   判断方法很简单：把 `work\preview\src` 改名后再跑，四个脚本都应仍 `exit 0`。
+   （`tests\overlay-window.ps1` 不在此列：它自己生成 `android.view.WindowManager` 的三种桩，
+   与 `tests\shims` 无关。）
+   判断方法很简单：把 `work\preview\src` 改名后再跑，五个脚本都应仍 `exit 0`。
    **注意它们不会被自动发现**，要手动跑：
    `powershell -NoProfile -ExecutionPolicy Bypass -File tests\battery-presence.ps1`。
    PS 5.1 下**必须**这样经由 `cmd`（或让脚本自己吞掉 javac 的 stderr）运行：javac 会往 stderr 写

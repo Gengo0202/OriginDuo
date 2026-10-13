@@ -280,7 +280,7 @@ record KeyDef(String key, Kind kind, int def, int min, int max,
 | 6 | P1-3 `bar_stroke` + 迁移 | 中 | 老安装升级后矩形外观不变 |
 | 7 | P2 预览/写入/文档 | 中 | 预览与状态栏对照；全量设置改动后状态栏一致 |
 
-**注意**：仓库没有 Android 侧自动化测试（`app/src` 下只有 `main`；`tests/` 下后来补了四个纯 JVM 断言脚本，见 `docs/DEVELOPMENT.md` 「测试」一节）。P0-1 这种「行为必须完全不变」的重构，最划算的投入是先补一个纯 JVM 单测（`app/src/test`）来锁 `appearance()` 的真值表——它不依赖 Android，写起来最便宜，而且正好是这个重构的核心。
+**注意**：仓库没有 Android 侧自动化测试（`app/src` 下只有 `main`；`tests/` 下后来补了五个纯 JVM 断言脚本，见 `docs/DEVELOPMENT.md` 「测试」一节）。P0-1 这种「行为必须完全不变」的重构，最划算的投入是先补一个纯 JVM 单测（`app/src/test`）来锁 `appearance()` 的真值表——它不依赖 Android，写起来最便宜，而且正好是这个重构的核心。
 
 ---
 
@@ -341,8 +341,8 @@ record KeyDef(String key, Kind kind, int def, int min, int max,
 
 ### 6.6 验证方式
 
-仓库**没有 Android 侧自动化测试**（`app/src` 下只有 `main`），但 `tests/` 下已有四个纯 JVM 断言脚本
-（`wifi-presence.ps1`、`battery-presence.ps1`、`perf-layout.ps1`、`glyph-scale.ps1`，见 `docs/DEVELOPMENT.md` 「测试」一节第 3 条），所以验证分两层：
+仓库**没有 Android 侧自动化测试**（`app/src` 下只有 `main`），但 `tests/` 下已有五个纯 JVM 断言脚本
+（`wifi-presence.ps1`、`battery-presence.ps1`、`perf-layout.ps1`、`glyph-scale.ps1`、`overlay-window.ps1`，见 `docs/DEVELOPMENT.md` 「测试」一节第 3 条），所以验证分两层：
 
 1. **构建**：`gradle -p C:\code\HyperDuo :app:assembleDebug --offline -q` 通过。
 2. **五条离线工装**（不入库，`work\` 下）：`gapcheck`（电量弧算术）、`slotcheck`（居中槽位优先级，用「非居中布局逐像素不变」当不变量）、`dualsimcheck`（双卡判定规则，故意把 `charging` 换回 `bolt` 造一份反例构建）、`simcheck`（订阅号↔槽位映射、单排兜底、**以及读的是 MIUI 电平而不是 AOSP 电平**；三构建对照）、`outringcheck`（环内/环外与两个新开关的真值表 + 环内逐像素不变）。五条**全部 `exit 0`**，即固定版通过、反例版按预期失败。改动渲染器或 `TrioAppearance` 后这些都要重跑，机制记录在 `docs\DEVELOPMENT.md:805-862` 与「测试」一节。
@@ -538,5 +538,15 @@ final float scale = Math.min(width / inkW, height / outSignalInkH(dotRow));
 - **本轮计数**：`Prefs` 的 `KEY_*` 常量 41 → **42**，在用的键 39 → **40**，`TrioSettings` public 字段 39 → **40**，`SettingsRepository` setter 39 → **40**，设置页可写项 39 → **40**；`SettingsScreen.kt` 的 `enabled =` 实测 56 → **58**（逐行数出来的，本轮新增 2 处：字重滑杆的 `enabled = a.glyph && a.perfAnywhere()` 与它那个 `TooltipBox` 的 `enabled = perfHint != null`——挪动的那条滑杆把两处 `enabled =` 原样带走，不改变计数）。
 - **断言脚本跟着扩**：`tests\perf-layout.ps1` 从 53 条加到 **64** 条，随后又加到 **76** 条（`PASS: 76 cases over perfTextSize, perfLineSpacing, perfWidth and inkScale`）。前 11 条覆盖 `perfTypeWeight` 的两端 clamp 与默认值；后 12 条**执行** `perfWidth` 本身，而在此之前这条修复只有一条源码契约钉（断言生产里写的是 `perfWidth(perf,` 而不是 `perf.getMeasuredWidth()`）——钉的是字面而不是答案，实现返回什么都算过。12 条覆盖最宽数字替换确实变宽、每个数字按最宽量、两个不同瓦数预留**同宽**（抗抖动核心）、`(int) Math.ceil` 的取整方向且该值非整数、位数变化仍是台阶、**两行的预留等于较宽的那一行而不是两行之和**、最宽数字是问字体不是假定 `'0'`（换一张字宽表答案跟着变）、空文本回落到视图已有 frame、等宽字体下不偏短。为了让「替换」可观测，探针给垫片 `Paint` 注入了 `setDigitWidths(float[])`：桌面 SansSerif 十个数字都是 556/1000（实测），替换在这张脸上是恒等操作，无论实现对不对都通过；真实状态栏字体是比例宽度（设备日志 `0.0W`=102px 对 `6.1W`=92px），那张表就是它的替身。五路重同步条件里的 `perf.weight != weight` 也一并按形状钉住。
 - **未动 / 盲区**：字重滑杆与抗抖动修复都已在真机上确认过。字重滑杆在尺寸页逐档可见；**但 `perfWidth` 单独并不足以止住跳动**——上机仪器化（在 `reserveOutRingStrip` 里打印每个分量）显示 `perfWidth` 在 28 帧里恒为 `101`，而图标行的 `paddingEnd` 仍在 `107 ↔ 0` 之间以功率更新的节奏乒乓。真正的成因是 `removeOutTypeLabel` / `removePerfLabel` 里**抢先的 `releaseOutTypeSpace`**（排在判空之前，视图为 null 时直接 return、不再重新 reserve），改由 `reserveOutRingStrip` 单独当权威之后 `strip release` 计数归 0、14 张连续截帧里左侧原生图标钉死在 `832-844|846-878|890-927`。详见 `1003-todo.md` §30.6。**教训：从症状反推病因会走错——这一次从像素反推出的 3–8px 位移，实际是 107px 的整行横移被状态栏边界裁掉之后的残影。**
+
+### 6.15 第十六轮：#28 / #33 的触摸遮挡（半途接手一个社区 PR）
+
+用户要求「#28/#33 遮挡问题先修吧」。**这一轮没有新增任何键**（`Prefs` 的 `KEY_*`、在用键数、`TrioSettings` 字段、`SettingsRepository` setter、设置页可写项与 `enabled =` 计数全部不变），改的是既有开关 `glyph_window` 那条渲染路径上的一个窗口属性。
+
+- **症状与归属**：开着本模块时 LSPosed 的权限请求界面点不动——系统判定有别的窗口盖在上面，落在其下的触摸被打上 obscured，带防护的应用检测到该标记就拒绝响应（`1003-todo.md` §32.1）。
+- **根因不在「窗口太大」而在「窗口类型不被白名单认」**：`TrioOverlay.windowType()` 优先取 `TYPE_STATUS_BAR_SUB_PANEL`（2017，理由是 MIUI 的 `StatusBar1` 会在配置变更/SystemUI 重启时盖住 2041），而 AOSP 的 `InputMonitor.isTrustedOverlay(int)` 白名单里**有 `TYPE_STATUS_BAR_ADDITIONAL`（2041）、没有 2017**；配合 `WindowState.getTouchOcclusionMode()` 对状态栏类型走 `BLOCK_UNTRUSTED`，主线挑中的恰好是那个必须靠私有位自救的类型（§32.2 有逐行 AOSP 出处）。
+- **修法**：按 PR #29 的第二个提交（`b809317`）反射读写 `privateFlags`，把 `PRIVATE_FLAG_TRUSTED_OVERLAY`（`1 << 29`）**或**上去；**必须是「或」**，否则会抹掉平台自己拥有的位。第一版 `fb2fa61` 的 `params.privateFlags |= trusted;` 直写在本机的 `android.jar` 上根本编译不过——`javap -p` 里连 `TYPE_STATUS_BAR_SUB_PANEL` 都找不到。
+- **这一轮的验证方式与前几轮不同**：平台的 `WindowManager.LayoutParams` 可能「两个隐藏名字都有 / 只有字段 / 都没有」，而这是**编译期**事实，一个测试类编不了三种平台。所以新探针 `tests\overlay-window.ps1` **整棵重建生成树三次**，每次换一种桩形状编一遍：9 / 3 / 4 条断言，另加八条源码契约钉补在形状断言够不到处（禁止直写、禁止用赋值顶替「或」、没有该位的平台必须原样放过、`FLAG_NOT_TOUCHABLE` 必须还在、标记必须与窗口 flags 同处）。**五条负对照全部 `EXIT=1`**，其中最要紧的一条是**把常量 `| 1` 只改位而保留全部字面量**：源码钉照样通过，只有**执行级**用例抓到（`got <536870913> want <536870912>`），证明形状断言独立承重。
+- **未做**：真机核实（`dumpsys window` 里该窗口带 `pfl=TRUSTED_OVERLAY`、日志里 `privateFlags=0x20000000`）要等设备接上；PR #29 的另外两块（`redrawAll()` 换色重绘字形、`fileInk()` 配色归档）与 #4（环外读数与原生图标重叠时让整行左移，而不是只在 `setPadding` 上做手脚）仍在待办。
 
 

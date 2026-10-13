@@ -228,6 +228,16 @@ final class TrioOverlay {
     private static int sWindowType;
 
     /**
+     * {@code PRIVATE_FLAG_TRUSTED_OVERLAY}, or 0 on a platform without it.
+     *
+     * <p>Kept once it is read: the constant cannot change while the process
+     * lives, and the lookup is a reflection walk this window has no reason to
+     * repeat. Zero sends the next caller back to the lookup, which only ever
+     * happens on a platform that has no such flag at all.
+     */
+    private static int sTrustedOverlay;
+
+    /**
      * The one host whose window is live.
      *
      * <p>The bar can hold more than one battery view - MIUI's icon row is not the
@@ -305,6 +315,7 @@ final class TrioOverlay {
                 | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                 | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                 | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
+        markTrustedOverlay(params);
         params.setTitle(TITLE);
         params.alpha = 1f;
         params.windowAnimations = 0;
@@ -669,7 +680,8 @@ final class TrioOverlay {
             attached = true;
             glyph.postDelayed(mWatch, WATCH_INTERVAL_MS);
             TrioHooks.log(TrioHooks.LOG_INFO, "overlay: added type=" + params.type
-                    + " size=" + params.width + "x" + params.height);
+                    + " size=" + params.width + "x" + params.height
+                    + " privateFlags=0x" + Integer.toHexString(privateFlagsOf(params)));
             return true;
         } catch (Throwable t) {
             TrioHooks.log(TrioHooks.LOG_WARN, "overlay: addView failed: " + t);
@@ -688,6 +700,61 @@ final class TrioOverlay {
             TrioHooks.log(TrioHooks.LOG_INFO, "overlay: removed");
         } catch (Throwable ignored) {
             // The window is going away with the view tree anyway.
+        }
+    }
+
+    /**
+     * Marks the window as one the platform may trust.
+     *
+     * <p>Without the mark the platform reads a window drawn over an app as a
+     * possible tap-jacking overlay, and an app that checks for that - LSPosed's
+     * permission prompt is the one that was reported - refuses to answer
+     * touches that land under it. This window is not such an overlay: it is not
+     * touchable, it is one icon wide, it sits in the status bar, and it belongs
+     * to the system UI. The mark says exactly that.
+     *
+     * <p>Both the flag and the field it is written to are hidden, so both are
+     * reached reflectively. A platform that has neither is left alone: the
+     * window is then simply what it was before this existed.
+     */
+    private static void markTrustedOverlay(WindowManager.LayoutParams params) {
+        final int trusted = trustedOverlayFlag();
+        if (trusted == 0) {
+            return;
+        }
+        try {
+            final Field field = WindowManager.LayoutParams.class.getField("privateFlags");
+            field.setInt(params, field.getInt(params) | trusted);
+        } catch (Throwable ignored) {
+            // Hidden field: nothing to mark on this build.
+        }
+    }
+
+    /**
+     * {@code PRIVATE_FLAG_TRUSTED_OVERLAY}, or 0 on a platform without it.
+     */
+    private static int trustedOverlayFlag() {
+        if (sTrustedOverlay == 0) {
+            int flag = 0;
+            try {
+                final Field field = WindowManager.LayoutParams.class
+                        .getField("PRIVATE_FLAG_TRUSTED_OVERLAY");
+                flag = field.getInt(null);
+            } catch (Throwable ignored) {
+                // Older platform: there is no such mark to set.
+            }
+            sTrustedOverlay = flag;
+        }
+        return sTrustedOverlay;
+    }
+
+    /** The window's private flags, or 0 when that field is not on this build. */
+    private static int privateFlagsOf(WindowManager.LayoutParams params) {
+        try {
+            final Field field = WindowManager.LayoutParams.class.getField("privateFlags");
+            return field.getInt(params);
+        } catch (Throwable ignored) {
+            return 0;
         }
     }
 
