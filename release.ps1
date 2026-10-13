@@ -8,8 +8,15 @@
 # 版本号 -> versionCode 规则：major*10000 + minor*100 + patch（v1.0 -> 10000）。
 # 版本号可写 1、1.0 或 1.0.0，缺的段按 0 计；tag 名与所写的版本号一致。
 #
+# ★ 这个脚本只推 tag，**不推分支**。所以完整的发布是两步：
+#     git push origin main
+#     .\release.ps1 -Version 1.1 -NotesFile .\release-notes-1.1.md
+# 只跑脚本的话，GitHub 上能下到包、能看到 tag，但默认分支上还没有对应的提交
+# —— v1.4 和 v1.6.12 都踩过这个坑（见 docs\DEVELOPMENT.md 与 1003-todo.md §31.2）。
+#
 # 发布成功后会自动清理旧 release：Releases 页面只留刚发布的这一版。
 # 只删 release 记录，**tag 一律保留**（历史源码快照仍可用 tag 定位）。
+# 想保留历史 Release 就加 -KeepOldReleases。
 #
 # 主仓发布成功后还会接着调 release-module.ps1，把同一 APK、同一份说明发到 LSPosed 模块仓
 # （Xposed-Modules-Repo/io.github.yixing233.hyperduo）——两个仓库必须同版本，模块页的
