@@ -79,8 +79,8 @@ final class TrioRenderer {
 
     /**
      * The same frame for a caller that has a canvas of its own instead of a host
-     * view to measure: the glyph window of {@code TrioOverlay} is sized by its
-     * own layout params, and there is no hooked view behind it to ask.
+     * view to measure - {@code GlyphDrawable} hands the icon view's own bounds
+     * through, and the slot it paints into can be asked for nothing else.
      */
     static void drawState(Canvas canvas, int w, int h, TrioState s, TrioSettings cfg) {
         if (w <= 0 || h <= 0 || s == null || cfg == null) {

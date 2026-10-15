@@ -24,9 +24,6 @@
     <string name="trio_style_ring">Ring</string>
     <string name="trio_style_rect">Rectangular</string>
 
-    <string name="overlay_title">Draw in its own window</string>
-    <string name="overlay_summary">Draw in a window of its own, no longer clipped to the status bar\'s height (about 43dp).</string>
-
     <string name="show_wifi_title">Show Wi-Fi arcs</string>
     <string name="show_wifi_summary">Draw the Wi-Fi arcs; the number of arcs follows the real signal level.</string>
 

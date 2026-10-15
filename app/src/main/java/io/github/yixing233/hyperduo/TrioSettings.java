@@ -82,15 +82,6 @@ public final class TrioSettings {
      * icon in place the module draws no signal for this to narrow.
      */
     public boolean dataSimOnly;
-    /**
-     * Draws the glyph in a window of its own instead of in the status bar view.
-     *
-     * <p>Stored under the frozen key {@link Prefs#KEY_OVERLAY}. The status bar
-     * window is about 43dp tall and clips what it cannot show; this flag is what
-     * lets the glyph be drawn whole, at the price of hanging below the bar's own
-     * background.
-     */
-    public boolean overlayGlyph;
 
     public boolean roleColors;
     public int criticalOnDark;
@@ -215,7 +206,6 @@ public final class TrioSettings {
         s.signalMode = Prefs.DEF_SIGNAL_MODE;
         s.stackedSignal = Prefs.DEF_STACKED_SIGNAL;
         s.dataSimOnly = Prefs.DEF_DATA_SIM_ONLY;
-        s.overlayGlyph = Prefs.DEF_OVERLAY;
         s.perfPower = Prefs.DEF_PERF_POWER;
         s.perfTemp = Prefs.DEF_PERF_TEMP;
         s.perfScale = Prefs.DEF_PERF_SCALE;
@@ -288,7 +278,6 @@ public final class TrioSettings {
                 Prefs.MIN_SIGNAL_MODE, Prefs.MAX_SIGNAL_MODE);
         s.stackedSignal = p.getBoolean(Prefs.KEY_STACKED_SIGNAL, Prefs.DEF_STACKED_SIGNAL);
         s.dataSimOnly = p.getBoolean(Prefs.KEY_DATA_SIM_ONLY, Prefs.DEF_DATA_SIM_ONLY);
-        s.overlayGlyph = p.getBoolean(Prefs.KEY_OVERLAY, Prefs.DEF_OVERLAY);
         s.perfPower = p.getBoolean(Prefs.KEY_PERF_POWER, Prefs.DEF_PERF_POWER);
         s.perfTemp = p.getBoolean(Prefs.KEY_PERF_TEMP, Prefs.DEF_PERF_TEMP);
         s.perfScale = Prefs.clamp(
@@ -446,7 +435,6 @@ public final class TrioSettings {
         s.signalMode = signalMode;
         s.stackedSignal = stackedSignal;
         s.dataSimOnly = dataSimOnly;
-        s.overlayGlyph = overlayGlyph;
         s.perfPower = perfPower;
         s.perfTemp = perfTemp;
         s.perfScale = perfScale;
@@ -510,7 +498,6 @@ public final class TrioSettings {
             case Prefs.KEY_SIGNAL_MODE: signalMode = src.signalMode; return true;
             case Prefs.KEY_STACKED_SIGNAL: stackedSignal = src.stackedSignal; return true;
             case Prefs.KEY_DATA_SIM_ONLY: dataSimOnly = src.dataSimOnly; return true;
-            case Prefs.KEY_OVERLAY: overlayGlyph = src.overlayGlyph; return true;
             case Prefs.KEY_PERF_POWER: perfPower = src.perfPower; return true;
             case Prefs.KEY_PERF_TEMP: perfTemp = src.perfTemp; return true;
             case Prefs.KEY_PERF_SCALE: perfScale = src.perfScale; return true;
@@ -571,7 +558,6 @@ public final class TrioSettings {
                 Prefs.MIN_SIGNAL_MODE, Prefs.MAX_SIGNAL_MODE);
         s.stackedSignal = bundle.getBoolean(Prefs.KEY_STACKED_SIGNAL, Prefs.DEF_STACKED_SIGNAL);
         s.dataSimOnly = bundle.getBoolean(Prefs.KEY_DATA_SIM_ONLY, Prefs.DEF_DATA_SIM_ONLY);
-        s.overlayGlyph = bundle.getBoolean(Prefs.KEY_OVERLAY, Prefs.DEF_OVERLAY);
         s.perfPower = bundle.getBoolean(Prefs.KEY_PERF_POWER, Prefs.DEF_PERF_POWER);
         s.perfTemp = bundle.getBoolean(Prefs.KEY_PERF_TEMP, Prefs.DEF_PERF_TEMP);
         s.perfScale = Prefs.clamp(
@@ -678,7 +664,6 @@ public final class TrioSettings {
         b.putInt(Prefs.KEY_SIGNAL_MODE, signalMode);
         b.putBoolean(Prefs.KEY_STACKED_SIGNAL, stackedSignal);
         b.putBoolean(Prefs.KEY_DATA_SIM_ONLY, dataSimOnly);
-        b.putBoolean(Prefs.KEY_OVERLAY, overlayGlyph);
         b.putBoolean(Prefs.KEY_PERF_POWER, perfPower);
         b.putBoolean(Prefs.KEY_PERF_TEMP, perfTemp);
         b.putInt(Prefs.KEY_PERF_SCALE, perfScale);
@@ -739,16 +724,6 @@ public final class TrioSettings {
                 && signalMode == s.signalMode
                 && stackedSignal == s.stackedSignal
                 && dataSimOnly == s.dataSimOnly
-                // Overlay decides where the glyph is drawn rather than what it
-                // draws, which is why it was easy to leave out - but it is a
-                // stored setting like any other, and leaving it out of equals
-                // is not harmless: the settings screen holds the snapshot in a
-                // mutableStateOf, whose default policy is equality, so a write
-                // that changed only this field compared equal to the previous
-                // snapshot, no recomposition was scheduled, and the switch went
-                // on showing its old state until some other write happened to
-                // recompose the row. issue 25.
-                && overlayGlyph == s.overlayGlyph
                 // The two performance readouts are stored settings like any
                 // other, and the same issue 25 trap applies: the settings screen
                 // holds the snapshot in a mutableStateOf whose default policy is

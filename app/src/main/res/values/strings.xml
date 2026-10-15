@@ -24,9 +24,6 @@
     <string name="trio_style_ring">圆环</string>
     <string name="trio_style_rect">矩形</string>
 
-    <string name="overlay_title">独立窗口绘制</string>
-    <string name="overlay_summary">画在独立窗口里，不受状态栏高度（约 43dp）限制。</string>
-
     <string name="show_wifi_title">显示 Wi-Fi 弧</string>
     <string name="show_wifi_summary">最外层绘制 Wi-Fi 弧，弧数跟随信号强度。</string>
 

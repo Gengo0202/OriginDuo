@@ -12,12 +12,12 @@
 
 | 层 | 文件 | 职责 |
 | --- | --- | --- |
-| 存储 / 默认 / 界限 | `app/src/main/java/io/github/yixing233/hyperduo/Prefs.java` | 40 个在用键（另有 2 个只读 legacy 键 `show_mobile_type` 与 `out_type_size`，共 42 个 `KEY_*` 常量）、全部 `DEF_*` 默认与上下限，两侧共用的唯一真源 |
-| 快照 | `app/src/main/java/io/github/yixing233/hyperduo/TrioSettings.java` | 40 个 public 字段、`from`/`copy`/`applyKeyFrom`/`fromBundle`/`toBundle`，clamp 在读侧发生 |
-| 写入漏斗 | `app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsRepository.kt` | 40 个 setter，每个都「本地 commit → push 到远程 preferences → 广播」 |
+| 存储 / 默认 / 界限 | `app/src/main/java/io/github/yixing233/hyperduo/Prefs.java` | 39 个在用键（另有 2 个只读 legacy 键 `show_mobile_type` 与 `out_type_size`，共 41 个 `KEY_*` 常量）、全部 `DEF_*` 默认与上下限，两侧共用的唯一真源 |
+| 快照 | `app/src/main/java/io/github/yixing233/hyperduo/TrioSettings.java` | 39 个 public 字段、`from`/`copy`/`applyKeyFrom`/`fromBundle`/`toBundle`，clamp 在读侧发生 |
+| 写入漏斗 | `app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsRepository.kt` | 39 个 setter，每个都「本地 commit → push 到远程 preferences → 广播」 |
 | 渲染 | `app/src/main/java/io/github/yixing233/hyperduo/TrioRenderer.java` | 只读 `TrioSettings`，画圆环或矩形 |
 | Hook | `app/src/main/java/io/github/yixing233/hyperduo/TrioHooks.java` | 开关折叠槽位、交还原生图标、挂环外标签 |
-| 界面 | `app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsScreen.kt` | 4 个分页、40 个可写项、58 处 `enabled =`（第十五轮后实测计数；原为 20 / 33） |
+| 界面 | `app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsScreen.kt` | 4 个分页、39 个可写项、57 处 `enabled =`（第十七轮后实测计数；原为 20 / 33） |
 
 链路是单向的：`SettingsScreen`（唯一写入口 `update`，`SettingsScreen.kt:287-290`）→ `SettingsRepository` → SharedPreferences + 远程 preferences + 广播 → `TrioConfig` 快照 → `TrioRenderer` / `TrioHooks`。**渲染侧从不回写**，这条边界是干净的，问题全部出在「开关之间的语义」上。
 
@@ -57,7 +57,7 @@
 **第一个整体印象**（下面的分类是**第十轮之前的快照**，那之后 `signal_mode`、`stacked_signal`、`data_sim_only`、`out_signal_size` 等键加入，第十一轮又加了 5 个；这里保留原文的分类结构，只在末尾补上本轮新键的归属）：
 
 - **两侧都读**：`show_wifi`、`show_mobile`、`show_value`、`show_bolt`、`mobile_type_mode`、`ring_stroke`、`arc_stroke`、`value_size`、`type_weight`，加上本轮加入的 `type_suffix_scale`（环内分段绘制、环外 `RelativeSizeSpan`）与 `out_signal_margin_dp`（`TrioHooks` 定位/占位 + `TrioPreviewView` 预览）。
-- **只有渲染侧读**：`trio_style`、`swap_wifi_value`、`track_alpha`、`value_weight`、`type_size`、`role_colors`、六个 `color_*`、`low_threshold`（第十轮后的 `out_signal_size` 也属此类），以及第十四轮的 `glyph_scale_pct`（`TrioRenderer.drawInto` 把 `TrioAppearance.glyphFit()` 乘进适配系数；Hook 侧不读这个字段，只在挂 `TrioOverlay` 时走同一条 `drawState` 路径，而 `TrioOverlay` 刻意不拿它缩窗口）。
+- **只有渲染侧读**：`trio_style`、`swap_wifi_value`、`track_alpha`、`value_weight`、`type_size`、`role_colors`、六个 `color_*`、`low_threshold`（第十轮后的 `out_signal_size` 也属此类），以及第十四轮的 `glyph_scale_pct`（`TrioRenderer.drawInto` 把 `TrioAppearance.glyphFit()` 乘进适配系数；Hook 侧不读这个字段，`GlyphDrawable` 只是把同一个 `TrioRenderer.drawState` 交给 MIUI 的绘制路径，所以缩放仍只在这里应用一次）。
 - **只有 Hook 侧读**：`enabled`、`out_type_size`、`debug_log`（`TrioConfig.debugLog()`，`TrioHooks.java:80-81`），加上本轮的两个环外标签边距 `out_type_margin_left_dp` / `out_type_margin_right_dp`，第十三轮的两个性能读数 `perf_power` / `perf_temp`（两个键共用同一个 `PerfLabel` 视图，渲染器与预览都不看它们），以及第十四轮的 `perf_scale_pct`（只在 `perfTextSize` 里当乘数用），与第十五轮的 `perf_weight`（`a.perfTypeWeight()` 进 `perfLineHeight`，另有一个第五路重同步分句看它；渲染器与预览都不读）。
 
 `ring_stroke`/`arc_stroke`/`value_size` 在 Hook 侧只出现在 `TrioHooks.java:346-347` 的 debug 日志字符串里、不参与任何逻辑。**真正需要两个进程就同一份规则达成一致的** = 6 个结构开关（`enabled` 由 Hook 侧独占但语义上凌驾全部）加 `type_weight`（环外标签按它取字重，见 2.6）与 `type_suffix_scale`（两处必须给出同一个比例）。恰恰就是这几个，把复杂度撑起来了。
@@ -286,7 +286,7 @@ record KeyDef(String key, Kind kind, int def, int min, int max,
 
 ## 五、一句话总结
 
-乱的根源不是开关太多——40 个键里有 24 个只归一侧所有（`glyph_scale_pct` 只有渲染侧读、`perf_scale_pct` 与 `perf_weight` 只有 Hook 侧读），归属本身是清楚的；乱的是**那几个跨进程的结构开关：它们的组合规则被逐字复制在 5 个地方，而且其中一条规则（矩形样式）与文档声明相矛盾、另一条规则（无 Wi-Fi 时数字自动居中）根本没有开关**。先把规则收敛成一个 `appearance()` 纯函数，界面分组与文案修正就没有阻力了；这块收敛同时也让「加一个设置要改 10 处」变成「改 4 处」。
+乱的根源不是开关太多——39 个键里有 24 个只归一侧所有（`glyph_scale_pct` 只有渲染侧读、`perf_scale_pct` 与 `perf_weight` 只有 Hook 侧读），归属本身是清楚的；乱的是**那几个跨进程的结构开关：它们的组合规则被逐字复制在 5 个地方，而且其中一条规则（矩形样式）与文档声明相矛盾、另一条规则（无 Wi-Fi 时数字自动居中）根本没有开关**。先把规则收敛成一个 `appearance()` 纯函数，界面分组与文案修正就没有阻力了；这块收敛同时也让「加一个设置要改 10 处」变成「改 4 处」。
 
 ---
 
@@ -341,8 +341,8 @@ record KeyDef(String key, Kind kind, int def, int min, int max,
 
 ### 6.6 验证方式
 
-仓库**没有 Android 侧自动化测试**（`app/src` 下只有 `main`），但 `tests/` 下已有五个纯 JVM 断言脚本
-（`wifi-presence.ps1`、`battery-presence.ps1`、`perf-layout.ps1`、`glyph-scale.ps1`、`overlay-window.ps1`，见 `docs/DEVELOPMENT.md` 「测试」一节第 3 条），所以验证分两层：
+仓库**没有 Android 侧自动化测试**（`app/src` 下只有 `main`），但 `tests/` 下已有四个纯 JVM 断言脚本
+（`wifi-presence.ps1`、`battery-presence.ps1`、`perf-layout.ps1`、`glyph-scale.ps1`，见 `docs/DEVELOPMENT.md` 「测试」一节第 3 条），所以验证分两层：
 
 1. **构建**：`gradle -p C:\code\HyperDuo :app:assembleDebug --offline -q` 通过。
 2. **五条离线工装**（不入库，`work\` 下）：`gapcheck`（电量弧算术）、`slotcheck`（居中槽位优先级，用「非居中布局逐像素不变」当不变量）、`dualsimcheck`（双卡判定规则，故意把 `charging` 换回 `bolt` 造一份反例构建）、`simcheck`（订阅号↔槽位映射、单排兜底、**以及读的是 MIUI 电平而不是 AOSP 电平**；三构建对照）、`outringcheck`（环内/环外与两个新开关的真值表 + 环内逐像素不变）。五条**全部 `exit 0`**，即固定版通过、反例版按预期失败。改动渲染器或 `TrioAppearance` 后这些都要重跑，机制记录在 `docs\DEVELOPMENT.md:805-862` 与「测试」一节。
@@ -514,7 +514,7 @@ final float scale = Math.min(width / inkW, height / outSignalInkH(dotRow));
 - **字形那条只能往小缩（上界 100），是被宿主的框决定的**：MIUI 给电池图标预留的区域只有 **28dp × 20dp**（模块无法改动它，那个框是系统画的）。100% 已经等于系统允许的最大值，再往上只会画到视野外，裁不裁由 MIUI 说了算——「要求得比盒子能装的更多」并不能让盒子变大。做 dp 滑杆也要先把它换算回「这个不归模块所有的盒子」的占比，所以直接做成百分比更诚实。
 - **乘在适配系数上，而不是乘在设计单位上**：`TrioRenderer.drawInto` 现在是
   `final float scale = inkScale(w, h, rect) * appearance.glyphFit();`（`TrioRenderer.java:136`）。整块字形几何是同一个 120×120 的盒子，缩适配会让每一笔描边、每条弧、每个数字按同一比例变化，后面那次 `translate` 仍然把它居中；如果改成对设计单位另做一次 `canvas.scale`，`Paint.setStrokeWidth` 给的是设计单位下的常量，线宽与半径的缩放口径就会分家。
-- **`TrioOverlay` 刻意不拿它缩窗口**（这是本轮避开的那个陷阱）：独立窗口里的字形由 `drawState` 画，而 `drawState` 走的就是上面那条已经乘过 `glyphFit()` 的路径。窗口尺寸再按同一百分比缩一次，设置就被应用了两遍。正确形态是**宿主大小的透明窗口 + 居中的小字形**。
+- **缩放只在适配系数上应用一次**（这是本轮避开的那个陷阱）：槽里的字形由 `drawState` 画，而 `drawState` 走的就是上面那条已经乘过 `glyphFit()` 的路径。任何「再按同一百分比缩一次交给 drawable 的 bounds」的做法都会让设置被应用两遍。正确形态是**bounds 就是电池图标自己的框 + 居中的小字形**；`GlyphDrawable.draw` 直接把 `getBounds()` 的宽高交给 `drawState`，不做第二次换算。
 - **读数那条乘在自适应结果之上，而不是替掉它**：`perf_scale_pct` 经 `TrioAppearance.perfFit()` 后**最后**乘在 `TrioHooks.perfTextSize` 的返回值上——`Math.max(base * PERF_MIN_SIZE_RATIO, Math.min(base, size)) * factor`——并且三条提前返回的兜底分支也各乘一次（`lines < 2 || host == null`、`fit <= 0f`、`lineHeight <= 0f` 都返回 `base * factor`）。**必须覆盖每一条答案**：只开一项读数时走的正是 `lines < 2` 那条分支，若只缩放组合态，单项时滑杆毫无反应，等用户打开第二个开关时读数会突然跳一下。乘在自适应之上而不是设成绝对 dp，则保证两项读数仍然跟着图标高度与 `out_type_size_dp` 走。
 - **两条滑杆的位置与门禁**：字形那条在「尺寸」页新增的**整体尺寸**小节里（`R.string.group_scale`），门禁只跟总开关（`enabled = a.glyph`）——它缩的就是字形本身，字形关掉就没有作用于其上的东西；它不门控任何行、也不被任何行门控。读数那条最初放在「常规」页性能读数卡片的末尾，**第十五轮已挪到同一个小节里、紧挨字形那条**（见 §6.14），门禁是 `a.glyph && a.perfAnywhere()`，并带 `gateHint(a.glyph to R.string.master_title, a.perfAnywhere() to R.string.perf_pair_title)` 的 tooltip——「两项读数都关着所以变灰」这件事离屏幕上的现象远了一步，需要说明。两条都用 `valueTextSuffix = "%"`。
 - **两条都是全新的键名，没有复用旧键**：框架不做类型转换，一个键一辈子只有一个类型（§6.2 第 3 条与 §P1-1 的教训）。`glyphScale`/`perfScale` 走全链：`Prefs` 常量与上下限 → `TrioSettings` 字段与 `defaults()`/`from()`/`copy()`/`applyKeyFrom`/`fromBundle`/`toBundle`/`equals`/`hashCode` → `TrioAppearance` 字段与 `glyphFit()`/`perfFit()` → `SettingsRepository.setGlyphScale`/`setPerfScale` 与 `syncAllToFramework()` 的两行 `putInt` → `SettingsScreen` 的两条 `IntSlider`。
@@ -539,14 +539,33 @@ final float scale = Math.min(width / inkW, height / outSignalInkH(dotRow));
 - **断言脚本跟着扩**：`tests\perf-layout.ps1` 从 53 条加到 **64** 条，随后又加到 **76** 条（`PASS: 76 cases over perfTextSize, perfLineSpacing, perfWidth and inkScale`）。前 11 条覆盖 `perfTypeWeight` 的两端 clamp 与默认值；后 12 条**执行** `perfWidth` 本身，而在此之前这条修复只有一条源码契约钉（断言生产里写的是 `perfWidth(perf,` 而不是 `perf.getMeasuredWidth()`）——钉的是字面而不是答案，实现返回什么都算过。12 条覆盖最宽数字替换确实变宽、每个数字按最宽量、两个不同瓦数预留**同宽**（抗抖动核心）、`(int) Math.ceil` 的取整方向且该值非整数、位数变化仍是台阶、**两行的预留等于较宽的那一行而不是两行之和**、最宽数字是问字体不是假定 `'0'`（换一张字宽表答案跟着变）、空文本回落到视图已有 frame、等宽字体下不偏短。为了让「替换」可观测，探针给垫片 `Paint` 注入了 `setDigitWidths(float[])`：桌面 SansSerif 十个数字都是 556/1000（实测），替换在这张脸上是恒等操作，无论实现对不对都通过；真实状态栏字体是比例宽度（设备日志 `0.0W`=102px 对 `6.1W`=92px），那张表就是它的替身。五路重同步条件里的 `perf.weight != weight` 也一并按形状钉住。
 - **未动 / 盲区**：字重滑杆与抗抖动修复都已在真机上确认过。字重滑杆在尺寸页逐档可见；**但 `perfWidth` 单独并不足以止住跳动**——上机仪器化（在 `reserveOutRingStrip` 里打印每个分量）显示 `perfWidth` 在 28 帧里恒为 `101`，而图标行的 `paddingEnd` 仍在 `107 ↔ 0` 之间以功率更新的节奏乒乓。真正的成因是 `removeOutTypeLabel` / `removePerfLabel` 里**抢先的 `releaseOutTypeSpace`**（排在判空之前，视图为 null 时直接 return、不再重新 reserve），改由 `reserveOutRingStrip` 单独当权威之后 `strip release` 计数归 0、14 张连续截帧里左侧原生图标钉死在 `832-844|846-878|890-927`。详见 `1003-todo.md` §30.6。**教训：从症状反推病因会走错——这一次从像素反推出的 3–8px 位移，实际是 107px 的整行横移被状态栏边界裁掉之后的残影。**
 
-### 6.15 第十六轮：#28 / #33 的触摸遮挡（半途接手一个社区 PR）
+### 6.15 第十六轮：#28 / #33 的触摸遮挡（半途接手一个社区 PR）——第十七轮已整体退场
 
 用户要求「#28/#33 遮挡问题先修吧」。**这一轮没有新增任何键**（`Prefs` 的 `KEY_*`、在用键数、`TrioSettings` 字段、`SettingsRepository` setter、设置页可写项与 `enabled =` 计数全部不变），改的是既有开关 `glyph_window` 那条渲染路径上的一个窗口属性。
 
+> **本节是历史记录：第十七轮把整条独立窗口路线删掉了**（`TrioOverlay.java`、`tests\overlay-window.ps1` 与 `glyph_window` 设置链一并退场，字形改由 `GlyphDrawable` 塞进 MIUI 电池图标自己的 drawable 槽，见 §6.16）。因此下面提到的 `TrioOverlay.windowType()`、`markTrustedOverlay`、`PRIVATE_FLAG_TRUSTED_OVERLAY` 在树里都已不存在——留在这里是因为它记录的判断仍然成立：那个窗口之所以被平台当成可疑覆盖层，根因是**窗口类型不在白名单里**，而不是窗口太大。
+
 - **症状与归属**：开着本模块时 LSPosed 的权限请求界面点不动——系统判定有别的窗口盖在上面，落在其下的触摸被打上 obscured，带防护的应用检测到该标记就拒绝响应（`1003-todo.md` §32.1）。
-- **根因不在「窗口太大」而在「窗口类型不被白名单认」**：`TrioOverlay.windowType()` 优先取 `TYPE_STATUS_BAR_SUB_PANEL`（2017，理由是 MIUI 的 `StatusBar1` 会在配置变更/SystemUI 重启时盖住 2041），而 AOSP 的 `InputMonitor.isTrustedOverlay(int)` 白名单里**有 `TYPE_STATUS_BAR_ADDITIONAL`（2041）、没有 2017**；配合 `WindowState.getTouchOcclusionMode()` 对状态栏类型走 `BLOCK_UNTRUSTED`，主线挑中的恰好是那个必须靠私有位自救的类型（§32.2 有逐行 AOSP 出处）。
-- **修法**：按 PR #29 的第二个提交（`b809317`）反射读写 `privateFlags`，把 `PRIVATE_FLAG_TRUSTED_OVERLAY`（`1 << 29`）**或**上去；**必须是「或」**，否则会抹掉平台自己拥有的位。第一版 `fb2fa61` 的 `params.privateFlags |= trusted;` 直写在本机的 `android.jar` 上根本编译不过——`javap -p` 里连 `TYPE_STATUS_BAR_SUB_PANEL` 都找不到。
-- **这一轮的验证方式与前几轮不同**：平台的 `WindowManager.LayoutParams` 可能「两个隐藏名字都有 / 只有字段 / 都没有」，而这是**编译期**事实，一个测试类编不了三种平台。所以新探针 `tests\overlay-window.ps1` **整棵重建生成树三次**，每次换一种桩形状编一遍：9 / 3 / 4 条断言，另加八条源码契约钉补在形状断言够不到处（禁止直写、禁止用赋值顶替「或」、没有该位的平台必须原样放过、`FLAG_NOT_TOUCHABLE` 必须还在、标记必须与窗口 flags 同处）。**五条负对照全部 `EXIT=1`**，其中最要紧的一条是**把常量 `| 1` 只改位而保留全部字面量**：源码钉照样通过，只有**执行级**用例抓到（`got <536870913> want <536870912>`），证明形状断言独立承重。
-- **未做**：真机核实（`dumpsys window` 里该窗口带 `pfl=TRUSTED_OVERLAY`、日志里 `privateFlags=0x20000000`）要等设备接上；PR #29 的另外两块（`redrawAll()` 换色重绘字形、`fileInk()` 配色归档）与 #4（环外读数与原生图标重叠时让整行左移，而不是只在 `setPadding` 上做手脚）仍在待办。
+- **根因不在「窗口太大」而在「窗口类型不被白名单认」**：`TrioOverlay.windowType()` 优先取 `TYPE_STATUS_BAR_SUB_PANEL`（2017，理由是 MIUI 的 `StatusBar1` 会在配置变更/SystemUI 重启时盖住 2041），而 AOSP 的 `InputMonitor.isTrustedOverlay(int)` 白名单里**有 `TYPE_STATUS_BAR_ADDITIONAL`（2041）、没有 2017**；配合 `WindowState.getTouchOcclusionMode()` 对状态栏类型走 `BLOCK_UNTRUSTED`，主线挑中的恰好是那个必须靠私有位自救的类型（§32.2 有逐行 AOSP 出处）。**这也是第十七轮选择「不建窗口」的直接理由：只要还在建窗口，就永远要跟这份白名单和这套遮挡判定打交道。**
+- **当时的修法**：按 PR #29 的第二个提交（`b809317`）反射读写 `privateFlags`，把 `PRIVATE_FLAG_TRUSTED_OVERLAY`（`1 << 29`）**或**上去；**必须是「或」**，否则会抹掉平台自己拥有的位。第一版 `fb2fa61` 的 `params.privateFlags |= trusted;` 直写在本机的 `android.jar` 上根本编译不过——`javap -p` 里连 `TYPE_STATUS_BAR_SUB_PANEL` 都找不到。
+- **当时的验证方式**：平台的 `WindowManager.LayoutParams` 可能「两个隐藏名字都有 / 只有字段 / 都没有」，而这是**编译期**事实，一个测试类编不了三种平台。所以探针 `tests\overlay-window.ps1` **整棵重建生成树三次**，每次换一种桩形状编一遍：9 / 3 / 4 条断言，另加八条源码契约钉补在形状断言够不到处（禁止直写、禁止用赋值顶替「或」、没有该位的平台必须原样放过、`FLAG_NOT_TOUCHABLE` 必须还在、标记必须与窗口 flags 同处）。**五条负对照全部 `EXIT=1`**，其中最要紧的一条是**把常量 `| 1` 只改位而保留全部字面量**：源码钉照样通过，只有**执行级**用例抓到（`got <536870913> want <536870912>`），证明形状断言独立承重。该探针随窗口一起删除。
+- **当时未做、后来也不再需要**：PR #29 的另外两块（`redrawAll()` 换色重绘字形、`fileInk()` 配色归档）在「不建窗口」之后失去意义——槽里的 drawable 由 MIUI 每帧自己调，换色重绘不再需要手工触发。
+
+### 6.16 第十七轮：删掉独立窗口路线，字形改走 MIUI 自己的 drawable 槽
+
+用户先选定「学 HyperChanger，自定义 `Drawable` 塞进系统电池 `ImageView`」，再指示「可以的，开一条重构的工作树吧」。改动在独立 worktree（`work\drawable`，分支 `refactor/drawable-glyph`，基线 `68a8dcc`）里完成。
+
+**这一轮是减法：删掉一个键（`glyph_window`）而不是新增。** 因此本表上方所有计数**净减 1**：`Prefs` 的 `KEY_*` 常量 42 → **41**，在用的键 40 → **39**，`TrioSettings` public 字段 40 → **39**，`SettingsRepository` setter 40 → **39**，设置页可写项 40 → **39**，`SettingsScreen.kt` 的 `enabled =` 实测 58 → **57**（删掉「独立窗口绘制」那一行的 `enabled = a.glyph`）。
+
+- **为什么整条路线删掉而不是留成兜底**：三条 A/B 实测（桌面 / 锁屏 / 下拉，各拍窗口开与关两臂）像素差**全部为 0**。写「状态栏窗口只有 `status_bar_height` 高、会把超出部分裁掉」时依据的前提，在本机 ROM 的普通状态栏上并不成立——宿主内的 `onDraw` 本来就能画出完整三合一。既然窗口在几何上是冗余的，而它又是 §6.15 那个遮挡判定的唯一来源，就没有理由留着。
+- **新的落点**：`GlyphDrawable`（新增）把三合一装进 `MiuiBatteryMeterIconView.mTintBgDrawable` 槽。**槽买到的是画布、bounds、裁剪与硬件层都留在平台手里**——独立窗口这些都没有：得自己从宿主推尺寸、得与别人画的栏同步显隐、而且它在屏时平台会当成可能的 tap-jacking overlay（LSPosed 拒绝触摸就是这个代价）。
+- **槽不是永久归模块的**：MIUI 会从 `clearTint()`、暗色通道、资源重建里改写它，并在中间整个丢掉；每一次后面都跟一次绘制，而 `install` 幂等，所以下一帧抢回来。`install` 的返回值只区分「刚抢到槽」——那一帧 MIUI 自己的电池已经画进同一个 canvas，调用方必须再 `TrioRenderer.draw(...)` 覆盖一次。
+- **一个 build 够不着**：`res\values\bools.xml` 的 `battery_meter_use_legacy_drawable` 为 `true` 时，`MiuiBatteryMeterIconView.onDraw` 走 legacy 分支（`super.onDraw` 后直接 return），tint 槽根本不会被画到，这个 drawable 永不被调用——那种 ROM 上字形**静默不出现**而不是画错。本机该 bool 为 `false`。
+- **master 开关关闭时要交回槽**：`GlyphDrawable.uninstall` 调 `clearTint()` 让 MIUI 按电池此刻的状态重建（放回记住的 drawable 会把早已离开的状态画回来）；没有 `clearTint` 的 build 退化为把槽置 null。槽的生命周期比任何一次重绘都长。
+- **一并退场的东西**：`TrioOverlay.java`（818 行）、`tests\overlay-window.ps1`、`PorterDuff` import、`isStatusBarHost`、`barCovered` 三件套、`statusIconContainer()`/`statusBarView()` 两个访问器，以及 **5 组只为窗口显隐而存在的 hook**（下拉展开高度、最近任务手势、跨进程脉冲、启动动画）。`group()` 的 switch 从 18 个 case 收敛到 **13**。`AndroidManifest.xml` 本就只有 `INTERNET` 与 `REQUEST_INSTALL_PACKAGES`，槽路线不需要 `SYSTEM_ALERT_WINDOW`。
+- **验证**：构建通过（debug APK 33,175,455 B、release APK 3,128,880 B，R8 后 `GlyphDrawable` 的 `install`/`uninstall`/`draw` 保留原名，APK 字节里 `GlyphDrawable`/`mTintBgDrawable`/`mUseLegacyDrawable` 在、`TrioOverlay`/`glyph_window`/`PRIVATE_FLAG_TRUSTED_OVERLAY`/`TYPE_STATUS_BAR_SUB_PANEL` 全部不在）；**五个**探针全绿（`wifi-presence` 18 / `battery-presence` 44 / `perf-layout` 76 / `glyph-scale` 17 / **`glyph-drawable` 105 条、五种宿主形状**）；五台工作台全部 `VERIFIED`；真机桌面 / 锁屏 / 下拉三态字形与两行读数均正常、5 帧像素包围盒完全静止、`dumpsys window | grep 'HyperDuo glyph'` 三态计数全 0。
+- **`tests\glyph-drawable.ps1` 是补上的那一环**：删掉 `overlay-window.ps1` 时，被它锁住的机件（窗口私有标记）确实消失了，但**没有任何探针接管 `GlyphDrawable`** —— 而它正是替掉窗口的那个东西。新脚本把真 `GlyphDrawable.java` + 真 `Refl.java` 编进五种宿主形状（正常 / legacy / 无 `clearTint` / `clearTint` 包级私有 / 连字段都没有），105 条断言分成源码契约钉与执行级用例。**七条负控里后三条（宽高对调、重新 `install` 不重指向、`getBounds()` 换常量）源码钉全部原样通过，只有执行级断言报错**，证明这半边独立承重。
+- **教训（写进 `docs\DEVELOPMENT.md`）**：① 做窗口 A/B 前必须先确认当前行是 `MiuiPhoneStatusBarView` 而不是 Keyguard——早前一次「两臂完全相同」的错误结论就是因为设备停在锁屏，而 `isStatusBarHost()` 遇到名字含 `Keyguard` 就返回 false，两臂都没有资格开窗口；② 从像素反推病因会走错（见 §6.14 的 107px 残影），先把分量打出来；③ `[System.IO.File]` 的相对路径按**进程 CWD** 解析而非 PowerShell 的 `Set-Location`，对 worktree 做脚本手术必须传绝对路径；④ 用「读全部行 → 按下标删除 → 写回」做行号手术不安全，逐条用锚定字符串替换。
+
 
 
