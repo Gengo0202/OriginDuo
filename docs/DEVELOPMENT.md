@@ -847,6 +847,13 @@ canvas，调用方必须再 `TrioRenderer.draw(...)` 覆盖一次，否则两个
 把槽置 null。槽的生命周期比任何一次重绘都长，不交回就会留下一个「模块已关闭、却仍盖着 MIUI 电池」
 的 drawable。
 
+**真机确认（1.6.13 重构版，小米 14 / houji / HyperOS 4）**：桌面、应用内、锁屏、控制中心四态字形与
+读数都正常；桌面连续 5 帧里充电绿弧的像素包围盒**逐帧完全相同**（`1052,44..1111,86`，60×43，
+668 px）；`dumpsys window windows | grep hyperduo` **四态计数全 0**，重启 SystemUI 后复拍仍为 0 而
+字形照常（666 px）。日志里 `has no mTintBgDrawable` 与 `legacy drawable` 两条失败路径都没触发 ——
+本机 `battery_meter_use_legacy_drawable` 确为 `false`。控制中心里也**没有** §6.15 记的那个方块背景
+残影（窗口不在了，残影的载体就没有了）。
+
 ### 实时刷新
 
 等级来自 `transformResId`，但**指示器消失时那个方法不再被调用** —— MIUI 关掉 Wi-Fi 后不再重绑
