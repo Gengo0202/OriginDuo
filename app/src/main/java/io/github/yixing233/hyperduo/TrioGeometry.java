@@ -419,12 +419,34 @@ final class TrioGeometry {
     static final float RECT_BAR_CY = 107.3f;
 
     /**
+     * The inner edges of the two dot columns: the box the centre column occupies.
+     *
+     * <p>Stated as its own pair of numbers because <em>two</em> things have to agree
+     * about it, and they were two independent constants before:
+     *
+     * <ul>
+     *   <li>{@link #RECT_TEXT_CLEAR} - the width the renderer fits the percentage
+     *       and the network type into, so their ink is bounded by these edges;
+     *   <li>the tappable centre column in {@code TrioZones} - which decides whether
+     *       a tap on that ink means "the percentage" or "the mobile meter".
+     * </ul>
+     *
+     * <p>The failure when they disagree is silent and wrong: a three-digit
+     * percentage at a large size reaches these edges, so a seam placed even one
+     * design unit inside them puts the right-hand stroke of "100" in the mobile
+     * column, and tapping the number turns the signal meter off instead. Measured
+     * at 960px: a seam 1 unit in misattributes 334 ink pixels, 3 units in
+     * misattributes 3324, and every one of them is a three-digit reading.
+     */
+    static final float RECT_TEXT_LEFT = RECT_DOT_LX + RECT_DOT_R;
+    static final float RECT_TEXT_RIGHT = RECT_DOT_RX - RECT_DOT_R;
+
+    /**
      * Horizontal room for text between the two dot columns. Unlike the ring's
      * clear width this does not depend on the font size: the columns are
      * vertical, so a taller glyph eats into the same gap.
      */
-    static final float RECT_TEXT_CLEAR =
-            (RECT_DOT_RX - RECT_DOT_R) - (RECT_DOT_LX + RECT_DOT_R);
+    static final float RECT_TEXT_CLEAR = RECT_TEXT_RIGHT - RECT_TEXT_LEFT;
 
     /** Baseline and scale of the network type in the top slot. */
     static final float RECT_TYPE_BASELINE = 42.3f;

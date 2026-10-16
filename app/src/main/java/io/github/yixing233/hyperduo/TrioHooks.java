@@ -1498,7 +1498,7 @@ final class TrioHooks {
                     public Object intercept(XposedInterface.Chain chain) throws Throwable {
                         final Object result = chain.proceed();
                         final Object self = chain.getThisObject();
-                        if (self instanceof View && TrioConfig.appearance().typeAnywhere()) {
+                        if (self instanceof View) {
                             // Signature: (areas, intensity, tintColor, light, dark,
                             // useTint). Resolve the ink exactly the way
                             // TrioState.foreground() resolves it from the very
@@ -1506,9 +1506,9 @@ final class TrioHooks {
                             // and the draw-path colour are one number by
                             // construction.
                             final boolean useTint = Boolean.TRUE.equals(chain.getArg(5));
-                            final int intensity =
+                            final float intensity =
                                     (chain.getArg(1) instanceof Float)
-                                            ? ((Float) chain.getArg(1)).intValue() : 0;
+                                            ? ((Float) chain.getArg(1)).floatValue() : 0f;
                             final Object tintObj = chain.getArg(2);
                             final Object lightObj = chain.getArg(3);
                             final Object darkObj = chain.getArg(4);
@@ -1528,7 +1528,20 @@ final class TrioHooks {
                             final View v = (View) self;
                             final Object owner = batteryContainerOf(v);
                             if (owner instanceof ViewGroup) {
-                                applyOutRingInk((ViewGroup) owner, ink);
+                                final ViewGroup row = (ViewGroup) owner;
+                                // Hidden native icons can stop reporting tint. The
+                                // meter still receives each frame, so archive it
+                                // against its own row before any glyph reads ink.
+                                final int previous = rowInk(row);
+                                ROW_INK.put(row, ink);
+                                applyOutRingInk(row, ink);
+                                if (previous != ink) {
+                                    final View host = hostIn(row);
+                                    if (host != null) {
+                                        host.invalidate();
+                                        TrioOverlay.invalidate(host);
+                                    }
+                                }
                             }
                         }
                         return result;

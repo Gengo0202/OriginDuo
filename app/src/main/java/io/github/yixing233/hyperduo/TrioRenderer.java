@@ -124,19 +124,19 @@ final class TrioRenderer {
         // switches themselves, which is what used to let the two arrangements
         // drift apart - and let the documentation drift from both.
         final TrioAppearance appearance = TrioAppearance.of(cfg);
+        // The transform is asked for rather than worked out here, because the
+        // settings screen's tappable zones have to land on the very pixels this
+        // drawing lands on. Two copies of the fit - one to draw with and one to
+        // hit-test with - is precisely how a hot spot drifts off the thing it
+        // names. See designTransform.
+        final float[] transform = new float[3];
+        if (!designTransform(w, h, appearance, transform)) {
+            return;
+        }
+        final float scale = transform[0];
         // The two arrangements have different ink extents, so each is fitted to
         // the host view with its own box.
         final boolean rect = appearance.rect;
-        // The overall-size setting is applied to the fit rather than to the design
-        // units: the glyph's whole geometry is expressed in one 120x120 box, so
-        // scaling the fit scales every stroke, arc and digit by the same factor
-        // and the translate below keeps it centred. Doing it anywhere else - a
-        // second canvas.scale around the layout calls, say - would scale the
-        // stroke widths differently from the radii and the glyph would come apart.
-        final float scale = inkScale(w, h, rect) * appearance.glyphFit();
-        if (scale <= 0f) {
-            return;
-        }
 
         if (clearWhenDone) {
             // The native onDraw only clears the canvas on its non-legacy path
@@ -157,15 +157,7 @@ final class TrioRenderer {
                 : (slots[0] >= 0 ? 1 : 0) + (slots[1] >= 0 ? 1 : 0);
 
         final int save = canvas.save();
-        if (rect) {
-            canvas.translate(
-                    (w - TrioGeometry.RECT_INK_W * scale) / 2f - TrioGeometry.RECT_INK_X * scale,
-                    (h - TrioGeometry.RECT_INK_H * scale) / 2f - TrioGeometry.RECT_INK_Y * scale);
-        } else {
-            canvas.translate(
-                    (w - TrioGeometry.INK_W * scale) / 2f - TrioGeometry.INK_X * scale,
-                    (h - TrioGeometry.INK_H * scale) / 2f - TrioGeometry.INK_Y * scale);
-        }
+        canvas.translate(transform[1], transform[2]);
         canvas.scale(scale, scale);
 
         if (rect) {
@@ -969,6 +961,54 @@ final class TrioRenderer {
             return 0f;
         }
         return Math.min(w / inkW, h / inkH);
+    }
+
+    /**
+     * The concrete mapping from the 120x120 design box onto a canvas of this
+     * size, as {@code {scale, translateX, translateY}}.
+     *
+     * <p>This is the whole point of the method existing separately: the drawing
+     * path and the settings screen's tappable zones must agree about where a
+     * design-space point lands, or a hot spot ends up beside the thing it names.
+     * Writing the fit out a second time at the hit-testing end would be a second
+     * source of truth for the same arithmetic, and the two would drift the first
+     * time either one changed.
+     *
+     * <p>Callers apply it in this order, exactly as the canvas does: translate by
+     * the returned offsets, then scale by the returned factor. Canonically
+     * {@code device = design * scale + translate}.
+     *
+     * @param out receives {@code {scale, translateX, translateY}}; untouched when
+     *            the method returns false
+     * @return false when there is nothing to draw into, with {@code out} left
+     *         alone so a caller cannot accidentally use a stale transform
+     */
+    static boolean designTransform(int w, int h, TrioAppearance appearance, float[] out) {
+        if (w <= 0 || h <= 0 || appearance == null || out == null || out.length < 3) {
+            return false;
+        }
+        final boolean rect = appearance.rect;
+        // The overall-size setting is applied to the fit rather than to the design
+        // units: the glyph's whole geometry is expressed in one 120x120 box, so
+        // scaling the fit scales every stroke, arc and digit by the same factor
+        // and the translate keeps it centred. Doing it anywhere else - a second
+        // canvas.scale around the layout calls, say - would scale the stroke
+        // widths differently from the radii and the glyph would come apart.
+        final float scale = inkScale(w, h, rect) * appearance.glyphFit();
+        if (scale <= 0f) {
+            return false;
+        }
+        out[0] = scale;
+        if (rect) {
+            out[1] = (w - TrioGeometry.RECT_INK_W * scale) / 2f
+                    - TrioGeometry.RECT_INK_X * scale;
+            out[2] = (h - TrioGeometry.RECT_INK_H * scale) / 2f
+                    - TrioGeometry.RECT_INK_Y * scale;
+        } else {
+            out[1] = (w - TrioGeometry.INK_W * scale) / 2f - TrioGeometry.INK_X * scale;
+            out[2] = (h - TrioGeometry.INK_H * scale) / 2f - TrioGeometry.INK_Y * scale;
+        }
+        return true;
     }
 
     /**

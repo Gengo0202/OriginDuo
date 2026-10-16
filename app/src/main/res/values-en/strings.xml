@@ -15,6 +15,40 @@
     <string name="group_track">Track</string>
 
     <string name="tab_general">General</string>
+    <string name="tab_drawing">Drawing</string>
+
+    <string name="drawing_title">Tap the part of the icon you want to change</string>
+    <string name="drawing_summary">Tap a part and pick a component to put there; press and hold to change its size and colours.</string>
+    <string name="drawing_zone_change">Change…</string>
+    <string name="drawing_pick_title">%1$s: currently %2$s</string>
+    <string name="drawing_pick_none_summary">Remove optional components from this area; the ring and battery bar stay.</string>
+    <string name="drawing_feedback_charging">%1$s is set in %2$s; the charging bolt takes priority while charging. Select Normal to preview it.</string>
+    <string name="drawing_feedback_bolt">%1$s is set in %2$s; select Charging or Fast charging to preview it.</string>
+    <string name="drawing_feedback_wifi">%1$s is set in %2$s; there is no Wi-Fi in this preview. Select Normal to see it.</string>
+    <string name="drawing_feedback_other">%1$s is set in %2$s; this preview currently shows %3$s. Change the preview state to see it.</string>
+    <string name="drawing_pick_impossible">This component does not fit in the %1$s.</string>
+    <string name="drawing_hint_top">Top</string>
+    <string name="drawing_hint_centre">Middle</string>
+    <string name="drawing_hint_bottom">Bottom</string>
+    <string name="drawing_state_title">Preview state</string>
+    <string name="drawing_state_summary">Changes the battery and signal the preview shows, and the three areas follow.</string>
+    <string name="drawing_scene_normal">Normal</string>
+    <string name="drawing_scene_charging">Charging</string>
+    <string name="drawing_scene_quick">Fast charging</string>
+    <string name="drawing_scene_low">Low battery</string>
+    <string name="drawing_scene_critical">Critical</string>
+    <string name="drawing_scene_no_wifi">No Wi-Fi</string>
+    <string name="drawing_occupant_none">Empty</string>
+    <string name="drawing_occupant_value">Battery number</string>
+    <string name="drawing_occupant_bolt">Charging bolt</string>
+    <string name="drawing_occupant_wifi">Wi-Fi arcs</string>
+    <string name="drawing_occupant_mobile">Mobile dots</string>
+    <string name="drawing_occupant_dual">Dual-SIM rows</string>
+    <string name="drawing_occupant_type">Network type</string>
+    <string name="drawing_master_off">The master switch is off: the preview still draws the style you pick, but the status bar will not.</string>
+    <string name="drawing_settings_title">Settings for “%1$s”</string>
+    <string name="drawing_settings_none">This part has no size or colour of its own.</string>
+    <string name="drawing_close">Close</string>
 
     <string name="master_title">Enable trio icon</string>
     <string name="master_summary">Master switch; turn off to restore the stock battery and signal icons.</string>

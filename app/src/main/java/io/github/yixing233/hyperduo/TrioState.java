@@ -270,7 +270,7 @@ final class TrioState {
         // level per SIM, or when the icon chain has never answered and the data
         // SIM's own reading is the only thing left to fall back on.
         if (TrioConfig.get().dualSim || TrioConfig.appearance().stackedOut()
-                || mobileLevel < 0) {
+                || sMobileLevel < 0) {
             sampleSimsIfDue();
         }
 

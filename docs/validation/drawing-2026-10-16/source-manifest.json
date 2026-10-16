@@ -1,0 +1,337 @@
+{
+  "schema": 1,
+  "date": "2026-10-16",
+  "repository": "yixing233/HyperDuo",
+  "head": "68a8dcc4b868b7ebe1437f006470fc9dde57ccfc",
+  "scope": "Current workspace including tracked modifications and untracked app/tests files; excludes validation documents and ignored toolchain/output files.",
+  "files": [
+    {
+      "path": ".github/workflows/build.yml",
+      "sha256": "a4d53519772c6c5b426af050f056bcfbefea78dd94857123fefdb306e1730ae8",
+      "bytes": 5242
+    },
+    {
+      "path": "app/build.gradle.kts",
+      "sha256": "2d43f738249150f851e68d610f933a16a0e54ab78918f3be58825595574df2c2",
+      "bytes": 5072
+    },
+    {
+      "path": "app/proguard-rules.pro",
+      "sha256": "de03edcd087b060645e6af6fa3ff7a4b27eaa468cd9b46f4a2c0295a31b9fc5e",
+      "bytes": 542
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "sha256": "4eea5c1c9d748913f412e549c8743cecc16a2972bc5f201bc28fd839ee0ed3e4",
+      "bytes": 3709
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/BatteryPresence.java",
+      "sha256": "1957bcfc875a106cd9ba34dfe79cbb66c9534a9b385fc7806e71d724f387f95e",
+      "bytes": 9795
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/HyperDuoApp.kt",
+      "sha256": "e28fecb5529418553d3d71067ac444b3176883bbafa4aa1c1193433d29e8c1eb",
+      "bytes": 2396
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/HyperDuoModule.java",
+      "sha256": "a03dff4d00aa6e65b25003440ab493b8816373792ac939dfdc6dda56d6a9f2ac",
+      "bytes": 1353
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/Prefs.java",
+      "sha256": "16b9b848d83788279f6d4b5707cbab16ac1379b14980ec1924c12200140e5246",
+      "bytes": 37702
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/Refl.java",
+      "sha256": "0e78f271150567e3193213a4c39f371e856020f8ae783be46c5b8c110494f9f4",
+      "bytes": 3579
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioAppearance.java",
+      "sha256": "104a1d5477dc46586878ae4aa73e9c67360bb52a60b7a08f149e510be69506e1",
+      "bytes": 23943
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioConfig.java",
+      "sha256": "45a5622b2a1446ccb2dba72fbea3ee0f96a693fb6f75db59d6b391b7157e3fbe",
+      "bytes": 15490
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioGeometry.java",
+      "sha256": "cc788653def810714077ba07353688019b3676d291a5fb2d127ce11be2dfe5fe",
+      "bytes": 24811
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioHooks.java",
+      "sha256": "d41442548c3f4e667c5320f05b889726c405f5fd67fe461dcf0854e600525642",
+      "bytes": 237983
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioOverlay.java",
+      "sha256": "a782cf40efe940bf828cb8e0719feb25c31a42f7e2fc6712d1d8795005646eb7",
+      "bytes": 36826
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioPreviewView.java",
+      "sha256": "cb0ba554a7ec43f8875027ed9ec9cf6c8996d0a68b2bb7317f946f8789eafd65",
+      "bytes": 21985
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioRenderer.java",
+      "sha256": "4ecdab6a84485cf1e6c6db30571bb80f75ea5722f0021eb74e5e1f46f28029ab",
+      "bytes": 49929
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioSettings.java",
+      "sha256": "4c428cf2787fd0e6276ae96016aa5b0f2c85e113f7d20b22248dfd1014a89fb3",
+      "bytes": 41925
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioState.java",
+      "sha256": "9dfa0605a3287e5edaf4d892a3625fc75342ca27d7315344b243bab258b906fc",
+      "bytes": 29237
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioZones.java",
+      "sha256": "22414996a810d0ae5511f73a2078da57c8f87def05991ff01f2bfe849593b3e9",
+      "bytes": 35440
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/DrawingScreen.kt",
+      "sha256": "9e097879f78c0b2893ed43f18e3485460707ce268d7971920c030f67921c4b6b",
+      "bytes": 33958
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/MainActivity.kt",
+      "sha256": "34edfc8f6dd039fcd6a144aa11b4af975866900f36a2dbba1bcbe4968b16a251",
+      "bytes": 928
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/PartControls.kt",
+      "sha256": "65a19d7960a99beeaabe33b9bdbc36f7432071b8d35c5bf022418c336e967bf0",
+      "bytes": 22251
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/RestartController.kt",
+      "sha256": "6596011422bd7c1bf17dd7adca0fe8692f994617f3634381875c85871e4ef95e",
+      "bytes": 4380
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsRepository.kt",
+      "sha256": "d179055fcb1d2fedd3da0f4befe18a92d9de4fbfc24326640897977717c8a938",
+      "bytes": 13624
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsScreen.kt",
+      "sha256": "c022307489003e9d29458a996eb0bf02ae7d2dfae797e26881e620b3b2a55a56",
+      "bytes": 90321
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/UpdateController.kt",
+      "sha256": "f4a48d6055287472a66f87608ef410b74bc5e408fc8125f3c00f55a1e3a30e9f",
+      "bytes": 19535
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/WifiPresence.java",
+      "sha256": "36ad4cfff0ad475b7a575c8b71f056804a88b73f2005235ed30c05b25669bf15",
+      "bytes": 6732
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_check_circle_outline.xml",
+      "sha256": "22a0e9e2cab120643daa5cdc22ed9814fed9814e07c7dae6c41fedc73addf838",
+      "bytes": 502
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_launcher_foreground.xml",
+      "sha256": "f8637e07afcc5642d43d01618ed3f256b399468bffba619a70a10adee5fac0c5",
+      "bytes": 2390
+    },
+    {
+      "path": "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "sha256": "32715ff646f6b9fef7c321138e4a14556c4a1f98a87b06070b56f41643dad718",
+      "bytes": 270
+    },
+    {
+      "path": "app/src/main/res/values-en/strings.xml",
+      "sha256": "dec7e4e798a432ab0c461ff89099904dedf4f62de9c4bf794b45cfcf6a466f3a",
+      "bytes": 16664
+    },
+    {
+      "path": "app/src/main/res/values-night/themes.xml",
+      "sha256": "2b7eb673771a4fd490d6adea05235841855336f1d4d4cea9232dee1735cade12",
+      "bytes": 497
+    },
+    {
+      "path": "app/src/main/res/values/arrays.xml",
+      "sha256": "261155f54a21b2452ee5c90c02924a5c57e6d9d307422f1aa7e5a126153ecf60",
+      "bytes": 165
+    },
+    {
+      "path": "app/src/main/res/values/colors.xml",
+      "sha256": "f4843fb778b624ab1fcfd7d8749e7379e66fe9735abfd50daafbd9b59cd4ebc8",
+      "bytes": 123
+    },
+    {
+      "path": "app/src/main/res/values/strings.xml",
+      "sha256": "1176315d4eb2d08009950fddb4b98c4a426fcd4662063999d221780b3b2e7928",
+      "bytes": 15704
+    },
+    {
+      "path": "app/src/main/res/values/themes.xml",
+      "sha256": "336573af6244877e31338bd0fbadc65b8e1da61615d89b3f09a55fbc7825ddd7",
+      "bytes": 501
+    },
+    {
+      "path": "app/src/main/res/xml/file_paths.xml",
+      "sha256": "48d8b62064b76f54ecb3657de947620b72495e39c4c72ce44241bd17068a1629",
+      "bytes": 322
+    },
+    {
+      "path": "app/src/main/resources/META-INF/xposed/java_init.list",
+      "sha256": "f33782ea392b3ff684ae9bf1283ba7c1f2cfd5739a833622a8c500ea0cbf29d3",
+      "bytes": 44
+    },
+    {
+      "path": "app/src/main/resources/META-INF/xposed/module.prop",
+      "sha256": "5edf6ee0bc30d6a16858937fe797c1f44a9b3cfceb2adb878d11f3675358d7aa",
+      "bytes": 56
+    },
+    {
+      "path": "app/src/main/resources/META-INF/xposed/scope.list",
+      "sha256": "f0abaf1feaaf182419f0b8cdd85fce26356e7a79caf88a6a01e170dea475d313",
+      "bytes": 21
+    },
+    {
+      "path": "build.gradle.kts",
+      "sha256": "e0e149cb4d6f17ddf9a10b7173ee6510cfc9c153e138d9c2b5716ce74724ec90",
+      "bytes": 454
+    },
+    {
+      "path": "env.ps1",
+      "sha256": "9f0c100a22198f4b2c7103be9f6b6314c62b94bc922fe351b41d2bd0a7e181a9",
+      "bytes": 1905
+    },
+    {
+      "path": "gradle.properties",
+      "sha256": "ec093e115f9f321a878885c583e43be1b1c3bffc1036d1b76d5fb6caa196ce6b",
+      "bytes": 265
+    },
+    {
+      "path": "settings.gradle.kts",
+      "sha256": "2d18b3f1bd83ed5c7e5ac81952a27d3c547afc074f9ad93173692589f91f19ce",
+      "bytes": 724
+    },
+    {
+      "path": "tests/battery-presence.ps1",
+      "sha256": "248e0df6ca4f18066536bb250b57d60a5ed23d52a15929895e9998be74caf02f",
+      "bytes": 12055
+    },
+    {
+      "path": "tests/drawing-zones.ps1",
+      "sha256": "00196f4ac49427dc7538a9724c6eb881ac32d177e6e18596fecf16460f06110d",
+      "bytes": 62696
+    },
+    {
+      "path": "tests/glyph-scale.ps1",
+      "sha256": "071298fa5f4ca0e6a6cceaa001f10754542ab8a4cb4fa8912fd871fb6bf2a2e3",
+      "bytes": 14705
+    },
+    {
+      "path": "tests/issue-regressions.ps1",
+      "sha256": "e6b2c992070e1f3a57e3339ecdd92259d248928c5880479d550ce1b79dbc2bbb",
+      "bytes": 22687
+    },
+    {
+      "path": "tests/overlay-window.ps1",
+      "sha256": "5dcef91dc6ef6ae5bc63822d170081e7675717e544d7fd025779f18971f35d70",
+      "bytes": 9120
+    },
+    {
+      "path": "tests/perf-layout.ps1",
+      "sha256": "ee13a3ca19322afe3fdc4fb0c587ecb8a7cd117667361b6eccf98ec1b727190d",
+      "bytes": 49731
+    },
+    {
+      "path": "tests/shims/android/content/SharedPreferences.java",
+      "sha256": "fc36d7d73e1b18a5ad3fd20e97d02d2dd37a1982e2290cf7bcfae6c79f690857",
+      "bytes": 455
+    },
+    {
+      "path": "tests/shims/android/graphics/Canvas.java",
+      "sha256": "8998391e91af079710a9da97d3a94f44f6c578653b108b70e99cce35a30e91ef",
+      "bytes": 4944
+    },
+    {
+      "path": "tests/shims/android/graphics/Color.java",
+      "sha256": "b29709c576ca0e7249a79ac7ef7a227b569bfcb4239687e1f3076d82416c3c4d",
+      "bytes": 613
+    },
+    {
+      "path": "tests/shims/android/graphics/Paint.java",
+      "sha256": "80c608dc2b7d62673310ad71dab66f5881afaf04532abbccfe4c6f7cb7dafe11",
+      "bytes": 3507
+    },
+    {
+      "path": "tests/shims/android/graphics/Path.java",
+      "sha256": "1df5cdf6b7f8b56e85c800891c3f9fe28a7392313916edececf00f137811baad",
+      "bytes": 2809
+    },
+    {
+      "path": "tests/shims/android/graphics/PorterDuff.java",
+      "sha256": "6d6530c21431a115859da8ea66f2acc41b5f39b28b50474689dea1bd84f591c5",
+      "bytes": 190
+    },
+    {
+      "path": "tests/shims/android/graphics/RectF.java",
+      "sha256": "ad2f269a76901a54034cf40a7017775b1a410742dbeab5580176a23fa5f7b75f",
+      "bytes": 570
+    },
+    {
+      "path": "tests/shims/android/graphics/Typeface.java",
+      "sha256": "084b4316769c0193c1fb6b909b59d5ba17fe02744a33e8c0e86402ff79e2741e",
+      "bytes": 1964
+    },
+    {
+      "path": "tests/shims/android/os/Bundle.java",
+      "sha256": "281a8b8121ebc30c491ab0133d590ddcc03d4466bde56600e8a0293d5b0c9fa1",
+      "bytes": 1203
+    },
+    {
+      "path": "tests/shims/android/view/View.java",
+      "sha256": "8a7dc7f3b6df6429bec086f45f73b473d3b919e8ce8c7922f5235ad359bcc77b",
+      "bytes": 376
+    },
+    {
+      "path": "tests/shims/io/github/yixing233/hyperduo/TrioConfig.java",
+      "sha256": "0f080c1ee5753fe1f7432839661c613544703e6e372968478ebdb61ab78d07ff",
+      "bytes": 462
+    },
+    {
+      "path": "tests/shims/io/github/yixing233/hyperduo/TrioState.java",
+      "sha256": "98534d580903eba959aca4bc45d991358028bbfbf1fad52c91f474839f55b04a",
+      "bytes": 601
+    },
+    {
+      "path": "tests/wifi-presence.ps1",
+      "sha256": "737a49c5020cff77e5dcbc91568365ff8fe7afb7c6e034d8392c0d83c8991892",
+      "bytes": 2719
+    }
+  ],
+  "existing_artifacts": [
+    {
+      "path": "app/build/outputs/apk/debug/app-debug.apk",
+      "sha256": "9c30bb9b87a67be12825945a71611f5de939f7de6cb4e30be5e7cd8ca062cca5",
+      "bytes": 33743114
+    },
+    {
+      "path": "app/build/outputs/apk/release/app-release.apk",
+      "sha256": "47f3a643e8f8d0d6ff659f074b01937ff2ceb4605ead0332c52b2506dbff6ffa",
+      "bytes": 3211228
+    }
+  ],
+  "artifact_note": "Existing APK hashes identify these files only. A fresh build may differ; record its hash separately and verify the installed APK against that fresh artifact."
+}

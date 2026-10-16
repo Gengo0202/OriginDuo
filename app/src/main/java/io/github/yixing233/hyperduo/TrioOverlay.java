@@ -184,8 +184,13 @@ final class TrioOverlay {
      * never performs - the state the glyph exists for.
      */
     void hideNow() {
-        shown = false;
-        glyph.setAlpha(0f);
+        if (shown) {
+            shown = false;
+            glyph.setAlpha(0f);
+            // sync also runs from the window watcher, outside the host's draw.
+            // Returning ownership needs a host frame, otherwise it stays blank.
+            host.invalidate();
+        }
     }
 
     /**
@@ -199,27 +204,10 @@ final class TrioOverlay {
      * bar that is off screen or covered keeps it hidden.
      */
     void showAgain() {
-        if (shown) {
-            return;
-        }
-        // The window's own visibility is not asked about here: the window being
-        // hidden is the very thing this call is undoing, and its visibility
-        // follows the views inside it. Only the view's own state is read.
-        final boolean hostVisible = host.isShown() && effectiveAlpha(host) > 0f;
-        host.getLocationOnScreen(location);
-        final DisplayMetrics metrics = host.getResources().getDisplayMetrics();
-        final boolean onScreen = location[0] + host.getWidth() > 0
-                && location[0] < metrics.widthPixels
-                && location[1] + host.getHeight() > 0
-                && location[1] < metrics.heightPixels;
-        TrioHooks.log(TrioHooks.LOG_INFO, "showAgain: host=" + hostVisible
-                + " onScreen=" + onScreen + " size=" + host.getWidth() + "x"
-                + host.getHeight() + " at " + location[0] + "," + location[1]);
-        if (!hostVisible || !onScreen) {
-            return;
-        }
-        shown = true;
-        glyph.setAlpha(1f);
+        // The same gate applies to a settled animation and to a normal frame.
+        // In particular, settling must not briefly resurrect a fullscreen or
+        // island-hidden glyph until the next watcher pass hides it again.
+        sync();
     }
 
     private static final WeakHashMap<View, TrioOverlay> LIVE =
@@ -261,7 +249,9 @@ final class TrioOverlay {
     /** {@code true} once {@code addView} has succeeded. */
     private boolean attached;
     /** Last applied visibility, so a steady frame does not touch the window. */
-    private boolean shown = true;
+    private boolean shown;
+    /** Whether WindowManager accepted the current placement, rather than just addView. */
+    private boolean placementValid;
 
     /**
      * Keeps the window honest between draws of the host.
@@ -322,6 +312,7 @@ final class TrioOverlay {
 
         this.glyph = new GlyphView(context);
         this.glyph.setVisibility(View.VISIBLE);
+        this.glyph.setAlpha(0f);
     }
 
     /**
@@ -519,7 +510,15 @@ final class TrioOverlay {
 
     /** True while this window is open and painting the glyph. */
     boolean covering() {
-        return attached && shown;
+        return attached && placementValid && shown;
+    }
+
+    /** Repaints this host's window after its own row reports a tint change. */
+    static void invalidate(View host) {
+        final TrioOverlay overlay = LIVE.get(host);
+        if (overlay != null && overlay.covering()) {
+            overlay.glyph.invalidate();
+        }
     }
 
     /** Drops the window for a host that is going away. Safe to call repeatedly. */
@@ -539,6 +538,10 @@ final class TrioOverlay {
      * schedule layout on the host.
      */
     void sync() {
+        if (!attached) {
+            hideNow();
+            return;
+        }
         if (!sTicking) {
             sTicking = true;
             BUSY_HANDLER.postDelayed(TICK, 500L);
@@ -612,17 +615,14 @@ final class TrioOverlay {
                 TrioHooks.log(TrioHooks.LOG_INFO, trace);
             }
         }
-        if (visible != shown) {
-            shown = visible;
-            // Alpha, not visibility: see hideNow().
-            glyph.setAlpha(visible ? 1f : 0f);
-        }
         if (!visible) {
+            hideNow();
             return;
         }
         final int hostWidth = host.getWidth();
         final int hostHeight = host.getHeight();
         if (hostWidth <= 0 || hostHeight <= 0) {
+            hideNow();
             return;
         }
         // The glyph is drawn at the size MIUI gives the battery icon: the shorter
@@ -652,7 +652,7 @@ final class TrioOverlay {
         // there made the window invisible exactly when the shade's copy of the
         // glyph was the one on screen.
         final float alpha = host.getAlpha();
-        if (params.width != width || params.height != height
+        if (!placementValid || params.width != width || params.height != height
                 || params.x != x || params.y != y || params.alpha != alpha) {
             params.width = width;
             params.height = height;
@@ -661,9 +661,23 @@ final class TrioOverlay {
             params.alpha = alpha;
             try {
                 windowManager.updateViewLayout(glyph, params);
+                placementValid = true;
             } catch (Throwable t) {
+                // params is mutable and already contains the requested values.
+                // A failed IPC did not apply them: keep the host drawing and
+                // retry even if the next request has exactly the same values.
+                placementValid = false;
+                hideNow();
                 TrioHooks.log(TrioHooks.LOG_WARN, "overlay: cannot be placed: " + t);
+                return;
             }
+        }
+        if (!shown) {
+            shown = true;
+            glyph.setAlpha(1f);
+            // A watcher retry can recover while the host still holds its fallback
+            // glyph. Clear that frame as part of the handoff to avoid double ink.
+            host.invalidate();
         }
         glyph.invalidate();
     }
@@ -694,6 +708,8 @@ final class TrioOverlay {
             return;
         }
         attached = false;
+        placementValid = false;
+        hideNow();
         glyph.removeCallbacks(mWatch);
         try {
             windowManager.removeViewImmediate(glyph);

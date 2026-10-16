@@ -15,6 +15,40 @@
     <string name="group_track">底纹</string>
 
     <string name="tab_general">常规</string>
+    <string name="tab_drawing">绘制</string>
+
+    <string name="drawing_title">点按图标上要改的部位</string>
+    <string name="drawing_summary">点一个部位，从列表里挑一个组件换上去；长按直接改它的大小与颜色。</string>
+    <string name="drawing_zone_change">更换…</string>
+    <string name="drawing_pick_title">%1$s：现在是%2$s</string>
+    <string name="drawing_pick_none_summary">清除这一处的可选组件；圆环和电量条保留。</string>
+    <string name="drawing_feedback_charging">%1$s已设在%2$s；充电时闪电优先显示。切换到“正常”预览查看。</string>
+    <string name="drawing_feedback_bolt">已将%1$s设在%2$s；切换到“充电”或“快充”预览查看。</string>
+    <string name="drawing_feedback_wifi">%1$s已设在%2$s；当前预览没有 Wi-Fi，切换到“正常”预览查看。</string>
+    <string name="drawing_feedback_other">%1$s已设在%2$s；当前预览显示%3$s。切换预览状态查看。</string>
+    <string name="drawing_pick_impossible">%1$s放不下这个组件。</string>
+    <string name="drawing_hint_top">上部</string>
+    <string name="drawing_hint_centre">中部</string>
+    <string name="drawing_hint_bottom">下部</string>
+    <string name="drawing_state_title">预览状态</string>
+    <string name="drawing_state_summary">切换预览里显示的电量与信号，三处热区会跟着变。</string>
+    <string name="drawing_scene_normal">正常</string>
+    <string name="drawing_scene_charging">充电</string>
+    <string name="drawing_scene_quick">快充</string>
+    <string name="drawing_scene_low">低电量</string>
+    <string name="drawing_scene_critical">危险</string>
+    <string name="drawing_scene_no_wifi">无 Wi-Fi</string>
+    <string name="drawing_occupant_none">空</string>
+    <string name="drawing_occupant_value">电量数字</string>
+    <string name="drawing_occupant_bolt">充电闪电</string>
+    <string name="drawing_occupant_wifi">Wi-Fi 弧</string>
+    <string name="drawing_occupant_mobile">移动信号点</string>
+    <string name="drawing_occupant_dual">双卡两排点</string>
+    <string name="drawing_occupant_type">网络类型</string>
+    <string name="drawing_master_off">已关闭总开关，预览按你选的样式照画，但状态栏不会显示。</string>
+    <string name="drawing_settings_title">「%1$s」的设置</string>
+    <string name="drawing_settings_none">这一项没有可调的尺寸或颜色。</string>
+    <string name="drawing_close">关闭</string>
 
     <string name="master_title">启用三合一图标</string>
     <string name="master_summary">总开关，关闭后恢复系统原本的电池与信号图标。</string>

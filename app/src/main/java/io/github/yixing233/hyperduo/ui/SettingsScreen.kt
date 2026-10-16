@@ -111,8 +111,12 @@ import top.yukonga.miuix.kmp.utils.PressFeedbackType
  * Inner padding of a preference row inside its Card. Miuix's Card carries no
  * outer margin and its preferences default to a uniform 16.dp box; the MIUI look
  * wants 18.dp against the card edge and a slightly tighter 14.dp vertical rhythm.
+ *
+ * <p>{@code internal} rather than private because the drawing page lays out rows
+ * from {@code PartControls.kt}, and the two pages have to agree about the
+ * rhythm or a shared row would sit differently depending on who drew it.
  */
-private val SettingsItemMargin = PaddingValues(horizontal = 18.dp, vertical = 14.dp)
+internal val SettingsItemMargin = PaddingValues(horizontal = 18.dp, vertical = 14.dp)
 
 /**
  * Blur radius of the top bar, in dp.
@@ -138,8 +142,14 @@ private fun SectionTitle(title: String) {
     )
 }
 
-/** Which role colour the picker dialog is editing. */
-private enum class RoleColor(val labelRes: Int) {
+/**
+ * Which role colour the picker dialog is editing.
+ *
+ * <p>{@code internal} rather than private because the drawing page's long-press
+ * dialog offers the same colours, and it opens the same picker: a second enum
+ * would be a second thing to keep in step with the switch table.
+ */
+internal enum class RoleColor(val labelRes: Int) {
     Low(R.string.color_low_title),
     Charging(R.string.color_charging_title),
     Critical(R.string.color_critical_title),
@@ -159,6 +169,7 @@ private enum class RoleColor(val labelRes: Int) {
  */
 private enum class SettingsTab(val labelRes: Int, val route: Route) {
     General(R.string.tab_general, Route.General),
+    Drawing(R.string.tab_drawing, Route.Drawing),
     Geometry(R.string.group_geometry, Route.Geometry),
     Colors(R.string.group_colors, Route.Colors),
     About(R.string.about_title, Route.About),
@@ -182,6 +193,9 @@ private enum class SettingsTab(val labelRes: Int, val route: Route) {
 private sealed interface Route : NavKey {
     @Serializable
     data object General : Route
+
+    @Serializable
+    data object Drawing : Route
 
     @Serializable
     data object Geometry : Route
@@ -469,6 +483,22 @@ fun SettingsScreen(repository: SettingsRepository) {
                     sectionHeader()
                     val s = settingsState.value
                     generalTab(s) { block -> update(block) }
+                }
+            }
+
+            // The drawing page owns the colour picker as well as its own part
+            // dialog, because a long press there can open a colour. It shares the
+            // page-level `editing` state with the colour tab, so only one picker is
+            // ever on screen however it was reached.
+            entry<Route.Drawing> {
+                SectionList(sectionPadding, isTop = nav.backStack.lastOrNull() == Route.Drawing) {
+                    sectionHeader()
+                    val s = settingsState.value
+                    drawingTab(
+                        settings = s,
+                        update = { block -> update(block) },
+                        onEditColor = { role -> editing = role },
+                    )
                 }
             }
 
@@ -883,336 +913,89 @@ private fun LazyListScope.generalTab(
     }
 }
 
-/** Geometry: the stroke, text, network-type and track sliders. */
+/**
+ * Geometry: the size rows, rendered from the one table in {@code PartControls}.
+ *
+ * <p>The rows, their ranges, their gates and their style-dependent wording all
+ * live in [geometrySliders] rather than here, because the drawing page's
+ * long-press dialog renders the same rows. Two lists would drift, and the way
+ * they drift is that one of them keeps a range the other has moved past - so the
+ * table wins and this function only groups and orders it.
+ */
 private fun LazyListScope.geometryTab(
     settings: TrioSettings,
     update: ((SettingsRepository) -> Unit) -> Unit,
 ) {
-    // Same rule the renderer builds, so the two style-dependent labels below -
-    // the bar thickness, and the arc's vertical placement in the top slot -
-    // follow the arrangement actually on screen instead of a second copy of it.
+    // Built per composition rather than captured: several rows rename themselves
+    // for the rectangular arrangement, and every gate follows the live snapshot.
     val a = TrioAppearance.of(settings)
+    val sliders = geometrySliders()
 
-    item { SectionTitle(stringResource(R.string.group_scale)) }
-    item {
-        Card {
-            IntSlider(
-                value = settings.glyphScale,
-                min = Prefs.MIN_GLYPH_SCALE,
-                max = Prefs.MAX_GLYPH_SCALE,
-                title = stringResource(R.string.glyph_scale_title),
-                summary = stringResource(R.string.glyph_scale_summary),
-                // Gated on the master switch and nothing else: it sizes the glyph
-                // itself, so with the glyph off there is nothing on screen for it
-                // to act on. It is gated by no other row, and no row is gated by
-                // it, which keeps this slider from ever being the reason another
-                // one is unavailable.
-                enabled = a.glyph,
-                valueTextSuffix = "%",
-                onValueChange = { v -> update { it.setGlyphScale(v) } },
-            )
-            // The pair's size and weight. Both are gated on the two readout
-            // switches rather than on their own values - the rule the whole
-            // screen follows - because a reading that is not drawn has no size
-            // or weight to set, so the rows are dead until one of the switches
-            // comes on. The gate carries a tooltip since "greyed out because both
-            // readouts are off" is a step removed from what is on screen; the two
-            // switches themselves still gate on the master alone, so neither of
-            // them can be locked out.
-            val perfHint = gateHint(
-                a.glyph to R.string.master_title,
-                a.perfAnywhere() to R.string.perf_pair_title,
-            )
-            TooltipBox(text = perfHint.orEmpty(), enabled = perfHint != null) {
-                IntSlider(
-                    value = settings.perfScale,
-                    min = Prefs.MIN_PERF_SCALE,
-                    max = Prefs.MAX_PERF_SCALE,
-                    title = stringResource(R.string.perf_scale_title),
-                    summary = stringResource(R.string.perf_scale_summary),
-                    enabled = a.glyph && a.perfAnywhere(),
-                    valueTextSuffix = "%",
-                    onValueChange = { value -> update { it.setPerfScale(value) } },
-                )
-            }
-            TooltipBox(text = perfHint.orEmpty(), enabled = perfHint != null) {
-                IntSlider(
-                    value = settings.perfWeight,
-                    min = Prefs.MIN_PERF_WEIGHT,
-                    max = Prefs.MAX_PERF_WEIGHT,
-                    step = WEIGHT_STEP,
-                    title = stringResource(R.string.perf_weight_title),
-                    summary = stringResource(R.string.perf_weight_summary),
-                    enabled = a.glyph && a.perfAnywhere(),
-                    onValueChange = { value -> update { it.setPerfWeight(value) } },
-                )
-            }
+    // One Card per group, in the enum's order, with the group's rows in the
+    // table's order. A group with no rows is skipped rather than drawn empty.
+    GeometryGroup.entries.forEach { group ->
+        val rows = sliders.filter { it.group == group }
+        if (rows.isEmpty()) {
+            return@forEach
         }
-    }
-    item { SectionTitle(stringResource(R.string.group_stroke)) }
-    item {
-        Card {
-            IntSlider(
-                value = settings.ringStroke,
-                min = Prefs.MIN_RING_STROKE,
-                max = Prefs.MAX_RING_STROKE,
-                // One stroke setting, two names: the rectangle spends it on the
-                // bar's thickness, the ring on the outline's width.
-                title = stringResource(
-                    if (a.rect) R.string.stroke_title_rect else R.string.stroke_title,
-                ),
-                summary = stringResource(
-                    if (a.rect) R.string.stroke_summary_rect else R.string.stroke_summary,
-                ),
-                enabled = a.glyph,
-                onValueChange = { v -> update { it.setRingStroke(v) } },
-            )
-            IntSlider(
-                value = settings.arcStroke,
-                min = Prefs.MIN_ARC_STROKE,
-                max = Prefs.MAX_ARC_STROKE,
-                title = stringResource(R.string.arc_stroke_title),
-                // In the rectangle the arc group hangs off the top slot by its
-                // own stroke, so this slider moves the arcs as well as thickening
-                // them; the ring's summary has nothing to add there.
-                summary = stringResource(
-                    if (a.rect) {
-                        R.string.arc_stroke_summary_rect
+        item { SectionTitle(stringResource(group.titleRes)) }
+        item {
+            Card {
+                rows.forEach { spec ->
+                    // The hint is resolved in a composable scope and only when the
+                    // row is actually gated: a live row has nothing to explain, and
+                    // a tooltip that says nothing would still eat the long-press.
+                    val hint = spec.firstHint(a)
+                    if (hint == null) {
+                        GeometrySlider(spec, settings, update)
                     } else {
-                        R.string.arc_stroke_summary
-                    },
-                ),
-                enabled = a.glyph,
-                onValueChange = { v -> update { it.setArcStroke(v) } },
-            )
-        }
-    }
-    item { SectionTitle(stringResource(R.string.group_text)) }
-    item {
-        Card {
-            IntSlider(
-                value = settings.valueSize,
-                min = Prefs.MIN_VALUE_SIZE,
-                max = Prefs.MAX_VALUE_SIZE,
-                title = stringResource(R.string.value_size_title),
-                summary = stringResource(R.string.value_size_summary),
-                enabled = a.glyph,
-                onValueChange = { v -> update { it.setValueSize(v) } },
-            )
-            val weightHint = gateHint(
-                a.glyph to R.string.master_title,
-                a.value to R.string.show_value_title,
-            )
-            TooltipBox(text = weightHint.orEmpty(), enabled = weightHint != null) {
-                IntSlider(
-                    value = settings.valueWeight,
-                    min = Prefs.MIN_VALUE_WEIGHT,
-                    max = Prefs.MAX_VALUE_WEIGHT,
-                    title = stringResource(R.string.value_weight_title),
-                    summary = stringResource(R.string.value_weight_summary),
-                    // A 100..900 range would give the slider 799 steps, so
-                    // it snaps in hundreds: the nine weights the platform
-                    // actually ships distinct faces for.
-                    step = WEIGHT_STEP,
-                    enabled = a.glyph && a.value,
-                    onValueChange = { v -> update { it.setValueWeight(v) } },
-                )
+                        TooltipBox(text = hint, enabled = true) {
+                            GeometrySlider(spec, settings, update)
+                        }
+                    }
+                }
             }
         }
     }
-    item { SectionTitle(stringResource(R.string.group_type)) }
-    item {
-        Card {
-            // These two sizes drive the same glyph in two different spaces.
-            // The in-ring size is authored against the ring's 120x120 design
-            // space, so it tops out at 44; the out-of-ring label is laid out
-            // in the status bar's real pixel space and needs the wider 16..64
-            // range it carries on its own slider below. They are deliberately
-            // separate settings: one number cannot serve both spaces.
-            val typeSizeHint = gateHint(
-                a.glyph to R.string.master_title,
-                a.typeInRing to R.string.show_mobile_type_title,
-            )
-            TooltipBox(text = typeSizeHint.orEmpty(), enabled = typeSizeHint != null) {
-                IntSlider(
-                    value = settings.typeSize,
-                    min = Prefs.MIN_TYPE_SIZE,
-                    max = Prefs.MAX_TYPE_SIZE,
-                    title = stringResource(R.string.type_size_title),
-                    summary = stringResource(R.string.type_size_summary),
-                    enabled = a.glyph && a.typeInRing,
-                    onValueChange = { v -> update { it.setTypeSize(v) } },
-                )
-            }
-            // The out-of-ring label has its own size, live only when the label
-            // actually sits out of the ring.
-            val outTypeSizeHint = gateHint(
-                a.glyph to R.string.master_title,
-                a.typeOutOfRing to R.string.show_mobile_type_title,
-            )
-            TooltipBox(
-                text = outTypeSizeHint.orEmpty(),
-                enabled = outTypeSizeHint != null,
-            ) {
-                IntSlider(
-                    value = settings.outTypeSize,
-                    min = Prefs.MIN_OUT_TYPE_SIZE_DP,
-                    max = Prefs.MAX_OUT_TYPE_SIZE_DP,
-                    title = stringResource(R.string.out_type_size_title),
-                    summary = stringResource(R.string.out_type_size_summary),
-                    valueTextSuffix = "dp",
-                    enabled = a.glyph && a.typeOutOfRing,
-                    onValueChange = { v -> update { it.setOutTypeSize(v) } },
-                )
-            }
-            // The trailing "A" of "5GA", shrunk against the main label. It is a
-            // property of the label itself rather than of either position, so
-            // its gate is "a network type is drawn somewhere" - and it stays
-            // live while the type is out of ring, where the label is a real
-            // TextView and both draws have to agree.
-            val suffixScaleHint = gateHint(
-                a.glyph to R.string.master_title,
-                a.typeAnywhere() to R.string.show_mobile_type_title,
-            )
-            TooltipBox(text = suffixScaleHint.orEmpty(), enabled = suffixScaleHint != null) {
-                IntSlider(
-                    value = settings.typeSuffixScale,
-                    min = Prefs.MIN_TYPE_SUFFIX_SCALE,
-                    max = Prefs.MAX_TYPE_SUFFIX_SCALE,
-                    title = stringResource(R.string.type_suffix_scale_title),
-                    summary = stringResource(R.string.type_suffix_scale_summary),
-                    enabled = a.glyph && a.typeAnywhere(),
-                    onValueChange = { v -> update { it.setTypeSuffixScale(v) } },
-                )
-            }
-            // The label's two margins. Same gate as its size: they only mean
-            // anything while the label is the status bar's own child, and the
-            // row names each margin by its physical side. Under RTL the pair
-            // swaps those sides, which the summary says rather than the row
-            // pretending the labels are reading-order starts.
-            val marginHint = gateHint(
-                a.glyph to R.string.master_title,
-                a.typeOutOfRing to R.string.show_mobile_type_title,
-            )
-            TooltipBox(text = marginHint.orEmpty(), enabled = marginHint != null) {
-                IntSlider(
-                    value = settings.outTypeMarginLeft,
-                    min = Prefs.MIN_OUT_TYPE_MARGIN,
-                    max = Prefs.MAX_OUT_TYPE_MARGIN,
-                    title = stringResource(R.string.out_type_margin_left_title),
-                    summary = stringResource(R.string.out_type_margin_left_summary),
-                    valueTextSuffix = "dp",
-                    enabled = a.glyph && a.typeOutOfRing,
-                    onValueChange = { v -> update { it.setOutTypeMarginLeft(v) } },
-                )
-            }
-            TooltipBox(text = marginHint.orEmpty(), enabled = marginHint != null) {
-                IntSlider(
-                    value = settings.outTypeMarginRight,
-                    min = Prefs.MIN_OUT_TYPE_MARGIN,
-                    max = Prefs.MAX_OUT_TYPE_MARGIN,
-                    title = stringResource(R.string.out_type_margin_right_title),
-                    summary = stringResource(R.string.out_type_margin_right_summary),
-                    valueTextSuffix = "dp",
-                    enabled = a.glyph && a.typeOutOfRing,
-                    onValueChange = { v -> update { it.setOutTypeMarginRight(v) } },
-                )
-            }
-            // The weight still applies in both positions.
-            val typeWeightHint = gateHint(
-                a.glyph to R.string.master_title,
-                a.typeAnywhere() to R.string.show_mobile_type_title,
-            )
-            TooltipBox(text = typeWeightHint.orEmpty(), enabled = typeWeightHint != null) {
-                IntSlider(
-                    value = settings.typeWeight,
-                    min = Prefs.MIN_TYPE_WEIGHT,
-                    max = Prefs.MAX_TYPE_WEIGHT,
-                    title = stringResource(R.string.type_weight_title),
-                    summary = stringResource(R.string.type_weight_summary),
-                    step = WEIGHT_STEP,
-                    enabled = a.glyph && a.typeAnywhere(),
-                    onValueChange = { v -> update { it.setTypeWeight(v) } },
-                )
-            }
-        }
-    }
-    // The out-of-ring reading gets its own card: it is a different element from
-    // the type label (which is why its two sliders were buried in the type card
-    // until now), it has a different gate - the stacked reading has to actually
-    // be drawn - and mixing the two groups made the user dig for the spacing
-    // row between type rows that do not affect it.
-    item { SectionTitle(stringResource(R.string.group_out_signal)) }
-    item {
-        Card {
-            // The size of the out-of-ring reading itself. It is authored against
-            // neither design space and against no view either: the setting is a
-            // plain dp, resolved against the display's density, so it is the same
-            // reading whatever the status bar row happens to be doing - MIUI
-            // lays that row out 88px tall at rest and 134px with the control
-            // centre pulled down, and a share of either would drift with it.
-            //
-            // Gated on the switches the reading needs, named individually so the
-            // hint points at a row the user can act on. The knob itself is
-            // {@code a.stackedOut()} - the rule that decides there is a reading to
-            // size - rather than a second copy of the same three conditions.
-            val outSignalSizeHint = gateHint(
-                a.glyph to R.string.master_title,
-                a.mobile to R.string.show_mobile_title,
-                a.signalOutOfRing to R.string.signal_mode_title,
-                a.stackedSignal to R.string.stacked_signal_title,
-            )
-            TooltipBox(
-                text = outSignalSizeHint.orEmpty(),
-                enabled = outSignalSizeHint != null,
-            ) {
-                IntSlider(
-                    value = settings.outSignalSize,
-                    min = Prefs.MIN_OUT_SIGNAL_SIZE,
-                    max = Prefs.MAX_OUT_SIGNAL_SIZE,
-                    title = stringResource(R.string.out_signal_size_title),
-                    summary = stringResource(R.string.out_signal_size_summary),
-                    valueTextSuffix = "dp",
-                    enabled = a.stackedOut(),
-                    onValueChange = { v -> update { it.setOutSignalSize(v) } },
-                )
-            }
-            // How far the reading stands from the battery. A reserved margin, so
-            // it moves the native icons as well as the reading - which is why it
-            // is a gap and not a position: a free position slid the reading over
-            // the icons it should have displaced. Same gate as the size, since
-            // there is only a reading to space while one is drawn.
-            TooltipBox(
-                text = outSignalSizeHint.orEmpty(),
-                enabled = outSignalSizeHint != null,
-            ) {
-                IntSlider(
-                    value = settings.outSignalMargin,
-                    min = Prefs.MIN_OUT_SIGNAL_MARGIN,
-                    max = Prefs.MAX_OUT_SIGNAL_MARGIN,
-                    title = stringResource(R.string.out_signal_margin_title),
-                    summary = stringResource(R.string.out_signal_margin_summary),
-                    valueTextSuffix = "dp",
-                    enabled = a.stackedOut(),
-                    onValueChange = { v -> update { it.setOutSignalMargin(v) } },
-                )
-            }
-        }
-    }
-    item { SectionTitle(stringResource(R.string.group_track)) }
-    item {
-        Card {
-            IntSlider(
-                value = settings.trackAlpha,
-                min = Prefs.MIN_TRACK_ALPHA,
-                max = Prefs.MAX_TRACK_ALPHA,
-                title = stringResource(R.string.track_alpha_title),
-                summary = stringResource(R.string.track_alpha_summary),
-                enabled = a.glyph,
-                onValueChange = { v -> update { it.setTrackAlpha(v) } },
-            )
-        }
-    }
+}
+
+/**
+ * One size row.
+ *
+ * <p>Deliberately thin: everything it needs comes off [spec], and the only work
+ * here is reading the title and summary through the appearance, which is what lets
+ * a row rename itself by arrangement.
+ */
+@Composable
+private fun GeometrySlider(
+    spec: SliderSpec,
+    settings: TrioSettings,
+    update: ((SettingsRepository) -> Unit) -> Unit,
+) {
+    val a = TrioAppearance.of(settings)
+    IntSlider(
+        value = spec.read(settings),
+        min = spec.min,
+        max = spec.max,
+        step = spec.step,
+        title = stringResource(spec.titleRes(a)),
+        summary = stringResource(spec.summaryRes(a)),
+        enabled = spec.enabled(a),
+        valueTextSuffix = spec.suffix,
+        onValueChange = { v -> update { r -> spec.write(r, v) } },
+    )
+}
+
+/**
+ * The gate sentence for a gated row, or null when it is live.
+ *
+ * <p>The first dependency that is switched off wins, so a row needing two names
+ * the one the user is likeliest to fix first - reading order, top to bottom.
+ */
+@Composable
+private fun SliderSpec.firstHint(a: TrioAppearance): String? {
+    val missing = hints(a).firstOrNull { !it.first } ?: return null
+    return stringResource(R.string.gate_hint, stringResource(missing.second))
 }
 
 /**
@@ -2004,7 +1787,7 @@ private fun BackgroundChip(
 }
 
 @Composable
-private fun Swatch(color: Int) {
+internal fun Swatch(color: Int) {
     Box(
         modifier = Modifier
             .size(18.dp)
@@ -2022,7 +1805,7 @@ private fun Swatch(color: Int) {
  *   talks about instead of a bare figure.
  */
 @Composable
-private fun IntSlider(
+internal fun IntSlider(
     value: Int,
     min: Int,
     max: Int,
@@ -2073,7 +1856,13 @@ private fun gateHint(vararg gates: Pair<Boolean, Int>): String? {
 private val RoleColor.colorFieldLabelRes: Int
     get() = R.string.color_field_summary
 
-private fun colorFor(settings: TrioSettings, role: RoleColor, onDark: Boolean): Int =
+/**
+ * The stored colour for one role on one background.
+ *
+ * <p>{@code internal} because the drawing page's long-press dialog draws the same
+ * swatches, and showing a different value there would be showing the wrong colour.
+ */
+internal fun colorFor(settings: TrioSettings, role: RoleColor, onDark: Boolean): Int =
     when (role) {
         RoleColor.Critical -> if (onDark) settings.criticalOnDark else settings.criticalOnLight
         RoleColor.Low -> if (onDark) settings.lowOnDark else settings.lowOnLight
@@ -2083,9 +1872,6 @@ private fun colorFor(settings: TrioSettings, role: RoleColor, onDark: Boolean): 
 /** Signal levels the preview shows; the middle of each range. */
 private const val WIFI_LEVEL = 3
 private const val MOBILE_LEVEL = 4
-
-/** Font weights snap in hundreds: 100, 200, ... 900. */
-private const val WEIGHT_STEP = 100
 
 /** What the renderer treats as "no Wi-Fi ink": the value drops to the centre. */
 private const val NO_WIFI_LEVEL = -1
@@ -2127,9 +1913,13 @@ private val ActivatedBadgeDark = Color(0xFF6FC77C)
  * True when the app is rendering its dark palette, following the system setting
  * too. Miuix exposes the mode rather than a resolved boolean, so the system case
  * has to be resolved here.
+ *
+ * <p>{@code internal} because the drawing page's large preview sits on the same
+ * surface and has to follow the same theme, or the two previews would disagree
+ * about what the status bar looks like.
  */
 @Composable
-private fun isDarkTheme(): Boolean = MiuixTheme.colorSchemeMode == ColorSchemeMode.Dark ||
+internal fun isDarkTheme(): Boolean = MiuixTheme.colorSchemeMode == ColorSchemeMode.Dark ||
     (MiuixTheme.colorSchemeMode == ColorSchemeMode.System && isSystemInDarkTheme())
 
 /** Everything the about card renders about this installation. */

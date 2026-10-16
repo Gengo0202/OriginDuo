@@ -3,6 +3,7 @@ package io.github.yixing233.hyperduo;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.view.View;
 
@@ -44,6 +45,30 @@ public final class TrioPreviewView extends View {
 
     /** Draws the out-of-ring signal reading on its own instead of the glyph. */
     private boolean outSignalOnly;
+
+    /**
+     * The zone whose outline is drawn over the glyph, or {@code null} for none.
+     *
+     * <p>Set by the visual editor to show which third a press would land in. The
+     * outline is derived from {@link TrioZones#boxes} through the same transform
+     * the glyph is drawn with, so the line and the tappable area cannot disagree.
+     */
+    private TrioZones.Zone highlight;
+
+    /** Ink for the {@link #highlight} outline, ARGB. */
+    private int highlightColor = 0x66FFFFFF;
+
+    /** Stroke width of the highlight outline, in density pixels. */
+    private static final float HIGHLIGHT_STROKE_DP = 1.5f;
+
+    /** Corner radius of the highlight outline, in density pixels. */
+    private static final float HIGHLIGHT_CORNER_DP = 3f;
+
+    private final Paint guidePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF guideRect = new RectF();
+
+    /** Scratch for the design -> view mapping; rewritten per outline, never kept. */
+    private final float[] guidePoint = new float[2];
 
     /**
      * Height of the box the status bar draws the glyph in, in density pixels:
@@ -161,6 +186,71 @@ public final class TrioPreviewView extends View {
         invalidate();
     }
 
+    /**
+     * Outlines one third of the glyph, or clears the outline when given null.
+     *
+     * <p>This is the visual editor's feedback: it tells the user which third the
+     * press they are about to make will act on, and it does so from the same rule
+     * the press itself consults.
+     */
+    public void setHighlight(TrioZones.Zone zone) {
+        this.highlight = zone;
+        invalidate();
+    }
+
+    /** Ink of the highlight outline. */
+    public void setHighlightColor(int color) {
+        this.highlightColor = color;
+        invalidate();
+    }
+
+    /**
+     * Which third of the glyph a point in this view lands in, or {@code null} for
+     * a miss and for the two out-of-ring cells.
+     *
+     * <p>The point is taken in this view's own coordinates, which is what the
+     * gesture layer hands over, and it is resolved through the very transform
+     * {@link #onDraw} paints with - see {@link #zoneTransform}, which both call.
+     */
+    public TrioZones.Zone zoneAt(float x, float y) {
+        if (outTypeOnly || outSignalOnly) {
+            // Those two cells draw the status bar's own views, not the glyph, so
+            // the glyph's thirds do not describe them.
+            return null;
+        }
+        final float[] t = zoneTransform(getWidth(), getHeight(), inset, settings);
+        if (t == null) {
+            return null;
+        }
+        return TrioZones.zoneAt(t, settings.trioStyle == Prefs.STYLE_RECT, x, y);
+    }
+
+    /**
+     * The design-to-view transform for a glyph box of this size, or {@code null}
+     * when there is nothing to map onto.
+     *
+     * <p>A forwarder to {@link TrioZones#viewTransform}, and thin on purpose: the
+     * arithmetic lives there because that class is compiled against the desktop
+     * shims by the offline harness, whereas a {@code View} needs an Android
+     * {@code Context} to exist at all. Keeping it there is what lets
+     * {@code tests/drawing-zones.ps1} check the mapping the user's finger actually
+     * goes through, rather than only the renderer's half of it.
+     *
+     * <p>Offered here as well because the settings screen's editor wants the same
+     * mapping from outside the view: it reads the box size its {@code AndroidView}
+     * will be handed and asks for the transform instead of keeping a copy of the
+     * arithmetic, which is how a hot spot drifts off the piece it names.
+     *
+     * @param inset fraction of the shorter edge left empty around the glyph, as
+     *              {@link #setInset} takes it
+     */
+    public static float[] zoneTransform(int width, int height, float inset, TrioSettings settings) {
+        if (settings == null) {
+            return null;
+        }
+        return TrioZones.viewTransform(width, height, inset, TrioAppearance.of(settings));
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -195,6 +285,53 @@ public final class TrioPreviewView extends View {
                     settings, false);
         }
         canvas.restoreToCount(save);
+
+        // After the glyph, so the outline reads as a frame over the ink rather
+        // than as part of it. Skipped for the two out-of-ring cells: they do not
+        // draw the glyph, so its thirds say nothing about them.
+        if (highlight != null && !outTypeOnly && !outSignalOnly) {
+            drawZoneOutline(canvas);
+        }
+    }
+
+    /**
+     * Outlines the highlighted third.
+     *
+     * <p>Each box is mapped through the same transform
+     * {@link TrioRenderer#designTransform} gives the glyph, so the rule for what
+     * is tappable and the rule for what is outlined are one rule. A zone may have
+     * more than one box - the rectangular arrangement's bottom zone is its two dot
+     * columns plus the bar - and every one of them is drawn.
+     */
+    private void drawZoneOutline(Canvas canvas) {
+        final float[] t = zoneTransform(getWidth(), getHeight(), inset, settings);
+        if (t == null) {
+            return;
+        }
+        final float density = getResources().getDisplayMetrics().density;
+        guidePaint.setStyle(Paint.Style.STROKE);
+        guidePaint.setColor(highlightColor);
+        guidePaint.setStrokeWidth(Math.max(1f, HIGHLIGHT_STROKE_DP * density));
+
+        final boolean rect = settings.trioStyle == Prefs.STYLE_RECT;
+        for (float[] box : TrioZones.boxes(highlight, rect)) {
+            // Two opposite corners is enough: the transform is a uniform scale and
+            // a translation, so an axis-aligned box stays axis-aligned.
+            if (!TrioZones.toView(t, box[0], box[1], guidePoint)) {
+                continue;
+            }
+            guideRect.left = guidePoint[0];
+            guideRect.top = guidePoint[1];
+            if (!TrioZones.toView(t, box[2], box[3], guidePoint)) {
+                continue;
+            }
+            guideRect.right = guidePoint[0];
+            guideRect.bottom = guidePoint[1];
+            // The design box is inset from the view by `inset`, and the outline is
+            // drawn in view coordinates, so the canvas is not translated here.
+            final float r = HIGHLIGHT_CORNER_DP * density;
+            canvas.drawRoundRect(guideRect, r, r, guidePaint);
+        }
     }
 
     /**
