@@ -607,18 +607,22 @@ final class TrioGeometry {
      * the stroke, which is the measure the reference's own figures are stated
      * against.
      *
-     * <p>Read off the reference at 9px out of a 135px path height, or 6.67%. The
-     * first cut of this used 3.3%, which was a measurement error and a bad one to
-     * have shipped: it came from counting the antialiased pixels between the dot
-     * and the stroke as track, which made the gap look half its real size. The
-     * result - 2.89% of the ink height - was reported straight back as still too
-     * tight, which is exactly what half the clearance looks like.
+     * <p><b>9%, against the reference's 6.67%, at the user's request.</b> The
+     * reference leaves 9px out of a 135px path height. Measured on the device at
+     * that value the gap is 3px, which is faithful to the mockup but was reported
+     * as still too tight - and on a 60px-tall glyph 6.67% is under four pixels, so
+     * there is not much of it to see. 9% is about a third more than the reference
+     * and stays well inside the point where the outline would read as broken
+     * rather than as a row sitting in it.
      *
-     * <p>Both numbers matter, so both are recorded: the reference's clearance is
-     * 5.96% of its ink height and 6.67% of its path height. This is expressed
-     * against the path because that is what the geometry here can state exactly -
-     * the ink height depends on the stroke slider, so a ratio against it would
-     * move the clearance whenever the user changed the stroke.
+     * <p>A ratio rather than a constant: the stroke is a slider, and the clearance
+     * has to hold at every width. It is measured against the PATH rather than the
+     * ink height because the ink height depends on the stroke - a ratio against
+     * that would move the clearance whenever the user changed the line's weight.
+     *
+     * <p>The first cut of this used 3.3%, which was a measurement error and a bad
+     * one to have shipped: it came from counting the antialiased pixels between the
+     * dot and the stroke as track, which made the gap look half its real size.
      *
      * <p>Without any clearance the row and the line run together, which is what the
      * very first cut did: its {@link #capDotReach} was written as "the dots' own
@@ -626,7 +630,7 @@ final class TrioGeometry {
      * the outer two merged into the stroke ends. The row then reads as a line with
      * two lumps on it rather than as four dots interrupting a line.
      */
-    static final float CAP_DOT_CLEARANCE_RATIO = 0.0667f;
+    static final float CAP_DOT_CLEARANCE_RATIO = 0.09f;
 
     /** The clear space on one side of a dot row, in design units. */
     static float capDotClearance() {

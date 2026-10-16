@@ -115,6 +115,12 @@
     <string name="value_weight_title">Number weight</string>
     <string name="value_weight_summary">Stroke weight of the battery number, 100 lightest to 900 heaviest.</string>
 
+    <string name="clock_size_title">Clock size</string>
+    <string name="clock_size_summary">Font size of the time in the capsule\'s left slot, independent of the battery number.</string>
+
+    <string name="clock_weight_title">Clock weight</string>
+    <string name="clock_weight_summary">Stroke weight of the time, 100 lightest to 900 heaviest.</string>
+
     <string name="type_size_title">Network type size</string>
     <string name="type_size_summary">Font size of the 3G/4G/5G label in the ring centre.</string>
 

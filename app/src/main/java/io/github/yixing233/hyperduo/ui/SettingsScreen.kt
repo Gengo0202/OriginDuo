@@ -1007,6 +1007,43 @@ private fun LazyListScope.geometryTab(
                     onValueChange = { v -> update { it.setValueWeight(v) } },
                 )
             }
+            // The clock's own size and weight. Gated on the capsule arrangement
+            // because that is the only one that draws the time inside the glyph at
+            // all: the ring and the rectangle leave it to MIUI's own status-bar
+            // clock, which this module neither draws nor measures. Shown disabled
+            // with a tooltip rather than hidden, so the rows do not appear and
+            // vanish as the arrangement changes above them.
+            //
+            // Both default to the value's size and weight, so a user who never
+            // opens these sees the time exactly as it was when it shared one size
+            // with the percentage.
+            val clockHint = gateHint(
+                a.glyph to R.string.master_title,
+                a.capsule to R.string.trio_style_capsule,
+            )
+            TooltipBox(text = clockHint.orEmpty(), enabled = clockHint != null) {
+                IntSlider(
+                    value = settings.clockSize,
+                    min = Prefs.MIN_CLOCK_SIZE,
+                    max = Prefs.MAX_CLOCK_SIZE,
+                    title = stringResource(R.string.clock_size_title),
+                    summary = stringResource(R.string.clock_size_summary),
+                    enabled = a.glyph && a.capsule,
+                    onValueChange = { v -> update { it.setClockSize(v) } },
+                )
+            }
+            TooltipBox(text = clockHint.orEmpty(), enabled = clockHint != null) {
+                IntSlider(
+                    value = settings.clockWeight,
+                    min = Prefs.MIN_CLOCK_WEIGHT,
+                    max = Prefs.MAX_CLOCK_WEIGHT,
+                    title = stringResource(R.string.clock_weight_title),
+                    summary = stringResource(R.string.clock_weight_summary),
+                    step = WEIGHT_STEP,
+                    enabled = a.glyph && a.capsule,
+                    onValueChange = { v -> update { it.setClockWeight(v) } },
+                )
+            }
         }
     }
     item { SectionTitle(stringResource(R.string.group_type)) }

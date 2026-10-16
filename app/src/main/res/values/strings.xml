@@ -115,6 +115,12 @@
     <string name="value_weight_title">数字字重</string>
     <string name="value_weight_summary">电量数字的笔画粗细，100 最细、900 最粗。</string>
 
+    <string name="clock_size_title">时钟字号</string>
+    <string name="clock_size_summary">胶囊内左侧时间文字的大小，与右侧电量数字各自独立。</string>
+
+    <string name="clock_weight_title">时钟字重</string>
+    <string name="clock_weight_summary">时间文字的笔画粗细，100 最细、900 最粗。</string>
+
     <string name="type_size_title">网络类型字号</string>
     <string name="type_size_summary">圆环中间 3G/4G/5G 等文字的大小。</string>
 

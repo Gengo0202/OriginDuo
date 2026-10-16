@@ -102,6 +102,14 @@ public final class TrioSettings {
     /** Numeric font weight of the value/type text, 100..900. */
     public int valueWeight;
     /**
+     * Size and weight of the time in the capsule's left-hand slot. Independent of
+     * {@link #valueSize}/{@link #valueWeight}: the two slots hold different
+     * strings and are read differently, so a change made for one must not move the
+     * other. Defaults equal the value's, so nothing changes until it is touched.
+     */
+    public int clockSize;
+    public int clockWeight;
+    /**
      * Size and weight of the centred network type ("5G", "5GA"). Independent of
      * {@link #valueSize}/{@link #valueWeight}: the type is a label of its own,
      * tuned separately from the digits it shares the ring with.
@@ -229,6 +237,8 @@ public final class TrioSettings {
         s.arcStroke = Prefs.DEF_ARC_STROKE;
         s.valueSize = Prefs.DEF_VALUE_SIZE;
         s.valueWeight = Prefs.DEF_VALUE_WEIGHT;
+        s.clockSize = Prefs.DEF_CLOCK_SIZE;
+        s.clockWeight = Prefs.DEF_CLOCK_WEIGHT;
         s.typeSize = Prefs.DEF_TYPE_SIZE;
         s.outTypeSize = Prefs.DEF_OUT_TYPE_SIZE_DP;
         s.outSignalSize = Prefs.DEF_OUT_SIGNAL_SIZE;
@@ -317,6 +327,18 @@ public final class TrioSettings {
         s.valueWeight = Prefs.clamp(
                 p.getInt(Prefs.KEY_VALUE_WEIGHT, Prefs.DEF_VALUE_WEIGHT),
                 Prefs.MIN_VALUE_WEIGHT, Prefs.MAX_VALUE_WEIGHT);
+        // The clock falls back to the value's OWN size and weight, not to the
+        // constants: before these two keys existed the time was drawn at exactly
+        // the value's size, so an install that had already moved that slider to 40
+        // must keep a 40-sized clock rather than snap back to the 36 default. The
+        // constants are the same numbers, but only the fallback makes the upgrade
+        // invisible for a user who had changed the old setting.
+        s.clockSize = Prefs.clamp(
+                p.getInt(Prefs.KEY_CLOCK_SIZE, s.valueSize),
+                Prefs.MIN_CLOCK_SIZE, Prefs.MAX_CLOCK_SIZE);
+        s.clockWeight = Prefs.clamp(
+                p.getInt(Prefs.KEY_CLOCK_WEIGHT, s.valueWeight),
+                Prefs.MIN_CLOCK_WEIGHT, Prefs.MAX_CLOCK_WEIGHT);
         s.typeSize = Prefs.clamp(
                 p.getInt(Prefs.KEY_TYPE_SIZE, Prefs.DEF_TYPE_SIZE),
                 Prefs.MIN_TYPE_SIZE, Prefs.MAX_TYPE_SIZE);
@@ -458,6 +480,8 @@ public final class TrioSettings {
         s.arcStroke = arcStroke;
         s.valueSize = valueSize;
         s.valueWeight = valueWeight;
+        s.clockSize = clockSize;
+        s.clockWeight = clockWeight;
         s.typeSize = typeSize;
         s.outTypeSize = outTypeSize;
         s.outSignalSize = outSignalSize;
@@ -519,6 +543,8 @@ public final class TrioSettings {
             case Prefs.KEY_ARC_STROKE: arcStroke = src.arcStroke; return true;
             case Prefs.KEY_VALUE_SIZE: valueSize = src.valueSize; return true;
             case Prefs.KEY_VALUE_WEIGHT: valueWeight = src.valueWeight; return true;
+            case Prefs.KEY_CLOCK_SIZE: clockSize = src.clockSize; return true;
+            case Prefs.KEY_CLOCK_WEIGHT: clockWeight = src.clockWeight; return true;
             case Prefs.KEY_TYPE_SIZE: typeSize = src.typeSize; return true;
             case Prefs.KEY_OUT_TYPE_SIZE_DP: outTypeSize = src.outTypeSize; return true;
             case Prefs.KEY_OUT_SIGNAL_SIZE: outSignalSize = src.outSignalSize; return true;
@@ -597,6 +623,15 @@ public final class TrioSettings {
         s.valueWeight = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_VALUE_WEIGHT, Prefs.DEF_VALUE_WEIGHT),
                 Prefs.MIN_VALUE_WEIGHT, Prefs.MAX_VALUE_WEIGHT);
+        // Falls back to the value's own, as in from(SharedPreferences): a bundle
+        // that predates these keys - or a sender that simply omits them - keeps the
+        // shared-size look rather than snapping the time to a constant.
+        s.clockSize = Prefs.clamp(
+                bundle.getInt(Prefs.KEY_CLOCK_SIZE, s.valueSize),
+                Prefs.MIN_CLOCK_SIZE, Prefs.MAX_CLOCK_SIZE);
+        s.clockWeight = Prefs.clamp(
+                bundle.getInt(Prefs.KEY_CLOCK_WEIGHT, s.valueWeight),
+                Prefs.MIN_CLOCK_WEIGHT, Prefs.MAX_CLOCK_WEIGHT);
         s.typeSize = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_TYPE_SIZE, Prefs.DEF_TYPE_SIZE),
                 Prefs.MIN_TYPE_SIZE, Prefs.MAX_TYPE_SIZE);
@@ -687,6 +722,8 @@ public final class TrioSettings {
         b.putInt(Prefs.KEY_ARC_STROKE, arcStroke);
         b.putInt(Prefs.KEY_VALUE_SIZE, valueSize);
         b.putInt(Prefs.KEY_VALUE_WEIGHT, valueWeight);
+        b.putInt(Prefs.KEY_CLOCK_SIZE, clockSize);
+        b.putInt(Prefs.KEY_CLOCK_WEIGHT, clockWeight);
         b.putInt(Prefs.KEY_TYPE_SIZE, typeSize);
         b.putInt(Prefs.KEY_OUT_TYPE_SIZE_DP, outTypeSize);
         b.putInt(Prefs.KEY_OUT_SIGNAL_SIZE, outSignalSize);
@@ -760,6 +797,8 @@ public final class TrioSettings {
                 && arcStroke == s.arcStroke
                 && valueSize == s.valueSize
                 && valueWeight == s.valueWeight
+                && clockSize == s.clockSize
+                && clockWeight == s.clockWeight
                 && typeSize == s.typeSize
                 && outTypeSize == s.outTypeSize
                 && outSignalSize == s.outSignalSize

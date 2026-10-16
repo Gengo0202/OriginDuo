@@ -526,8 +526,11 @@ final class TrioRenderer {
         if (text == null || text.isEmpty()) {
             return;
         }
-        applyWeight(a.valueWeight);
-        final float size = capsuleTextSize(text, a.valueSize, stroke, 100);
+        // The clock's own size and weight, not the value's: the two readings sit in
+        // two slots and are tuned independently, so moving one must not move the
+        // other. Both default to the value's, so an untouched install looks the same.
+        applyWeight(a.clockWeight);
+        final float size = capsuleTextSize(text, a.clockSize, stroke, 100);
         TEXT.setTextSize(size);
         TEXT.setColor(fg);
         TEXT.setTextAlign(Paint.Align.CENTER);

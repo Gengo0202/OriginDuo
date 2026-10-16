@@ -337,14 +337,19 @@ final class CapsuleTest {
         final float reach = TrioGeometry.capDotReach(stroke);
         final float visible = reach - dotSpan * 0.5f - stroke * 0.5f;
         ok("the outline is cut wider than the dots themselves", 2f * reach > dotSpan);
-        // The clearance is the reference's own share of the path height - 9px out of
-        // 135, or 6.67%. Asserted against the reference rather than as a bare
-        // threshold, because a bare "more than a unit" threshold passes at half the
-        // real value: a negative control that set the ratio back to the mis-measured
-        // 3.3% was NOT caught by the loose form of this.
+        // The clearance is 9% of the path height. The reference's own figure is
+        // 6.67% (9px out of 135), and this is deliberately a third MORE than that
+        // at the user's request: at 6.67% the device's gap is 3px, which is
+        // faithful to the mockup but reads as tight on a 60px-tall glyph.
+        //
+        // Asserted as a number rather than as a bare "more than a unit" threshold,
+        // because the loose form passes at half the real value: a negative control
+        // that set the ratio back to the mis-measured 3.3% was NOT caught by it.
         final float pathHeight = TrioGeometry.CAP_BOTTOM - TrioGeometry.CAP_TOP;
-        close("the clearance is the reference's share of the path height",
-                TrioGeometry.capDotClearance() / pathHeight, 0.0667, 0.005);
+        close("the clearance is the intended share of the path height",
+                TrioGeometry.capDotClearance() / pathHeight, 0.09, 0.005);
+        ok("and it is at least the reference's own clearance",
+                TrioGeometry.capDotClearance() / pathHeight >= 0.0667f);
         ok("and the visible clearance is a real gap, not a rounding error", visible > 1f);
         // It has to hold at the TOP of the stroke slider too, which is where the
         // round cap is largest and where the earlier arithmetic went negative.
@@ -425,6 +430,132 @@ final class CapsuleTest {
         // far end of the counterclockwise walk from where it started.
         ok("and the foot of the left bar is the last to go",
                 lit[5][2] || lit[4][2]);
+
+        // ---- the clock has its own size and weight ---------------------------
+        // The time and the battery number share the capsule but not a setting: they
+        // sit in two slots that hold strings of different lengths and are read for
+        // different reasons, so moving one must not move the other. Before these two
+        // keys existed the time was drawn at `valueSize` / `valueWeight`, which is
+        // exactly what "one slider moves both readings" means.
+        //
+        // Both directions are asserted. Checking only that the clock responds would
+        // pass on an implementation that also let the clock drive the number - which
+        // is the same coupling from the other end, and the failure mode a later
+        // "simplification" would most plausibly introduce.
+        final TrioSettings clockCfg = TrioSettings.defaults();
+        clockCfg.trioStyle = Prefs.STYLE_CAPSULE;
+        clockCfg.showValue = true;
+        clockCfg.showMobile = true;
+        clockCfg.showWifi = false;
+
+        TrioState.sClockText = "19:41";
+        clockCfg.clockSize = 16;
+        clockCfg.valueSize = 44;
+        final Stats smallClock = stats(render(clockCfg, 76, false, 0, new int[] { 4, 4 }, ""));
+        clockCfg.clockSize = 44;
+        final Stats bigClock = stats(render(clockCfg, 76, false, 0, new int[] { 4, 4 }, ""));
+        ok("the clock's own size slider changes the drawing",
+                smallClock.ink != bigClock.ink);
+        // The number's setting is untouched across those two renders, so the right
+        // half of the capsule must be pixel-identical. Compared on the right-hand
+        // region alone, since that is where the number lives.
+        clockCfg.clockSize = 16;
+        final BufferedImage valueAtSmallClock =
+                render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
+        clockCfg.clockSize = 44;
+        final BufferedImage valueAtBigClock =
+                render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
+        ok("and does not move the battery number",
+                sameRegion(valueAtSmallClock, valueAtBigClock, 0.5f, 1f));
+
+        // Now the other direction: the value's size changes while the clock's is
+        // pinned, and the LEFT half has to be unchanged.
+        clockCfg.clockSize = 30;
+        clockCfg.valueSize = 20;
+        final BufferedImage clockAtSmallValue =
+                render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
+        clockCfg.valueSize = 44;
+        final BufferedImage clockAtBigValue =
+                render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
+        ok("the number's size slider does not move the clock",
+                sameRegion(clockAtSmallValue, clockAtBigValue, 0f, 0.5f));
+        ok("while it does move the number",
+                !sameRegion(clockAtSmallValue, clockAtBigValue, 0.5f, 1f));
+
+        // The weight is a second, independent axis, and it is asserted on the
+        // HALVES rather than on a total ink count. A count is the wrong instrument
+        // here: the two weights the slider lands on by default - 700 and 900 - draw
+        // the same number of dark pixels at this size, so "the ink differs" is false
+        // of a correct drawing and comparing two totals proves nothing either way.
+        // What has to hold is positional, and that is what is checked.
+        clockCfg.valueSize = 36;
+        clockCfg.valueWeight = 700;
+        clockCfg.clockSize = 36;
+        clockCfg.clockWeight = 100;
+        final BufferedImage clockThin = render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
+        clockCfg.clockWeight = 900;
+        final BufferedImage clockThick = render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
+        // The clock's weight moves the clock...
+        ok("the clock's weight slider changes the clock's own slot",
+                !sameRegion(clockThin, clockThick, 0f, 0.5f));
+        // ...and nothing else.
+        ok("and leaves the number alone",
+                sameRegion(clockThin, clockThick, 0.5f, 1f));
+
+        // The mirror image: the number's weight moves the number and not the clock.
+        clockCfg.clockWeight = 700;
+        clockCfg.valueWeight = 100;
+        final BufferedImage valueThin = render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
+        clockCfg.valueWeight = 900;
+        final BufferedImage valueThick = render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
+        ok("the number's weight slider changes the number's own slot",
+                !sameRegion(valueThin, valueThick, 0.5f, 1f));
+        ok("and leaves the clock alone",
+                sameRegion(valueThin, valueThick, 0f, 0.5f));
+
+        // The default has to reproduce the old shared-size look exactly, or an
+        // install that never opens the new sliders would see the time change size.
+        ok("the clock defaults to the number's size",
+                Prefs.DEF_CLOCK_SIZE == Prefs.DEF_VALUE_SIZE);
+        ok("and to the number's weight",
+                Prefs.DEF_CLOCK_WEIGHT == Prefs.DEF_VALUE_WEIGHT);
+        // The two keys are new, so anything that predates them must fall back on the
+        // value's OWN setting rather than on the constant - otherwise a user who had
+        // already moved the old slider would see the clock jump on upgrade. That
+        // fallback lives in the READERS, not in defaults(): a fresh TrioSettings has
+        // never seen a stored file or a bundle and legitimately carries the
+        // constants. Asserting it against defaults() - which is what the first cut of
+        // this did - tests the wrong object and fails on a correct fallback.
+        //
+        // Driven through the bundle reader, which carries the same fallback as the
+        // stored-file one and needs no extra shim. Both are written the same way, so
+        // a divergence between them is a real defect this would then miss; the two
+        // are kept adjacent in the source for exactly that reason.
+        final android.os.Bundle legacyBundle = new android.os.Bundle();
+        legacyBundle.putInt(Prefs.KEY_VALUE_SIZE, 40);
+        legacyBundle.putInt(Prefs.KEY_VALUE_WEIGHT, 300);
+        final TrioSettings legacy = TrioSettings.fromBundle(legacyBundle);
+        ok("a snapshot without the clock keys keeps the value's size",
+                legacy.clockSize == 40);
+        ok("and the value's weight", legacy.clockWeight == 300);
+        // But an explicit clock setting always wins over that fallback.
+        legacyBundle.putInt(Prefs.KEY_CLOCK_SIZE, 22);
+        legacyBundle.putInt(Prefs.KEY_CLOCK_WEIGHT, 800);
+        final TrioSettings explicit = TrioSettings.fromBundle(legacyBundle);
+        ok("an explicit clock size wins over the fallback", explicit.clockSize == 22);
+        ok("and an explicit clock weight", explicit.clockWeight == 800);
+        // And a partial update through the seeded reader - the path the settings app
+        // uses - must leave the clock where it was rather than resetting it. The
+        // bundle here is genuinely partial: it carries one unrelated key and no clock
+        // keys at all. Reusing the bundle from above, which by then held explicit
+        // clock values, is not a partial update and asserts nothing about this path.
+        final android.os.Bundle partial = new android.os.Bundle();
+        partial.putBoolean(Prefs.KEY_SHOW_WIFI, true);
+        final TrioSettings switched = TrioSettings.fromBundle(partial, explicit);
+        ok("a partial update carries the clock's size through",
+                switched.clockSize == explicit.clockSize);
+        ok("and its weight", switched.clockWeight == explicit.clockWeight);
+        ok("while still applying the key it did carry", switched.showWifi);
 
         // ---- the right-hand slot is arbitrated, not stacked -------------------
         // A charger takes the slot from the arcs and from the percentage, exactly as
@@ -643,6 +774,33 @@ final class CapsuleTest {
     private static boolean same(BufferedImage a, BufferedImage b) {
         for (int y = 0; y < HOST_H; y++) {
             for (int x = 0; x < HOST_W; x++) {
+                if (a.getRGB(x, y) != b.getRGB(x, y)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * True when two renders agree across one horizontal share of the host.
+     *
+     * <p>Used to prove the two readings are independent: changing the clock's size
+     * must leave the right-hand slot alone, and changing the number's must leave
+     * the left. Checked on a band rather than the whole image because the thing
+     * under test is precisely that one half moves and the other does not - a
+     * whole-image comparison is false either way and would assert nothing.
+     *
+     * <p>The band runs from {@code fromFraction} to {@code toFraction} of the
+     * width. The slot boundary is at the host's midpoint by construction: the two
+     * slots are equal halves of the interior, so half the width falls between them.
+     */
+    private static boolean sameRegion(BufferedImage a, BufferedImage b,
+                                      float fromFraction, float toFraction) {
+        final int x0 = Math.max(0, (int) (a.getWidth() * fromFraction));
+        final int x1 = Math.min(a.getWidth(), (int) (a.getWidth() * toFraction));
+        for (int y = 0; y < a.getHeight(); y++) {
+            for (int x = x0; x < x1; x++) {
                 if (a.getRGB(x, y) != b.getRGB(x, y)) {
                     return false;
                 }

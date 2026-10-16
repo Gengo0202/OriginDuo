@@ -148,6 +148,9 @@ public final class TrioAppearance {
     public final int trackAlpha;
     public final int valueSize;
     public final int valueWeight;
+    /** Size and weight of the capsule's clock, which the value's no longer drive. */
+    public final int clockSize;
+    public final int clockWeight;
     public final int typeSize;
     public final int outTypeSize;
     public final int outSignalSize;
@@ -209,6 +212,8 @@ public final class TrioAppearance {
         trackAlpha = c.trackAlpha;
         valueSize = c.valueSize;
         valueWeight = c.valueWeight;
+        clockSize = c.clockSize;
+        clockWeight = c.clockWeight;
         typeSize = c.typeSize;
         outTypeSize = c.outTypeSize;
         outSignalSize = c.outSignalSize;

@@ -255,6 +255,23 @@ public final class Prefs {
     public static final String KEY_ARC_STROKE = "arc_stroke";
     public static final String KEY_VALUE_SIZE = "value_size";
     public static final String KEY_VALUE_WEIGHT = "value_weight";
+    /**
+     * Font size of the time, in the capsule's left-hand slot.
+     *
+     * <p>Its own key rather than a share of {@link #KEY_VALUE_SIZE}: the two
+     * readings sit in two slots that are drawn from the same width but hold
+     * different strings - "19:41" against "100" - and the time is the one the user
+     * looks at while the percentage is the one they check. Sharing a size means a
+     * change made for either moves both, and the pair cannot be balanced.
+     *
+     * <p>A brand-new key name and never a reuse: the framework does no type
+     * conversion, so every key has exactly one type for the module's lifetime.
+     * Nothing writes it until the user moves its own slider, so an install that
+     * predates it keeps the look it had - the default below reproduces it.
+     */
+    public static final String KEY_CLOCK_SIZE = "clock_size";
+    /** Font weight of the time, on the same reasoning as {@link #KEY_CLOCK_SIZE}. */
+    public static final String KEY_CLOCK_WEIGHT = "clock_weight";
     /** Font size of the network type drawn inside the ring. */
     public static final String KEY_TYPE_SIZE = "type_size";
     /**
@@ -526,6 +543,14 @@ public final class Prefs {
      */
     public static final int DEF_VALUE_WEIGHT = 700;
     /**
+     * Font size of the time. Set to {@link #DEF_VALUE_SIZE} so the default look is
+     * exactly what it was when the two readings shared a size - an install that
+     * never opens the new slider sees no change at all.
+     */
+    public static final int DEF_CLOCK_SIZE = DEF_VALUE_SIZE;
+    /** Font weight of the time, matching {@link #DEF_VALUE_WEIGHT} for the same reason. */
+    public static final int DEF_CLOCK_WEIGHT = DEF_VALUE_WEIGHT;
+    /**
      * Font size of the centred network type. Deliberately an absolute size rather
      * than a ratio of {@link #DEF_VALUE_SIZE}: the type is a standalone label the
      * user tunes on its own, and 32 is what the old 0.9 x 36 ratio produced, so
@@ -593,6 +618,11 @@ public final class Prefs {
     public static final int MAX_VALUE_SIZE = 44;
     public static final int MIN_VALUE_WEIGHT = 100;
     public static final int MAX_VALUE_WEIGHT = 900;
+    /** The time's own size span. Wider at the top than the value's: "19:41" is the longer string and the left slot is the one with room to spare. */
+    public static final int MIN_CLOCK_SIZE = 16;
+    public static final int MAX_CLOCK_SIZE = 44;
+    public static final int MIN_CLOCK_WEIGHT = 100;
+    public static final int MAX_CLOCK_WEIGHT = 900;
     public static final int MIN_TYPE_SIZE = 16;
     public static final int MAX_TYPE_SIZE = 44;
     public static final int MIN_OUT_TYPE_SIZE = 16;
