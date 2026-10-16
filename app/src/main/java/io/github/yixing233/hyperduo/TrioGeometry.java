@@ -603,21 +603,30 @@ final class TrioGeometry {
 
     /**
      * The clear space the stroke leaves on each side of a dot row, as a fraction
-     * of the capsule's height.
+     * of the capsule's <em>path</em> height - the outline's own height, excluding
+     * the stroke, which is the measure the reference's own figures are stated
+     * against.
      *
-     * <p>Read off the reference: it leaves about 3.3% of the height between the
-     * outer dot and the end of the stroke. Without it the row and the line run
-     * together - which is exactly what the first cut did, because its
-     * {@link #capDotReach} was written as "the dots' own span" and nothing else,
-     * so the gap was exactly as wide as the dots and the outer two merged into the
-     * stroke ends. The row then reads as a line with two lumps on it rather than as
-     * four dots interrupting a line.
+     * <p>Read off the reference at 9px out of a 135px path height, or 6.67%. The
+     * first cut of this used 3.3%, which was a measurement error and a bad one to
+     * have shipped: it came from counting the antialiased pixels between the dot
+     * and the stroke as track, which made the gap look half its real size. The
+     * result - 2.89% of the ink height - was reported straight back as still too
+     * tight, which is exactly what half the clearance looks like.
      *
-     * <p>A ratio rather than a constant so it holds at every stroke width: the
-     * stroke is a slider, and a clearance in design units would vanish as the user
-     * thickened the line.
+     * <p>Both numbers matter, so both are recorded: the reference's clearance is
+     * 5.96% of its ink height and 6.67% of its path height. This is expressed
+     * against the path because that is what the geometry here can state exactly -
+     * the ink height depends on the stroke slider, so a ratio against it would
+     * move the clearance whenever the user changed the stroke.
+     *
+     * <p>Without any clearance the row and the line run together, which is what the
+     * very first cut did: its {@link #capDotReach} was written as "the dots' own
+     * span" and nothing else, so the gap was exactly as wide as the row it held and
+     * the outer two merged into the stroke ends. The row then reads as a line with
+     * two lumps on it rather than as four dots interrupting a line.
      */
-    static final float CAP_DOT_CLEARANCE_RATIO = 0.033f;
+    static final float CAP_DOT_CLEARANCE_RATIO = 0.0667f;
 
     /** The clear space on one side of a dot row, in design units. */
     static float capDotClearance() {
@@ -625,16 +634,39 @@ final class TrioGeometry {
     }
 
     /**
-     * Half the horizontal span of one dot row: the dots themselves plus the
-     * clearance the stroke keeps from them.
+     * Half the horizontal span of one dot row: how far the outline's path must be
+     * cut back at 12 and 6 o'clock for the row to sit in a real gap.
      *
-     * <p>This is how far the outline is cut away at 12 and 6 o'clock, so it has to
-     * cover both - covering only the dots leaves them touching the line, and
-     * covering more than this opens a gap wide enough to read as a break in the
-     * outline rather than as a row sitting in it.
+     * <p><b>Three terms, and the third is the one that was missing.</b> The path
+     * has to be cut back by the dots' own half-span, by the clearance wanted
+     * between them and the line, and by half the stroke - because {@code STROKE}
+     * is drawn with {@link android.graphics.Paint.Cap#ROUND}, so the cut end inks
+     * a semicircle of radius {@code stroke / 2} <em>past</em> its endpoint. Cutting
+     * the path back by only the first two terms therefore spends the whole
+     * clearance on that semicircle.
+     *
+     * <p>Measured, at the two ends of the stroke slider, with the first two terms
+     * alone and {@link #CAP_DOT_CLEARANCE_RATIO} at the reference's own 6.67%:
+     * the visible gap is +0.23 units at {@code ringStroke} 14 and -0.31 at 16. It
+     * is negative at the top of the range - the round cap overlaps the outer dot -
+     * and near enough to zero at the default to be invisible. That is what "the
+     * dots still have no room" was, and it is why raising the ratio alone did not
+     * fix it: the clearance was being eaten, not miscalculated.
+     *
+     * <p>The stroke is a slider, so the third term belongs in the geometry rather
+     * than in a constant: at the default it is 3.71 units and at the maximum 4.24.
+     */
+    static float capDotReach(float stroke) {
+        return CAP_DOT_PITCH * 1.5f + CAP_DOT_R + capDotClearance() + stroke * 0.5f;
+    }
+
+    /**
+     * The same at the default stroke, for the two places that have no stroke to
+     * hand: the offline harness's own reporting and {@code buildCapsuleOutline}'s
+     * caller, which reads the stroke from the settings it was given.
      */
     static float capDotReach() {
-        return CAP_DOT_PITCH * 1.5f + CAP_DOT_R + capDotClearance();
+        return capDotReach(Prefs.DEF_RING_STROKE * CAP_STROKE_RATIO);
     }
 
     /**

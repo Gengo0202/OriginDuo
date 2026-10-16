@@ -325,19 +325,46 @@ final class CapsuleTest {
         // merged into the ends of the stroke and the row read as a line with two
         // lumps on it rather than as four dots interrupting a line.
         //
-        // Stated as geometry rather than as pixels: the cut and the dots' span are
-        // both design-unit quantities, and the clearance is a fraction of the
-        // capsule's height, so this holds at every stroke width without needing a
-        // render to confirm it.
+        // Measured as the clearance that is actually VISIBLE, which is not simply
+        // half the cut minus the dots. STROKE is drawn with Paint.Cap.ROUND, so the
+        // cut end inks a semicircle of radius stroke/2 past its endpoint, and that
+        // semicircle eats into the gap. An earlier version of these assertions
+        // ignored it and compared the cut against the dot span directly, which is
+        // how a clearance that was negative at the top of the stroke slider - the
+        // round cap overlapping the outer dot - passed as "a real gap".
+        final float stroke = Prefs.DEF_RING_STROKE * TrioGeometry.CAP_STROKE_RATIO;
         final float dotSpan = 3f * TrioGeometry.CAP_DOT_PITCH + 2f * TrioGeometry.CAP_DOT_R;
-        final float cut = 2f * TrioGeometry.capDotReach();
-        ok("the outline is cut wider than the dots themselves", cut > dotSpan);
-        ok("and the clearance is a real gap, not a rounding error",
-                cut - dotSpan > 1f);
+        final float reach = TrioGeometry.capDotReach(stroke);
+        final float visible = reach - dotSpan * 0.5f - stroke * 0.5f;
+        ok("the outline is cut wider than the dots themselves", 2f * reach > dotSpan);
+        // The clearance is the reference's own share of the path height - 9px out of
+        // 135, or 6.67%. Asserted against the reference rather than as a bare
+        // threshold, because a bare "more than a unit" threshold passes at half the
+        // real value: a negative control that set the ratio back to the mis-measured
+        // 3.3% was NOT caught by the loose form of this.
+        final float pathHeight = TrioGeometry.CAP_BOTTOM - TrioGeometry.CAP_TOP;
+        close("the clearance is the reference's share of the path height",
+                TrioGeometry.capDotClearance() / pathHeight, 0.0667, 0.005);
+        ok("and the visible clearance is a real gap, not a rounding error", visible > 1f);
+        // It has to hold at the TOP of the stroke slider too, which is where the
+        // round cap is largest and where the earlier arithmetic went negative.
+        final float maxStroke = Prefs.MAX_RING_STROKE * TrioGeometry.CAP_STROKE_RATIO;
+        final float visibleMax = TrioGeometry.capDotReach(maxStroke) - dotSpan * 0.5f
+                - maxStroke * 0.5f;
+        ok("and at the heaviest stroke as well", visibleMax > 1f);
+        // The whole point of the stroke term: the visible clearance is the same at
+        // every stroke width, rather than shrinking as the line thickens.
+        close("the visible clearance does not depend on the stroke width",
+                visible, visibleMax, 0.01);
+        ok("the clearance is smaller than the stroke that spends it", visible < maxStroke);
         // But not so wide that the outline reads as broken rather than as a row
         // sitting in it: the reference's clearance is a few percent of the height.
         ok("while the clearance stays small enough to read as one outline",
-                (cut - dotSpan) / 2f < (TrioGeometry.CAP_BOTTOM - TrioGeometry.CAP_TOP) * 0.12f);
+                visible < (TrioGeometry.CAP_BOTTOM - TrioGeometry.CAP_TOP) * 0.12f);
+        // And the straight runs the gap leaves have to still exist, or the cut
+        // would swallow the shape's top and bottom edges entirely.
+        ok("and the straight run survives the widest cut",
+                (TrioGeometry.CAP_DOT_CX - reach) - TrioGeometry.capFlatLeft() > 0f);
 
         // ---- the readings keep a margin from the outline's inner face ---------
         // The time sits in the left slot, right where the end cap curves back in

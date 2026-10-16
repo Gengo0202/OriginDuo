@@ -323,13 +323,13 @@ final class TrioRenderer {
         // a full battery on a device that had simply not answered.
         STROKE.setStrokeWidth(stroke);
         STROKE.setStyle(Paint.Style.STROKE);
-        buildCapsuleOutline(CAPSULE, cap.dots ? TrioGeometry.capDotReach() : 0f);
+        buildCapsuleOutline(CAPSULE, cap.dots ? TrioGeometry.capDotReach(stroke) : 0f);
         STROKE.setColor(withAlpha(fg, a.trackAlpha));
         canvas.drawPath(CAPSULE, STROKE);
 
         if (level > 0) {
             STROKE.setColor(role);
-            drawCapsuleFill(canvas, cap.dots, Math.min(1f, level / 100f));
+            drawCapsuleFill(canvas, cap.dots, stroke, Math.min(1f, level / 100f));
         }
 
         if (cap.dots) {
@@ -409,7 +409,7 @@ final class TrioRenderer {
      * charge from the top left, so a half-full battery lit the top and left while
      * the user was reading the level off the right bar.
      */
-    private static void drawCapsuleFill(Canvas c, boolean dots, float fraction) {
+    private static void drawCapsuleFill(Canvas c, boolean dots, float stroke, float fraction) {
         final float left = TrioGeometry.CAP_LEFT;
         final float right = TrioGeometry.CAP_RIGHT;
         final float top = TrioGeometry.CAP_TOP;
@@ -417,7 +417,10 @@ final class TrioRenderer {
         final float r = TrioGeometry.CAP_RADIUS;
         final float cy = (top + bottom) * 0.5f;
         final float cx = (left + right) * 0.5f;
-        final float reach = dots ? TrioGeometry.capDotReach() : 0f;
+        // The same reach the track's outline was cut back by, from the same stroke:
+        // the fill and the track have to agree about where the gap is, or the
+        // charged run would stop somewhere other than where the outline resumes.
+        final float reach = dots ? TrioGeometry.capDotReach(stroke) : 0f;
 
         // Four straight runs and two half-circle caps, in travel order. The gaps
         // are not segments: they carry no ink in either pass.
