@@ -395,6 +395,66 @@ final class CapsuleTest {
         // no margin at all, which is the state this replaced.
         ok("and is a visible margin, not a rounding error", inset > 2f);
 
+        // ---- both readings can reach their own maximum --------------------------
+        // This is the check that would have caught "the clock's font ceiling is too
+        // small", and it is expressed as reachability rather than as a drawn size,
+        // because the drawn size was not what was wrong. The two slots used to be
+        // equal halves of the interior while the strings in them are not - "19:41"
+        // is 2.52 units wide per unit of size and "100" is 1.68 - so the time ran out
+        // of width at a setting of about 36 and the clock's documented maximum of 44
+        // was unreachable at EVERY value of the number's setting. Raising the ceiling
+        // would have changed nothing, which is exactly the trap: the slot, not the
+        // ceiling, was binding.
+        //
+        // Stated against the settings' own ceilings so it keeps holding if either
+        // range moves, and computed from the two per-unit widths the geometry itself
+        // declares - so it is a statement about the split rather than a second copy
+        // of the numbers.
+        final float timeSlot = TrioGeometry.capTimeSlotWidth(strokePx);
+        final float valueSlot = TrioGeometry.capValueSlotWidth(strokePx);
+        final float timeMaxSetting =
+                timeSlot / TrioGeometry.CAP_TIME_TEXT_PER_UNIT / TrioGeometry.CAP_TEXT_SCALE;
+        final float valueMaxSetting =
+                valueSlot / TrioGeometry.CAP_VALUE_TEXT_PER_UNIT / TrioGeometry.CAP_TEXT_SCALE;
+        // Within a step of the ceiling: the exact proportional split lands a fraction
+        // short, because the interior is not infinite, and demanding equality would
+        // fail on a correct drawing.
+        ok("the clock can reach its own maximum setting",
+                timeMaxSetting >= Prefs.MAX_CLOCK_SIZE - 1f);
+        ok("and so can the number",
+                valueMaxSetting >= Prefs.MAX_VALUE_SIZE - 1f);
+        // The time's slot is the wider one, because its string is the longer. This is
+        // the direction of the fix: an even split fails here by construction.
+        ok("the time's slot is wider than the number's", timeSlot > valueSlot);
+        // The two slots plus their gap have to be exactly the usable interior, or the
+        // readings would overlap or leave a strip unused.
+        close("the two slots and their gap fill the interior exactly",
+                timeSlot + valueSlot + TrioGeometry.CAP_TEXT_GAP,
+                TrioGeometry.capTextRight(strokePx) - TrioGeometry.capTextLeft(strokePx), 0.01);
+        // The split follows the two strings' own widths, so the reading that is
+        // proportionally longer gets the proportionally wider slot.
+        close("and the split is the strings' own width ratio",
+                timeSlot / valueSlot,
+                TrioGeometry.CAP_TIME_TEXT_PER_UNIT / TrioGeometry.CAP_VALUE_TEXT_PER_UNIT, 0.01);
+
+        // The clock's slider has to keep buying real size all the way to its ceiling.
+        // Before the fix the drawn size was flat above a setting of 36 - 44, 60 and
+        // 120 all produced the same 23 units - so a monotonic check across the top of
+        // the range is what pins the behaviour rather than the endpoints alone.
+        final android.graphics.Paint probe = new android.graphics.Paint();
+        probe.setTypeface(android.graphics.Typeface.create("sans-serif",
+                android.graphics.Typeface.NORMAL));
+        float previous = -1f;
+        for (int setting = 36; setting <= Prefs.MAX_CLOCK_SIZE; setting += 2) {
+            final float requested = Math.min(setting * TrioGeometry.CAP_TEXT_SCALE,
+                    TrioGeometry.capTextMaxSize(strokePx));
+            probe.setTextSize(requested);
+            final float width = probe.measureText("19:41");
+            final float drawn = width <= timeSlot ? requested : requested * timeSlot / width;
+            ok("the clock's slider buys size at setting " + setting, drawn > previous);
+            previous = drawn;
+        }
+
         // ---- the charge is spent from the bottom of the right bar ------------
         // The two dot rows divide the outline into a left bar and a right bar, and
         // the reading is taken off them as two bars: full is entirely lit, and the
@@ -456,9 +516,10 @@ final class CapsuleTest {
         final Stats bigClock = stats(render(clockCfg, 76, false, 0, new int[] { 4, 4 }, ""));
         ok("the clock's own size slider changes the drawing",
                 smallClock.ink != bigClock.ink);
-        // The number's setting is untouched across those two renders, so the right
-        // half of the capsule must be pixel-identical. Compared on the right-hand
-        // region alone, since that is where the number lives.
+        // The number's setting is untouched across those two renders, so the
+        // right-hand slot must be pixel-identical. Compared to the right of the real
+        // slot boundary, which is not the host's midpoint.
+        final float boundary = slotBoundary();
         clockCfg.clockSize = 16;
         final BufferedImage valueAtSmallClock =
                 render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
@@ -466,10 +527,10 @@ final class CapsuleTest {
         final BufferedImage valueAtBigClock =
                 render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
         ok("and does not move the battery number",
-                sameRegion(valueAtSmallClock, valueAtBigClock, 0.5f, 1f));
+                sameRegion(valueAtSmallClock, valueAtBigClock, boundary, 1f));
 
         // Now the other direction: the value's size changes while the clock's is
-        // pinned, and the LEFT half has to be unchanged.
+        // pinned, and the time's slot has to be unchanged.
         clockCfg.clockSize = 30;
         clockCfg.valueSize = 20;
         final BufferedImage clockAtSmallValue =
@@ -478,16 +539,16 @@ final class CapsuleTest {
         final BufferedImage clockAtBigValue =
                 render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
         ok("the number's size slider does not move the clock",
-                sameRegion(clockAtSmallValue, clockAtBigValue, 0f, 0.5f));
+                sameRegion(clockAtSmallValue, clockAtBigValue, 0f, boundary));
         ok("while it does move the number",
-                !sameRegion(clockAtSmallValue, clockAtBigValue, 0.5f, 1f));
+                !sameRegion(clockAtSmallValue, clockAtBigValue, boundary, 1f));
 
-        // The weight is a second, independent axis, and it is asserted on the
-        // HALVES rather than on a total ink count. A count is the wrong instrument
-        // here: the two weights the slider lands on by default - 700 and 900 - draw
-        // the same number of dark pixels at this size, so "the ink differs" is false
-        // of a correct drawing and comparing two totals proves nothing either way.
-        // What has to hold is positional, and that is what is checked.
+        // The weight is a second, independent axis, and it is asserted per SLOT
+        // rather than on a total ink count. A count is the wrong instrument here:
+        // the two weights the slider lands on by default - 700 and 900 - draw the
+        // same number of dark pixels at this size, so "the ink differs" is false of
+        // a correct drawing and comparing two totals proves nothing either way. What
+        // has to hold is positional, and that is what is checked.
         clockCfg.valueSize = 36;
         clockCfg.valueWeight = 700;
         clockCfg.clockSize = 36;
@@ -497,10 +558,10 @@ final class CapsuleTest {
         final BufferedImage clockThick = render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
         // The clock's weight moves the clock...
         ok("the clock's weight slider changes the clock's own slot",
-                !sameRegion(clockThin, clockThick, 0f, 0.5f));
+                !sameRegion(clockThin, clockThick, 0f, boundary));
         // ...and nothing else.
         ok("and leaves the number alone",
-                sameRegion(clockThin, clockThick, 0.5f, 1f));
+                sameRegion(clockThin, clockThick, boundary, 1f));
 
         // The mirror image: the number's weight moves the number and not the clock.
         clockCfg.clockWeight = 700;
@@ -509,9 +570,9 @@ final class CapsuleTest {
         clockCfg.valueWeight = 900;
         final BufferedImage valueThick = render(clockCfg, 76, false, 0, new int[] { 4, 4 }, "");
         ok("the number's weight slider changes the number's own slot",
-                !sameRegion(valueThin, valueThick, 0.5f, 1f));
+                !sameRegion(valueThin, valueThick, boundary, 1f));
         ok("and leaves the clock alone",
-                sameRegion(valueThin, valueThick, 0f, 0.5f));
+                sameRegion(valueThin, valueThick, 0f, boundary));
 
         // The default has to reproduce the old shared-size look exactly, or an
         // install that never opens the new sliders would see the time change size.
@@ -791,9 +852,18 @@ final class CapsuleTest {
      * under test is precisely that one half moves and the other does not - a
      * whole-image comparison is false either way and would assert nothing.
      *
-     * <p>The band runs from {@code fromFraction} to {@code toFraction} of the
-     * width. The slot boundary is at the host's midpoint by construction: the two
-     * slots are equal halves of the interior, so half the width falls between them.
+     * <p><b>The boundary is not the host's midpoint.</b> The two slots are divided
+     * in the ratio of the two strings' natural widths - 0.60 to the time, 0.40 to
+     * the number - so half the width falls INSIDE the time's slot. An earlier cut of
+     * this compared at 0.5, which caught the clock's own drawing on both sides and
+     * so reported "the clock's size moved the number" on a correct render.
+     *
+     * <p>The band is taken about the real boundary rather than exactly at it, so a
+     * glyph that overhangs by a pixel or two - the digits are centred in their slots
+     * and the time's "1" is narrow - cannot straddle the line and be counted on the
+     * wrong side. What is being tested is which SLOT a pixel belongs to, and the
+     * slots meet at {@link TrioGeometry#CAP_TIME_WIDTH_SHARE} of the interior, which
+     * sits a little inside the host's own 0.5 because of the left inset.
      */
     private static boolean sameRegion(BufferedImage a, BufferedImage b,
                                       float fromFraction, float toFraction) {
@@ -807,6 +877,34 @@ final class CapsuleTest {
             }
         }
         return true;
+    }
+
+    /**
+     * The host x that separates the two readings, as a fraction of the width.
+     *
+     * <p>Taken at the midpoint between the two slot centres, which is the one place
+     * neither reading can reach: each is centred in its own slot and the slots are
+     * separated by {@link TrioGeometry#CAP_TEXT_GAP}, so the midpoint lies in that
+     * gap however wide either string is drawn.
+     *
+     * <p>Not the host's midpoint. An earlier cut of this used 0.5 on the reasoning
+     * that the two slots were equal halves of the interior - which was true, and was
+     * the very bug being fixed: they are now divided in the strings' width ratio, so
+     * half the width falls inside the time's slot and the check caught the clock's
+     * own ink on both sides. It reported "the clock's size moved the number" for a
+     * correct render.
+     *
+     * <p>Derived through the same transform the renderer applies, so it follows the
+     * inset, the stroke and the share instead of restating them.
+     */
+    private static float slotBoundary() {
+        final float stroke = Prefs.DEF_RING_STROKE * TrioGeometry.CAP_STROKE_RATIO;
+        final float scale = TrioRenderer.inkScale(HOST_W, HOST_H, Prefs.STYLE_CAPSULE);
+        final float designX = (TrioGeometry.capLeftCx(stroke)
+                + TrioGeometry.capRightCx(stroke)) * 0.5f;
+        final float tx = (HOST_W - TrioGeometry.CAP_INK_W * scale) / 2f
+                - TrioGeometry.CAP_INK_X * scale;
+        return (tx + designX * scale) / HOST_W;
     }
 
     private static void ok(String what, boolean held) {

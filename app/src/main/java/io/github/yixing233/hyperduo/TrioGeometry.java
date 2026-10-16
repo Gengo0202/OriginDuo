@@ -778,19 +778,74 @@ final class TrioGeometry {
         return capInteriorRight(stroke) - capTextInset();
     }
 
-    /** Width of one of the two reading slots. */
-    static float capSlotWidth(float stroke) {
-        return (capTextRight(stroke) - capTextLeft(stroke) - CAP_TEXT_GAP) * 0.5f;
+    /**
+     * Natural width of each reading per unit of font size, at the default face.
+     *
+     * <p>Measured off the platform's own metrics, not guessed: "19:41" is 2.52
+     * units wide per unit of size and "100" is 1.68. Their ratio is what the two
+     * slots are divided by, and it is the whole reason a half each was wrong.
+     */
+    static final float CAP_TIME_TEXT_PER_UNIT = 2.52f;
+    static final float CAP_VALUE_TEXT_PER_UNIT = 1.68f;
+
+    /**
+     * The share of the readings' width the time takes, the rest going to the
+     * right-hand slot.
+     *
+     * <p><b>Not a half, and the even split was the bug behind "the clock's maximum
+     * is too small".</b> The two slots held equal halves of the interior, but the
+     * strings in them are not equal: at one unit of font size "19:41" is 2.52 units
+     * wide and "100" is 1.68, so the time ran out of width long before the number
+     * did. The clock's slider stopped doing anything above a setting of about 36 -
+     * its documented maximum of 44 was unreachable, and raising that maximum would
+     * have changed nothing. Measured before this fix: setting 44 drew the time at
+     * 23.03 units instead of the 27.37 it asks for, and settings of 44, 60 and 120
+     * all drew it at the same size. The slot was the binding constraint, not the
+     * ceiling.
+     *
+     * <p>2.52 / (2.52 + 1.68) = 0.60, the two strings' natural widths at a common
+     * size, so each reading gets the room its own string needs and both reach their
+     * documented maximum together. The reference agrees: its time spans 156px
+     * against its number's 92px, a share of 0.63.
+     *
+     * <p><b>A fixed ratio, deliberately, and the choice is a real one.</b> Dividing
+     * instead in proportion to the two <em>size settings</em> would let the clock go
+     * larger - up to about setting 62 with the number at its smallest, where this
+     * caps it at 44 - but it would also make the time drift sideways every time the
+     * number's slider moved, because its slot would be re-divided underneath it. Two
+     * settings that the user is told are independent cannot behave that way, and the
+     * fixed ratio costs only the ceiling that a 60px capsule cannot honestly hold
+     * anyway. Following the current strings rather than the settings was rejected
+     * for a second reason: the number is "9" at one level and "100" at another, and
+     * is replaced entirely by the arcs, the bolt or the type while charging, so the
+     * clock would resize itself as the battery moved.
+     */
+    static final float CAP_TIME_WIDTH_SHARE =
+            CAP_TIME_TEXT_PER_UNIT / (CAP_TIME_TEXT_PER_UNIT + CAP_VALUE_TEXT_PER_UNIT);
+
+    /** The width the two readings have to share, once the gap between them is taken out. */
+    static float capReadingsWidth(float stroke) {
+        return capTextRight(stroke) - capTextLeft(stroke) - CAP_TEXT_GAP;
+    }
+
+    /** Usable width of the left-hand slot, where the time is drawn. */
+    static float capTimeSlotWidth(float stroke) {
+        return capReadingsWidth(stroke) * CAP_TIME_WIDTH_SHARE;
+    }
+
+    /** Usable width of the right-hand slot: the number, the arcs, the bolt or the type. */
+    static float capValueSlotWidth(float stroke) {
+        return capReadingsWidth(stroke) * (1f - CAP_TIME_WIDTH_SHARE);
     }
 
     /** Centre of the left-hand slot: the time's own place. */
     static float capLeftCx(float stroke) {
-        return capTextLeft(stroke) + capSlotWidth(stroke) * 0.5f;
+        return capTextLeft(stroke) + capTimeSlotWidth(stroke) * 0.5f;
     }
 
     /** Centre of the right-hand slot: the percentage, the arcs or the bolt. */
     static float capRightCx(float stroke) {
-        return capTextRight(stroke) - capSlotWidth(stroke) * 0.5f;
+        return capTextRight(stroke) - capValueSlotWidth(stroke) * 0.5f;
     }
 
     /**

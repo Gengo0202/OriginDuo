@@ -530,7 +530,11 @@ final class TrioRenderer {
         // two slots and are tuned independently, so moving one must not move the
         // other. Both default to the value's, so an untouched install looks the same.
         applyWeight(a.clockWeight);
-        final float size = capsuleTextSize(text, a.clockSize, stroke, 100);
+        // And its own slot width, which is the wider of the two: "19:41" is half
+        // again as long as "100" at the same size, so an even split capped the clock
+        // at a setting of about 36 whatever the slider said.
+        final float size = capsuleTextSize(text, a.clockSize, stroke,
+                TrioGeometry.capTimeSlotWidth(stroke), 100);
         TEXT.setTextSize(size);
         TEXT.setColor(fg);
         TEXT.setTextAlign(Paint.Align.CENTER);
@@ -542,7 +546,8 @@ final class TrioRenderer {
                                          TrioAppearance a) {
         final String text = String.valueOf(level);
         applyWeight(a.valueWeight);
-        final float size = capsuleTextSize(text, a.valueSize, stroke, 100);
+        final float size = capsuleTextSize(text, a.valueSize, stroke,
+                TrioGeometry.capValueSlotWidth(stroke), 100);
         TEXT.setTextSize(size);
         TEXT.setColor(fg);
         TEXT.setTextAlign(Paint.Align.CENTER);
@@ -553,7 +558,8 @@ final class TrioRenderer {
     private static void drawCapsuleType(Canvas c, float stroke, String type, int fg,
                                         TrioAppearance a) {
         applyWeight(a.typeWeight);
-        final float size = capsuleTextSize(type, a.typeSize, stroke, a.typeSuffixScale);
+        final float size = capsuleTextSize(type, a.typeSize, stroke,
+                TrioGeometry.capValueSlotWidth(stroke), a.typeSuffixScale);
         drawType(c, type, TrioGeometry.capRightCx(stroke), TrioGeometry.capTextBaseline(stroke, size),
                 size, fg, a);
     }
@@ -567,12 +573,18 @@ final class TrioRenderer {
      * setting. The other two arrangements need only the second and third - they
      * are tall enough that the width always binds first - so this is the one
      * place the height has to be stated.
+     *
+     * <p>The slot width is passed in rather than derived here, because the two
+     * slots are no longer the same size: the time's is the wider one, since its
+     * string is the longer. Taking a shared width - which is what this did while
+     * the interior was split evenly - silently capped the clock at whatever fitted
+     * half the capsule.
      */
     private static float capsuleTextSize(String text, int setting, float stroke,
-                                         int suffixPercent) {
+                                         float slotWidth, int suffixPercent) {
         final float requested = Math.min(setting * TrioGeometry.CAP_TEXT_SCALE,
                 TrioGeometry.capTextMaxSize(stroke));
-        return fitSize(text, requested, TrioGeometry.capSlotWidth(stroke), suffixPercent);
+        return fitSize(text, requested, slotWidth, suffixPercent);
     }
 
     /** The Wi-Fi group moved and scaled into the capsule's right-hand slot. */
