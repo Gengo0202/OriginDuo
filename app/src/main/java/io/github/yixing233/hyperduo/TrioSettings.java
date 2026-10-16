@@ -38,14 +38,18 @@ public final class TrioSettings {
      */
     public boolean valueCentred;
     /**
-     * Which three-in-one layout is drawn: {@link Prefs#STYLE_RING} or
-     * {@link Prefs#STYLE_RECT}. Clamped to that range wherever it is read.
+     * Which three-in-one layout is drawn: {@link Prefs#STYLE_RING},
+     * {@link Prefs#STYLE_RECT} or {@link Prefs#STYLE_CAPSULE}. Clamped to that
+     * range wherever it is read.
      *
-     * <p>Both arrangements read the same keys, but they are not interchangeable:
-     * the rectangular one ignores {@link #valueCentred} (its value has a fixed
-     * place) and reads {@link #arcStroke} as the Wi-Fi arcs' stroke width, which
-     * also decides their vertical position. {@link TrioAppearance} is where those
-     * differences are resolved, so nothing else has to know them.
+     * <p>All three read the same keys, but they are not interchangeable: the
+     * rectangular one ignores {@link #valueCentred} (its value has a fixed place)
+     * and reads {@link #arcStroke} as the Wi-Fi arcs' stroke width, which also
+     * decides their vertical position; the capsule ignores {@link #valueCentred}
+     * too, draws the time inside the glyph - which is what makes it hide the
+     * bar's own clock, see {@link TrioAppearance#hidesStatusClock()} - and reads
+     * {@link #ringStroke} as the outline's thickness. {@link TrioAppearance} is
+     * where those differences are resolved, so nothing else has to know them.
      */
     public int trioStyle;
     /**

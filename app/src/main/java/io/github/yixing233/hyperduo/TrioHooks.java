@@ -303,6 +303,20 @@ final class TrioHooks {
     /** Hard cap on container headers, including {@code owned} flips. */
     private static volatile int sDiagHeaders;
 
+    /**
+     * The status bar's own clock, once the bar has been inflated.
+     *
+     * <p>Held as a strong reference on purpose, unlike the host and container
+     * maps: there is one status bar and one clock for the life of the process, so
+     * this cannot pin a discarded view - and the visibility has to be re-asserted
+     * on a layout path that must not go looking for the clock every frame.
+     */
+    private static volatile View sStatusClock;
+    /** {@code MiuiClock.setMultiTaskVisibility(int)}, resolved once. */
+    private static volatile Method sClockSetter;
+    /** Whether the clock currently carries the module's hiding. */
+    private static volatile boolean sClockHidden;
+
     private TrioHooks() {
     }
 
@@ -333,6 +347,7 @@ final class TrioHooks {
         hooked += group(module, cl, 11);
         hooked += group(module, cl, 12);
         hooked += group(module, cl, 13);
+        hooked += group(module, cl, 14);
         log(module, "HyperDuo installed, hooks=" + hooked
                 + " enabled=" + TrioConfig.get().enabled);
     }
@@ -452,6 +467,14 @@ final class TrioHooks {
         // every declined island with its real values. Under the new enable the
         // same replay re-declines them, which is the state the hooks want.
         replayBatteryIslandRequests();
+        // Last, because it is the only step that can add ink the user has not
+        // seen yet: switching to the capsule mid-minute would otherwise leave its
+        // left slot empty until the next minute boundary, which reads as the
+        // style being broken rather than as the clock not having ticked.
+        ClockTicker.refreshNow();
+        // The bar's own clock follows the same switch the capsule's does, and both
+        // directions matter: leaving the capsule has to give the time back.
+        applyClockVisibility();
     }
 
     /**
@@ -705,6 +728,7 @@ final class TrioHooks {
                 case 11: return hookIconTint(module, cl);
                 case 12: return hookKeyguardBar(module, cl);
                 case 13: return hookIconAdded(module, cl);
+                case 14: return hookStatusClock(module, cl);
                 default: return 0;
             }
         } catch (Throwable t) {
@@ -1585,6 +1609,147 @@ final class TrioHooks {
             log(module, "no icon tint hook");
         }
         return n;
+    }
+
+    /**
+     * Hides the status bar's own clock while the capsule is drawing the time.
+     *
+     * <p>Only the capsule needs this, and only because it puts the time inside
+     * the icon: every other arrangement leaves the bar's clock as the single
+     * source of the time, and hiding it there would simply remove the time from
+     * the phone.
+     *
+     * <p><b>Why {@code setMultiTaskVisibility} and not {@code ignoredSlots}.</b>
+     * {@code MiuiClock} is a bare {@code TextView} - it has no {@code getSlot()}
+     * and is not a child of {@code MiuiStatusIconContainer}, so the slot
+     * suppression this module uses for the Wi-Fi and mobile icons cannot reach it.
+     * MIUI's own lever is {@code setMultiTaskVisibility(int)}, and it is the right
+     * one for two reasons: it is public, and it survives the {@code
+     * setPolicyVisibility(0)} that MIUI runs when it re-shows the clock, so the
+     * hiding is not undone by the next policy pass.
+     *
+     * <p><b>Why {@code INVISIBLE} and not {@code GONE}.</b> {@code GONE} measures
+     * the clock to zero width, and MIUI reads that width in
+     * {@code HoverViewManager.calculateIsInClockRect} to decide whether a tap on
+     * the bar's left side opens the notification shade. A zero-width clock makes
+     * that rectangle degenerate - a tap where the clock used to be stops opening
+     * the shade, which is a gesture loss far outside this module's business.
+     * {@code INVISIBLE} keeps the view measured and simply does not paint it; it
+     * is also what MIUI itself passes here.
+     *
+     * <p>The other clocks on the phone - the keyguard's, the shade header's, the
+     * control centre's, the always-on display's - are separate instances of a
+     * different view and are deliberately left alone. Hiding the bar's clock must
+     * not blank the time on the lock screen.
+     */
+    private static int hookStatusClock(XposedModule module, ClassLoader cl) {
+        final Class<?> clockClass = Refl.cls("com.android.systemui.statusbar.views.MiuiClock", cl);
+        if (clockClass == null) {
+            log(module, "MiuiClock missing");
+            return 0;
+        }
+        final Method setMultiTaskVisibility =
+                Refl.method(clockClass, "setMultiTaskVisibility", int.class);
+        if (setMultiTaskVisibility == null) {
+            log(module, "MiuiClock.setMultiTaskVisibility missing");
+            return 0;
+        }
+        sClockSetter = setMultiTaskVisibility;
+        final Class<?> barView = Refl.cls(
+                "com.android.systemui.statusbar.phone.MiuiPhoneStatusBarView", cl);
+        if (barView == null) {
+            log(module, "MiuiPhoneStatusBarView missing");
+            return 0;
+        }
+        final Method onFinishInflate = Refl.method(barView, "onFinishInflate");
+        if (onFinishInflate == null) {
+            log(module, "MiuiPhoneStatusBarView.onFinishInflate missing");
+            return 0;
+        }
+        final XposedInterface.Hooker hooker = new XposedInterface.Hooker() {
+            @Override
+            public Object intercept(XposedInterface.Chain chain) throws Throwable {
+                final Object result = chain.proceed();
+                final Object self = chain.getThisObject();
+                if (!(self instanceof View)) {
+                    return result;
+                }
+                final View bar = (View) self;
+                // Posted: the bar's children are inflated after this returns on
+                // some builds, so a clock found here may not be the last one.
+                bar.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        final View clock = findClock(bar, clockClass);
+                        if (clock == null) {
+                            return;
+                        }
+                        if (sStatusClock != clock) {
+                            sStatusClock = clock;
+                            sClockHidden = false;
+                        }
+                        applyClockVisibility();
+                    }
+                });
+                return result;
+            }
+        };
+        return hook(module, onFinishInflate, "hyperduo-status-clock", hooker);
+    }
+
+    /**
+     * The first {@code MiuiClock} at or under {@code bar}, or null.
+     *
+     * <p>A search rather than a field read: the bar keeps its clock in a private
+     * field whose name has changed between builds, and the keyguard's clock lives
+     * under a different root - so walking this one subtree cannot reach it.
+     */
+    private static View findClock(View bar, Class<?> clockClass) {
+        if (clockClass.isInstance(bar)) {
+            return bar;
+        }
+        if (!(bar instanceof ViewGroup)) {
+            return null;
+        }
+        final ViewGroup group = (ViewGroup) bar;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            final View found = findClock(group.getChildAt(i), clockClass);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Applies the clock's visibility for the current appearance.
+     *
+     * <p>Idempotent and cheap, so it can be called from the layout path as well as
+     * from a settings change - which is what it takes, because MIUI re-shows the
+     * clock on its own schedule and every re-show has to be answered.
+     */
+    static void applyClockVisibility() {
+        final View clock = sStatusClock;
+        final Method setter = sClockSetter;
+        if (clock == null || setter == null) {
+            return;
+        }
+        final boolean hide = TrioConfig.appearance().hidesStatusClock();
+        if (hide == sClockHidden) {
+            return;
+        }
+        // MiuiClock's own multi-task visibility parameter. It shares View's
+        // numbering, but naming our intent - "paint nothing, measure as usual" -
+        // is what keeps the next reader from "simplifying" it to GONE, which
+        // would zero the clock's width and break the tap-left-for-shade gesture.
+        final int invisibleKeepMeasuring = 4;
+        try {
+            Refl.invokeArgs(setter, clock,
+                    new Object[] { Integer.valueOf(hide ? invisibleKeepMeasuring : 0) });
+            sClockHidden = hide;
+        } catch (Throwable t) {
+            log(sModule, "clock visibility failed: " + t);
+        }
     }
 
     /**
@@ -3462,11 +3627,12 @@ final class TrioHooks {
         if (lines < 2 || host == null) {
             return base * factor;
         }
-        final float fit = TrioRenderer.inkScale(host.getWidth(), host.getHeight(), a.rect);
+        final float fit = TrioRenderer.inkScale(host.getWidth(), host.getHeight(), a.style);
         if (fit <= 0f) {
             return base * factor;
         }
-        final float inkH = a.rect ? TrioGeometry.RECT_INK_H : TrioGeometry.INK_H;
+        final float inkH = a.rect ? TrioGeometry.RECT_INK_H
+                : (a.capsule ? TrioGeometry.CAP_INK_H : TrioGeometry.INK_H);
         final float icon = inkH * fit * a.glyphFit();
         final float lineHeight = perfLineHeight(base, a.perfTypeWeight());
         if (lineHeight <= 0f) {

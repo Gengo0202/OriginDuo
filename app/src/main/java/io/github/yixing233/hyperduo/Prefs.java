@@ -431,10 +431,22 @@ public final class Prefs {
      */
     public static final int STYLE_RECT = 1;
     /**
+     * The capsule arrangement: a wide stadium outline whose stroke is the battery
+     * gauge, broken at the top and bottom centre by two four-dot rows, with the
+     * percentage and the network state side by side inside.
+     *
+     * <p>The difference from the other two is what the outline <em>means</em>. The
+     * ring draws an arc whose lit fraction is the level; here the level is the
+     * fraction of the outline's own length that is drawn in the role colour, and
+     * the rest is drawn as the track - so the shape fills up rather than
+     * containing a gauge.
+     */
+    public static final int STYLE_CAPSULE = 2;
+    /**
      * The ring, for every install that has never chosen.
      *
      * <p>Only the styles themselves are honoured: the settings screen offers no
-     * third entry, so an unrecognised stored value degrades to the ring rather
+     * further entry, so an unrecognised stored value degrades to the ring rather
      * than to a blank glyph.
      */
     public static final int DEF_TRIO_STYLE = STYLE_RING;
@@ -692,7 +704,7 @@ public final class Prefs {
     public static final int MAX_MOBILE_TYPE_MODE = MOBILE_TYPE_OUT_RING;
 
     public static final int MIN_TRIO_STYLE = STYLE_RING;
-    public static final int MAX_TRIO_STYLE = STYLE_RECT;
+    public static final int MAX_TRIO_STYLE = STYLE_CAPSULE;
 
     public static final int MIN_SIGNAL_MODE = SIGNAL_IN_RING;
     public static final int MAX_SIGNAL_MODE = SIGNAL_OUT_RING;

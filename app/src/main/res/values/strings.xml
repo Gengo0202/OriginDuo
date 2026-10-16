@@ -20,9 +20,10 @@
     <string name="master_summary">总开关，关闭后恢复系统原本的电池与信号图标。</string>
 
     <string name="trio_style_title">三合一样式</string>
-    <string name="trio_style_summary">圆环是默认样式；矩形用两列信号点夹住中间内容。</string>
+    <string name="trio_style_summary">圆环是默认样式；矩形用两列信号点夹住中间内容；胶囊用轮廓本身表示电量。</string>
     <string name="trio_style_ring">圆环</string>
     <string name="trio_style_rect">矩形</string>
+    <string name="trio_style_capsule">胶囊</string>
 
     <string name="show_wifi_title">显示 Wi-Fi 弧</string>
     <string name="show_wifi_summary">最外层绘制 Wi-Fi 弧，弧数跟随信号强度。</string>

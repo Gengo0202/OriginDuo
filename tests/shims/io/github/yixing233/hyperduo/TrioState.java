@@ -9,6 +9,13 @@ final class TrioState {
 
     static final int SIM_SLOTS = 2;
 
+    /**
+     * The clock string the capsule draws. On the device {@code ClockTicker}
+     * publishes this on the minute boundary; the harness sets it directly so a
+     * render is reproducible without waiting for one.
+     */
+    static String sClockText = "19:41";
+
     int level = 72;
     boolean charging;
     boolean quickCharging;

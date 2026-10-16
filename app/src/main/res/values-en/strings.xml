@@ -20,9 +20,10 @@
     <string name="master_summary">Master switch; turn off to restore the stock battery and signal icons.</string>
 
     <string name="trio_style_title">Trio style</string>
-    <string name="trio_style_summary">The ring is the default; the rectangular one puts a column of signal dots on each side of the centre.</string>
+    <string name="trio_style_summary">The ring is the default; the rectangular one puts a column of signal dots on each side of the centre; the capsule uses its own outline as the battery gauge.</string>
     <string name="trio_style_ring">Ring</string>
     <string name="trio_style_rect">Rectangular</string>
+    <string name="trio_style_capsule">Capsule</string>
 
     <string name="show_wifi_title">Show Wi-Fi arcs</string>
     <string name="show_wifi_summary">Draw the Wi-Fi arcs; the number of arcs follows the real signal level.</string>

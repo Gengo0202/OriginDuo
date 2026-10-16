@@ -26,6 +26,11 @@ final class TrioRenderer {
     private static final RectF ARC = new RectF();
     /** Scratch for the rectangular battery bar; rewritten every frame, never kept. */
     private static final Path RECT_BAR = new Path();
+    /**
+     * Scratch for the capsule's outline; rebuilt each pass because the gap the
+     * dot rows cut changes with the stroke and with the mobile switch.
+     */
+    private static final Path CAPSULE = new Path();
     private static final RectF RECT_RECT = new RectF();
     /**
      * Corner radii of the lit bar segment: rounded on the left so it follows the
@@ -124,16 +129,17 @@ final class TrioRenderer {
         // switches themselves, which is what used to let the two arrangements
         // drift apart - and let the documentation drift from both.
         final TrioAppearance appearance = TrioAppearance.of(cfg);
-        // The two arrangements have different ink extents, so each is fitted to
+        // The three arrangements have different ink extents, so each is fitted to
         // the host view with its own box.
         final boolean rect = appearance.rect;
+        final boolean capsule = appearance.capsule;
         // The overall-size setting is applied to the fit rather than to the design
         // units: the glyph's whole geometry is expressed in one 120x120 box, so
         // scaling the fit scales every stroke, arc and digit by the same factor
         // and the translate below keeps it centred. Doing it anywhere else - a
         // second canvas.scale around the layout calls, say - would scale the
         // stroke widths differently from the radii and the glyph would come apart.
-        final float scale = inkScale(w, h, rect) * appearance.glyphFit();
+        final float scale = inkScale(w, h, appearance.style) * appearance.glyphFit();
         if (scale <= 0f) {
             return;
         }
@@ -157,7 +163,11 @@ final class TrioRenderer {
                 : (slots[0] >= 0 ? 1 : 0) + (slots[1] >= 0 ? 1 : 0);
 
         final int save = canvas.save();
-        if (rect) {
+        if (capsule) {
+            canvas.translate(
+                    (w - TrioGeometry.CAP_INK_W * scale) / 2f - TrioGeometry.CAP_INK_X * scale,
+                    (h - TrioGeometry.CAP_INK_H * scale) / 2f - TrioGeometry.CAP_INK_Y * scale);
+        } else if (rect) {
             canvas.translate(
                     (w - TrioGeometry.RECT_INK_W * scale) / 2f - TrioGeometry.RECT_INK_X * scale,
                     (h - TrioGeometry.RECT_INK_H * scale) / 2f - TrioGeometry.RECT_INK_Y * scale);
@@ -168,7 +178,10 @@ final class TrioRenderer {
         }
         canvas.scale(scale, scale);
 
-        if (rect) {
+        if (capsule) {
+            drawCapsuleLayout(canvas, level, charging, quickCharging, wifiLevel, mobileType,
+                    slots, sims, role, fg, appearance);
+        } else if (rect) {
             drawRectLayout(canvas, level, charging, quickCharging, wifiLevel, mobileLevel,
                     slots, sims, mobileType, role, fg, appearance);
         } else {
@@ -275,6 +288,296 @@ final class TrioRenderer {
         if (r.value) {
             drawRectValue(canvas, level, fg, a);
         }
+    }
+
+    // ---------------------------------------------------------- capsule layout
+
+    /**
+     * The capsule arrangement: a stadium outline that <em>is</em> the battery
+     * gauge, broken at 12 and 6 o'clock by two four-dot rows, with the time on
+     * the left inside and the percentage, the arcs or the bolt on the right.
+     *
+     * <p>The order of the two outline passes is the whole design. The track is
+     * drawn first, in full, in the track colour; then the charged part is drawn
+     * over it in the role colour, covering the fraction of the outline's length
+     * the level asks for. That is what reads as one line filling up rather than as
+     * two lines meeting.
+     *
+     * <p>Both passes cut their gap at the dot rows, so the outline is drawn as the
+     * two open runs it actually is and the two passes align exactly.
+     *
+     * <p>Nothing here competes for space the way the ring's notch does: the
+     * interior is a fixed two-slot strip, so {@code valueCentred} has nothing to
+     * move and the readings simply sit side by side.
+     */
+    private static void drawCapsuleLayout(Canvas canvas, int level, boolean charging,
+                                          boolean quickCharging, int wifiLevel, String mobileType,
+                                          int[] slotLevels, int sims, int role, int fg,
+                                          TrioAppearance a) {
+        final float stroke = a.ringStroke * TrioGeometry.CAP_STROKE_RATIO;
+        final TrioAppearance.Capsule cap =
+                a.capsule(level, charging, wifiLevel, mobileType, sims);
+
+        // The track first, in full, then the charged part over it. `level < 0` is
+        // "no reading yet" and fills nothing: painting a whole outline would claim
+        // a full battery on a device that had simply not answered.
+        STROKE.setStrokeWidth(stroke);
+        STROKE.setStyle(Paint.Style.STROKE);
+        buildCapsuleOutline(CAPSULE, cap.dots ? TrioGeometry.capDotReach() : 0f);
+        STROKE.setColor(withAlpha(fg, a.trackAlpha));
+        canvas.drawPath(CAPSULE, STROKE);
+
+        if (level > 0) {
+            STROKE.setColor(role);
+            drawCapsuleFill(canvas, cap.dots, Math.min(1f, level / 100f));
+        }
+
+        if (cap.dots) {
+            drawCapsuleDots(canvas, level, slotLevels, cap.dual, stroke, fg, a);
+        }
+
+        drawCapsuleTime(canvas, stroke, fg, a);
+        if (cap.bolt) {
+            drawCapsuleBolt(canvas, stroke, quickCharging ? TrioGeometry.QUICK_CHARGE : fg, a);
+        } else if (cap.wifi) {
+            drawCapsuleWifi(canvas, stroke, wifiLevel, fg, a);
+        } else if (cap.value) {
+            drawCapsuleValue(canvas, stroke, level, fg, a);
+        } else if (cap.type) {
+            drawCapsuleType(canvas, stroke, mobileType, fg, a);
+        }
+    }
+
+    /**
+     * The stadium outline, with a gap cut at the top and bottom centre where the
+     * dot rows cross it.
+     *
+     * <p>Two open subpaths, because that is what the shape is once the rows
+     * interrupt it: top-centre-right → top-right run → right cap →
+     * bottom-right run → bottom-centre-right, and its mirror. Each cap is two
+     * quarter-circle cubics, using the usual circle-to-Bezier constant.
+     *
+     * <p>With {@code reach} at zero the two subpaths meet on the centre line and
+     * the outline reads as continuous, which is the case when the rows are off.
+     */
+    private static void buildCapsuleOutline(Path p, float reach) {
+        final float left = TrioGeometry.CAP_LEFT;
+        final float right = TrioGeometry.CAP_RIGHT;
+        final float top = TrioGeometry.CAP_TOP;
+        final float bottom = TrioGeometry.CAP_BOTTOM;
+        final float r = TrioGeometry.CAP_RADIUS;
+        final float cy = (top + bottom) * 0.5f;
+        final float cx = (left + right) * 0.5f;
+        final float k = 0.5522847498307936f * r;
+
+        p.reset();
+        p.moveTo(cx + reach, top);
+        p.lineTo(right - r, top);
+        p.cubicTo(right - r + k, top, right, cy - k, right, cy);
+        p.cubicTo(right, cy + k, right - r + k, bottom, right - r, bottom);
+        p.lineTo(cx + reach, bottom);
+        p.moveTo(cx - reach, bottom);
+        p.lineTo(left + r, bottom);
+        p.cubicTo(left + r - k, bottom, left, cy + k, left, cy);
+        p.cubicTo(left, cy - k, left + r - k, top, left + r, top);
+        p.lineTo(cx - reach, top);
+    }
+
+    /**
+     * The charged part of the outline, walked segment by segment.
+     *
+     * <p>Drawn as its own geometry rather than by dashing the track's path: a
+     * dash pattern would depend on the platform measuring the path for us, and
+     * the fill's end would land wherever that measurement said. Walking the
+     * outline explicitly means the fraction drawn is the fraction asked for, and
+     * it is the same code path on the device and in the offline harness.
+     *
+     * <p>The walk runs counterclockwise from the top gap's left edge - along the
+     * top, down the left cap, along the bottom, up the right cap and back - so a
+     * partly-filled outline grows from the upper left. That is a choice, not a
+     * measurement: the reference drawing the shape came from is not a gauge at all
+     * (its coloured share is the same at 100%, at 73% and with the arcs up), so
+     * there is no fill direction in it to copy. Starting where the eye arrives
+     * first keeps the growth away from the reading in the right-hand slot.
+     */
+    private static void drawCapsuleFill(Canvas c, boolean dots, float fraction) {
+        final float left = TrioGeometry.CAP_LEFT;
+        final float right = TrioGeometry.CAP_RIGHT;
+        final float top = TrioGeometry.CAP_TOP;
+        final float bottom = TrioGeometry.CAP_BOTTOM;
+        final float r = TrioGeometry.CAP_RADIUS;
+        final float cy = (top + bottom) * 0.5f;
+        final float cx = (left + right) * 0.5f;
+        final float reach = dots ? TrioGeometry.capDotReach() : 0f;
+
+        // Four straight runs and two half-circle caps, in travel order. The gaps
+        // are not segments: they carry no ink in either pass.
+        final float topLeft = (cx - reach) - (left + r);
+        final float bottomLeft = (cx - reach) - (left + r);
+        final float bottomRight = (right - r) - (cx + reach);
+        final float topRight = (right - r) - (cx + reach);
+        final float capLen = (float) Math.PI * r;
+        final float total = topLeft + capLen + bottomLeft + bottomRight + capLen + topRight;
+        if (total <= 0f) {
+            return;
+        }
+        float left0 = total * fraction;
+
+        // The six pieces, in the order the walk meets them. Each piece starts
+        // exactly where the previous one ended, so the fill has no seam; the two
+        // gaps between the top and bottom runs are not pieces, because they carry
+        // ink in neither pass and counting them would make the fraction wrong.
+        left0 = run(c, left0, topLeft, cx - reach, top, left + r, top);
+        left0 = cap(c, left0, capLen, left + r, cy, r, 270f, -180f);
+        left0 = run(c, left0, bottomLeft, left + r, bottom, cx - reach, bottom);
+        left0 = run(c, left0, bottomRight, cx + reach, bottom, right - r, bottom);
+        left0 = cap(c, left0, capLen, right - r, cy, r, 90f, -180f);
+        run(c, left0, topRight, right - r, top, cx + reach, top);
+    }
+
+    /**
+     * Draws as much of one straight run as {@code remaining} allows, and answers
+     * what is left.
+     */
+    private static float run(Canvas c, float remaining, float length,
+                             float x1, float y1, float x2, float y2) {
+        if (remaining <= 0f || length <= 0f) {
+            return remaining;
+        }
+        if (remaining >= length) {
+            c.drawLine(x1, y1, x2, y2, STROKE);
+            return remaining - length;
+        }
+        final float t = remaining / length;
+        c.drawLine(x1, y1, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, STROKE);
+        return 0f;
+    }
+
+    /**
+     * The same for one half-circle cap.
+     *
+     * <p>{@code startDeg} is the angle the cap is entered at and {@code sweepDeg}
+     * is signed, so a partial cap grows from the end the walk arrives at rather
+     * than from the middle - which is what keeps the fill's edge moving smoothly
+     * across the cap instead of jumping when it crosses one.
+     */
+    private static float cap(Canvas c, float remaining, float length,
+                             float cx, float cy, float r, float startDeg, float sweepDeg) {
+        if (remaining <= 0f || length <= 0f) {
+            return remaining;
+        }
+        ARC.set(cx - r, cy - r, cx + r, cy + r);
+        if (remaining >= length) {
+            c.drawArc(ARC, startDeg, sweepDeg, false, STROKE);
+            return remaining - length;
+        }
+        c.drawArc(ARC, startDeg, sweepDeg * (remaining / length), false, STROKE);
+        return 0f;
+    }
+
+    /**
+     * The two four-dot rows, riding the outline's own centreline so a dot sits
+     * exactly in the gap it interrupts.
+     *
+     * <p>Unlit steps are drawn too, at {@code trackAlpha}: the outline has a gap
+     * there, and leaving it empty would read as a break in the line rather than
+     * as an empty step.
+     */
+    private static void drawCapsuleDots(Canvas c, int level, int[] slotLevels, boolean dual,
+                                        float stroke, int fg, TrioAppearance a) {
+        final int top = (dual && slotLevels != null) ? slotLevels[0] : level;
+        final int bottom = (dual && slotLevels != null) ? slotLevels[1] : level;
+        final int inactive = withAlpha(fg, a.trackAlpha);
+        final int topActive = top < 0 ? 0 : Math.min(TrioGeometry.RECT_DOT_ROWS, top);
+        final int bottomActive = bottom < 0 ? 0 : Math.min(TrioGeometry.RECT_DOT_ROWS, bottom);
+        final float topY = TrioGeometry.capDotTopY();
+        final float bottomY = TrioGeometry.capDotBottomY();
+        final float first = TrioGeometry.CAP_DOT_CX - TrioGeometry.CAP_DOT_PITCH * 1.5f;
+        FILL.setStyle(Paint.Style.FILL);
+
+        for (int i = 0; i < TrioGeometry.RECT_DOT_ROWS; i++) {
+            final float x = first + i * TrioGeometry.CAP_DOT_PITCH;
+            FILL.setColor(i < topActive ? fg : inactive);
+            c.drawCircle(x, topY, TrioGeometry.CAP_DOT_R, FILL);
+            FILL.setColor(i < bottomActive ? fg : inactive);
+            c.drawCircle(x, bottomY, TrioGeometry.CAP_DOT_R, FILL);
+        }
+    }
+
+    /** The time of day, in the capsule's left-hand slot. */
+    private static void drawCapsuleTime(Canvas c, float stroke, int fg, TrioAppearance a) {
+        final String text = TrioState.sClockText;
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        applyWeight(a.valueWeight);
+        final float size = capsuleTextSize(text, a.valueSize, stroke, 100);
+        TEXT.setTextSize(size);
+        TEXT.setColor(fg);
+        TEXT.setTextAlign(Paint.Align.CENTER);
+        c.drawText(text, TrioGeometry.capLeftCx(stroke), TrioGeometry.capTextBaseline(stroke, size), TEXT);
+    }
+
+    /** The battery percentage, when the right-hand slot carries it. */
+    private static void drawCapsuleValue(Canvas c, float stroke, int level, int fg,
+                                         TrioAppearance a) {
+        final String text = String.valueOf(level);
+        applyWeight(a.valueWeight);
+        final float size = capsuleTextSize(text, a.valueSize, stroke, 100);
+        TEXT.setTextSize(size);
+        TEXT.setColor(fg);
+        TEXT.setTextAlign(Paint.Align.CENTER);
+        c.drawText(text, TrioGeometry.capRightCx(stroke), TrioGeometry.capTextBaseline(stroke, size), TEXT);
+    }
+
+    /** The network type, when the right-hand slot carries it. */
+    private static void drawCapsuleType(Canvas c, float stroke, String type, int fg,
+                                        TrioAppearance a) {
+        applyWeight(a.typeWeight);
+        final float size = capsuleTextSize(type, a.typeSize, stroke, a.typeSuffixScale);
+        drawType(c, type, TrioGeometry.capRightCx(stroke), TrioGeometry.capTextBaseline(stroke, size),
+                size, fg, a);
+    }
+
+    /**
+     * The one place a capsule reading's size is decided, so the time and the
+     * percentage cannot disagree about how big they are.
+     *
+     * <p>Three bounds, in the order they bind: the height the capsule leaves for
+     * text, the width of the slot the reading sits in, and the user's own size
+     * setting. The other two arrangements need only the second and third - they
+     * are tall enough that the width always binds first - so this is the one
+     * place the height has to be stated.
+     */
+    private static float capsuleTextSize(String text, int setting, float stroke,
+                                         int suffixPercent) {
+        final float requested = Math.min(setting * TrioGeometry.CAP_TEXT_SCALE,
+                TrioGeometry.capTextMaxSize(stroke));
+        return fitSize(text, requested, TrioGeometry.capSlotWidth(stroke), suffixPercent);
+    }
+
+    /** The Wi-Fi group moved and scaled into the capsule's right-hand slot. */
+    private static void drawCapsuleWifi(Canvas c, float stroke, int level, int fg,
+                                        TrioAppearance a) {
+        final float scale = TrioGeometry.capWifiScale(stroke);
+        final int save = c.save();
+        c.translate(TrioGeometry.capWifiOffsetX(stroke),
+                TrioGeometry.capWifiOffsetY(stroke));
+        c.scale(scale, scale);
+        drawWifiArcs(c, level, fg, a);
+        c.restoreToCount(save);
+    }
+
+    /** The charging bolt, in the capsule's right-hand slot. */
+    private static void drawCapsuleBolt(Canvas c, float stroke, int color, TrioAppearance a) {
+        final float scale = TrioGeometry.capBoltScale(stroke);
+        final int save = c.save();
+        c.translate(TrioGeometry.capBoltOffsetX(stroke), TrioGeometry.capBoltOffsetY(stroke));
+        c.scale(scale, scale);
+        FILL.setStyle(Paint.Style.FILL);
+        FILL.setColor(color);
+        c.drawPath(BOLT, FILL);
+        c.restoreToCount(save);
     }
 
     // ------------------------------------------------------ rectangular pieces
@@ -958,6 +1261,23 @@ final class TrioRenderer {
         return rect
                 ? inkScale(w, h, TrioGeometry.RECT_INK_W, TrioGeometry.RECT_INK_H)
                 : inkScale(w, h);
+    }
+
+    /**
+     * The same fit, chosen by the stored style.
+     *
+     * <p>Distinct from the boolean overload above because the capsule is a third
+     * ink box rather than a variant of one of the other two - and because the
+     * out-of-ring label has to agree with whichever arrangement is in force.
+     */
+    static float inkScale(int w, int h, int style) {
+        if (style == Prefs.STYLE_RECT) {
+            return inkScale(w, h, TrioGeometry.RECT_INK_W, TrioGeometry.RECT_INK_H);
+        }
+        if (style == Prefs.STYLE_CAPSULE) {
+            return inkScale(w, h, TrioGeometry.CAP_INK_W, TrioGeometry.CAP_INK_H);
+        }
+        return inkScale(w, h);
     }
 
     /**

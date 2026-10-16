@@ -77,6 +77,21 @@ final class TrioState {
     static volatile String sMobileType = "";
 
     /**
+     * The clock string the capsule arrangement draws: "19:41", or "9:41" where
+     * the locale's own time format says so.
+     *
+     * <p>Kept here rather than sampled inside the renderer because the renderer
+     * also serves the settings preview, which must not tick - and because
+     * something has to repaint the bar when the minute changes, which is the
+     * hooked side's job. {@link ClockTicker} owns that.
+     *
+     * <p>Empty until the first tick, so the capsule's left slot stays blank for
+     * the one frame before the clock has ever been formatted rather than drawing
+     * a placeholder that would then flicker into the real time.
+     */
+    static volatile String sClockText = "";
+
+    /**
      * Whether an external power source is attached to the phone at all.
      *
      * <p>Not the same question as {@code status == CHARGING}: once the battery is
@@ -316,6 +331,9 @@ final class TrioState {
             // Same context, same reason: the battery broadcast is not routed
             // through the hooked views, so it needs a receiver of its own.
             BatteryPresence.start(sContext);
+            // The one reading with no event behind it: the clock is correct until
+            // the minute rolls over, so it has to wake itself up.
+            ClockTicker.start(sContext);
         } catch (Throwable ignored) {
             // leave it null; the reading stays on the single-row fallback
         }
