@@ -201,11 +201,18 @@ final class CapsuleTest {
                 charged.coloured > flat.coloured);
         ok("both still show the track they are measured against",
                 charged.track > 0 && flat.track > 0);
-        // The fill never covers the whole outline: a fill that ran all of it would
-        // leave no track to run down, which is the shape being a gauge rather than
-        // a decoration. Measured against the ink, not against itself.
-        ok("the fill never covers the entire outline",
-                charged.coloured < charged.ink - charged.coloured);
+        // At 100% the fill SHOULD cover nearly the whole outline - that is what
+        // "full" means for a gauge whose track is the shape itself - so the claim
+        // worth pinning is the other end: a nearly flat battery has to leave most
+        // of the outline in the track colour. An earlier version asserted
+        // "the fill never covers the entire outline" at full, which the corrected
+        // measurement above showed to be false of a correct drawing; it had been
+        // passing only because the old luminance split was counting white text
+        // rather than the fill.
+        ok("a full battery does cover nearly all of it",
+                charged.coloured > charged.track * 3);
+        ok("while a flat battery leaves most of it as track",
+                flat.track > flat.coloured * 3);
         // And it is monotone across the range, not just at the two ends.
         final Stats c25 = stats(render(cfg, 25, true, 0, new int[] { 4, 4 }, ""));
         final Stats c75 = stats(render(cfg, 75, true, 0, new int[] { 4, 4 }, ""));
@@ -312,6 +319,86 @@ final class CapsuleTest {
         ok("while the dots themselves carry ink", brokenLit > 0);
         ok("and the broken row is dimmer than the closed one", brokenLit < closedLit);
 
+        // ---- the dots keep clear of the stroke ends --------------------------
+        // The gap has to be WIDER than the dots. When it was not - the first cut
+        // sized the cut to the dots' own span and nothing more - the outer two
+        // merged into the ends of the stroke and the row read as a line with two
+        // lumps on it rather than as four dots interrupting a line.
+        //
+        // Stated as geometry rather than as pixels: the cut and the dots' span are
+        // both design-unit quantities, and the clearance is a fraction of the
+        // capsule's height, so this holds at every stroke width without needing a
+        // render to confirm it.
+        final float dotSpan = 3f * TrioGeometry.CAP_DOT_PITCH + 2f * TrioGeometry.CAP_DOT_R;
+        final float cut = 2f * TrioGeometry.capDotReach();
+        ok("the outline is cut wider than the dots themselves", cut > dotSpan);
+        ok("and the clearance is a real gap, not a rounding error",
+                cut - dotSpan > 1f);
+        // But not so wide that the outline reads as broken rather than as a row
+        // sitting in it: the reference's clearance is a few percent of the height.
+        ok("while the clearance stays small enough to read as one outline",
+                (cut - dotSpan) / 2f < (TrioGeometry.CAP_BOTTOM - TrioGeometry.CAP_TOP) * 0.12f);
+
+        // ---- the readings keep a margin from the outline's inner face ---------
+        // The time sits in the left slot, right where the end cap curves back in
+        // underneath it. With the slot starting at the interior's own edge the
+        // digits begin immediately at the stroke's inner face, and at the largest
+        // text size the first digit touches the line.
+        final float strokePx = Prefs.DEF_RING_STROKE * TrioGeometry.CAP_STROKE_RATIO;
+        final float height = TrioGeometry.CAP_BOTTOM - TrioGeometry.CAP_TOP;
+        ok("the readings start inside the outline's inner face",
+                TrioGeometry.capTextLeft(strokePx) > TrioGeometry.capInteriorLeft(strokePx));
+        ok("and stop inside it on the far side",
+                TrioGeometry.capTextRight(strokePx) < TrioGeometry.capInteriorRight(strokePx));
+        // The margin is the reference's own share of the height - about 8.6%, which
+        // is the number measured off it. Not "at least the stroke's width": the
+        // reference's margin is in fact smaller than its stroke, so that assertion
+        // would fail on a faithful drawing. It was written by mistake and this is
+        // what replaced it.
+        final float inset = TrioGeometry.capTextLeft(strokePx)
+                - TrioGeometry.capInteriorLeft(strokePx);
+        close("the margin matches the reference's share of the height",
+                inset / height, 0.086, 0.01);
+        // And it has to be big enough to see: a margin of a fraction of a pixel is
+        // no margin at all, which is the state this replaced.
+        ok("and is a visible margin, not a rounding error", inset > 2f);
+
+        // ---- the charge is spent from the bottom of the right bar ------------
+        // The two dot rows divide the outline into a left bar and a right bar, and
+        // the reading is taken off them as two bars: full is entirely lit, and the
+        // charge goes from the bottom of the RIGHT one, counterclockwise. So the
+        // order the segments go dark is botR, capR, topR, topL, capL, botL.
+        //
+        // Asserted as that ORDER rather than as a set of levels, because the order
+        // is the whole requirement and any of the six could be mis-wired on its
+        // own. The earlier implementation ran the other way - counterclockwise from
+        // the top gap - which spent the charge from the top left and lit the wrong
+        // half of the shape at every level below full.
+        final boolean[][] lit = new boolean[7][];
+        final int[] probeLevels = { 100, 85, 60, 50, 40, 10 };
+        for (int i = 0; i < probeLevels.length; i++) {
+            lit[i] = segments(renderAt(cfg, wideW, HOST_H, probeLevels[i], true, 0,
+                    new int[] { 4, 4 }, ""));
+        }
+        // Full: everything on.
+        ok("a full battery lights the whole outline",
+                lit[0][0] && lit[0][1] && lit[0][2] && lit[0][3] && lit[0][4] && lit[0][5]);
+        // The right bar empties before the left one does: at half, the right bar is
+        // dark and the left is still lit.
+        final int half = 3;
+        ok("at half the right bar is spent", !lit[half][3] && !lit[half][4] && !lit[half][5]);
+        ok("and the left bar is not", lit[half][0] && lit[half][1] && lit[half][2]);
+        // Segment by segment, in the order they must go dark.
+        ok("the first to go is the bottom of the right bar", !lit[1][3]);
+        ok("then the right cap", lit[1][4] && !lit[2][4]);
+        ok("then the top of the right bar", lit[2][5] && !lit[half][5]);
+        ok("then the top of the left bar", lit[half][0] && !lit[4][0]);
+        ok("then the left cap", lit[4][1] && !lit[5][1]);
+        // At the very bottom only the foot of the left bar is left, which is the
+        // far end of the counterclockwise walk from where it started.
+        ok("and the foot of the left bar is the last to go",
+                lit[5][2] || lit[4][2]);
+
         // ---- the right-hand slot is arbitrated, not stacked -------------------
         // A charger takes the slot from the arcs and from the percentage, exactly as
         // it takes the ring's notch - so the Wi-Fi level must not change what a
@@ -368,6 +455,81 @@ final class CapsuleTest {
     }
 
     /**
+     * Which of the outline's six pieces carry the charged colour, for one render.
+     *
+     * <p>Returns {@code {topL, capL, botL, botR, capR, topR}} - the left bar's three
+     * pieces first, then the right bar's, because that is the order they are read
+     * in and the order the fill's direction is stated against.
+     *
+     * <p>Each piece is sampled at its own midpoint, in host pixels, through the same
+     * transform {@code TrioRenderer.drawInto} applies. The end caps are sampled at
+     * their EXTREME x rather than at their centre: a stadium's cap is a half-circle,
+     * so at the centre of that circle the stroke is at the top and the bottom and
+     * the mid-height sample misses it entirely - which is how an earlier version of
+     * this reported every cap unlit at every level.
+     */
+    private static boolean[] segments(BufferedImage img) {
+        final float scale = Math.min(img.getWidth() / TrioGeometry.CAP_INK_W,
+                img.getHeight() / TrioGeometry.CAP_INK_H);
+        final float tx = (img.getWidth() - TrioGeometry.CAP_INK_W * scale) / 2f
+                - TrioGeometry.CAP_INK_X * scale;
+        final float ty = (img.getHeight() - TrioGeometry.CAP_INK_H * scale) / 2f
+                - TrioGeometry.CAP_INK_Y * scale;
+        final float reach = TrioGeometry.capDotReach();
+
+        final float gapLeft = TrioGeometry.CAP_DOT_CX - reach;
+        final float gapRight = TrioGeometry.CAP_DOT_CX + reach;
+        final float runLCx = (TrioGeometry.capFlatLeft() + gapLeft) * 0.5f;
+        final float runRCx = (gapRight + TrioGeometry.capFlatRight()) * 0.5f;
+        final float my = (TrioGeometry.CAP_TOP + TrioGeometry.CAP_BOTTOM) * 0.5f;
+
+        final int lx = Math.round(tx + runLCx * scale);
+        final int rx = Math.round(tx + runRCx * scale);
+        final int topY = Math.round(ty + TrioGeometry.CAP_TOP * scale);
+        final int botY = Math.round(ty + TrioGeometry.CAP_BOTTOM * scale);
+        final int capLY = Math.round(ty + my * scale);
+        final int capLx = Math.round(tx + TrioGeometry.CAP_LEFT * scale);
+        final int capRx = Math.round(tx + TrioGeometry.CAP_RIGHT * scale);
+
+        return new boolean[] {
+                charged(img, lx, topY),
+                charged(img, capLx, capLY),
+                charged(img, lx, botY),
+                charged(img, rx, botY),
+                charged(img, capRx, capLY),
+                charged(img, rx, topY),
+        };
+    }
+
+    /**
+     * Whether the stroke at this point is a role colour rather than the track.
+     *
+     * <p>Chroma, for the reason given on {@link #measure}: brightness cannot tell
+     * the charging green (142) from the track (77) with any threshold that is not a
+     * magic number, and the green and the critical red land on opposite sides of
+     * 150.
+     */
+    private static boolean charged(BufferedImage img, int x, int y) {
+        for (int dy = -2; dy <= 2; dy++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                final int xx = x + dx;
+                final int yy = y + dy;
+                if (xx < 0 || yy < 0 || xx >= img.getWidth() || yy >= img.getHeight()) {
+                    continue;
+                }
+                final int argb = img.getRGB(xx, yy);
+                final int r = (argb >> 16) & 0xFF;
+                final int g = (argb >> 8) & 0xFF;
+                final int b = argb & 0xFF;
+                if (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) >= 30) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * How many columns in {@code x0..x1} along row {@code y} carry ink.
      *
      * <p>Counting columns rather than sampling the centre column matters because the
@@ -387,11 +549,23 @@ final class CapsuleTest {
     /**
      * Counts ink, the coloured part of it, the track, and the ink's bounds.
      *
-     * <p>Brightness, not hue, separates the two passes: the track is the same colour
-     * as the fill at {@code trackAlpha}, which on this dark panel lands as a dim
-     * grey, while the fill is drawn at full opacity. Counting by hue would miss
-     * every role colour that is not green - white for a normal battery, red below
-     * critical, yellow in power saving.
+     * <p><b>Chroma, not brightness.</b> An earlier version split the two passes at
+     * a luminance of 150, reasoning that the track is drawn dim and the fill at
+     * full opacity. That is wrong, and measurably so: the charging green is
+     * #34C759, whose luminance is 142 - under the threshold - and the critical red
+     * is 116. Both were therefore counted as track, and "coloured" ended up
+     * counting only the white readings and the arcs. The monotone-growth assertion
+     * still passed, which is the dangerous part: it passed because more of the
+     * white text's antialiased edge cleared 150 when green was behind it than when
+     * the panel was. The number moved with the level, but for a reason unrelated
+     * to the fill.
+     *
+     * <p>Chroma separates them properly. Every role colour is saturated - green
+     * #34C759 spans 147, red #FF3B30 spans 207, amber #F2B900 spans 242 - while
+     * the track is the foreground grey over the panel (rgb(77,77,80), spanning 3)
+     * and the readings are white (spanning 0). So "coloured" is exactly the role
+     * colour and nothing else, and `track` is neutral and dim, which keeps the
+     * white readings out of both.
      */
     private static Stats measure(BufferedImage img, int x0, int y0, int x1, int y1) {
         final Stats s = new Stats();
@@ -409,10 +583,13 @@ final class CapsuleTest {
                 if (x > s.maxX) { s.maxX = x; }
                 if (y < s.minY) { s.minY = y; }
                 if (y > s.maxY) { s.maxY = y; }
-                final int lum = (r * 299 + g * 587 + b * 114) / 1000;
-                if (lum >= 150) {
+                final int hi = Math.max(r, Math.max(g, b));
+                final int lo = Math.min(r, Math.min(g, b));
+                if (hi - lo >= 30) {
                     s.coloured++;
-                } else {
+                } else if (hi < 150) {
+                    // Neutral AND dim: the track. The white readings are neutral but
+                    // bright, so they are excluded here rather than inflating it.
                     s.track++;
                 }
             }

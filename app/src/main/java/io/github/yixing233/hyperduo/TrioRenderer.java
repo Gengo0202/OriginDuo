@@ -392,13 +392,22 @@ final class TrioRenderer {
      * outline explicitly means the fraction drawn is the fraction asked for, and
      * it is the same code path on the device and in the offline harness.
      *
-     * <p>The walk runs counterclockwise from the top gap's left edge - along the
-     * top, down the left cap, along the bottom, up the right cap and back - so a
-     * partly-filled outline grows from the upper left. That is a choice, not a
-     * measurement: the reference drawing the shape came from is not a gauge at all
-     * (its coloured share is the same at 100%, at 73% and with the arcs up), so
-     * there is no fill direction in it to copy. Starting where the eye arrives
-     * first keeps the growth away from the reading in the right-hand slot.
+     * <p><b>Where it fills from.</b> The two dot rows divide the outline into
+     * exactly two arcs - a left one and a right one - and the level is read off
+     * them as two bars: full is entirely lit, and the charge is spent from the
+     * <em>bottom of the right bar</em>, travelling counterclockwise. So the grey
+     * starts as a stub at the foot of the right bar and eats its way up the right
+     * cap, across the top, down the left cap and along the bottom, and what is
+     * left lit is the run from the bottom gap's left edge clockwise round to its
+     * right edge.
+     *
+     * <p>That is why the walk below runs <em>clockwise from the bottom gap's left
+     * edge</em>: it visits the lit arc in the order the level grows through it, so
+     * simply drawing the first {@code fraction} of it puts the fill where the
+     * reading is taken. The reverse walk - counterclockwise from the top gap -
+     * fills from the other end and was the earlier, wrong, behaviour: it spent the
+     * charge from the top left, so a half-full battery lit the top and left while
+     * the user was reading the level off the right bar.
      */
     private static void drawCapsuleFill(Canvas c, boolean dots, float fraction) {
         final float left = TrioGeometry.CAP_LEFT;
@@ -423,16 +432,20 @@ final class TrioRenderer {
         }
         float left0 = total * fraction;
 
-        // The six pieces, in the order the walk meets them. Each piece starts
+        // The six pieces, clockwise from the bottom gap's left edge. Each starts
         // exactly where the previous one ended, so the fill has no seam; the two
         // gaps between the top and bottom runs are not pieces, because they carry
         // ink in neither pass and counting them would make the fraction wrong.
-        left0 = run(c, left0, topLeft, cx - reach, top, left + r, top);
-        left0 = cap(c, left0, capLen, left + r, cy, r, 270f, -180f);
-        left0 = run(c, left0, bottomLeft, left + r, bottom, cx - reach, bottom);
-        left0 = run(c, left0, bottomRight, cx + reach, bottom, right - r, bottom);
-        left0 = cap(c, left0, capLen, right - r, cy, r, 90f, -180f);
-        run(c, left0, topRight, right - r, top, cx + reach, top);
+        //
+        // Both caps sweep +180 here and not -180: the sweep has to follow the
+        // direction of travel, or the fill would run the cap backwards and the two
+        // ends would meet in the middle of it.
+        left0 = run(c, left0, bottomLeft, cx - reach, bottom, left + r, bottom);
+        left0 = cap(c, left0, capLen, left + r, cy, r, 90f, 180f);
+        left0 = run(c, left0, topLeft, left + r, top, cx - reach, top);
+        left0 = run(c, left0, topRight, cx + reach, top, right - r, top);
+        left0 = cap(c, left0, capLen, right - r, cy, r, 270f, 180f);
+        run(c, left0, bottomRight, right - r, bottom, cx + reach, bottom);
     }
 
     /**

@@ -602,14 +602,39 @@ final class TrioGeometry {
     static final float CAP_DOT_CX = (CAP_LEFT + CAP_RIGHT) * 0.5f;
 
     /**
-     * Half the horizontal span of one dot row, which is also how far the
-     * outline's stroke is cut away at 12 and 6 o'clock.
+     * The clear space the stroke leaves on each side of a dot row, as a fraction
+     * of the capsule's height.
      *
-     * <p>The reach covers the row's outer edge plus the gap the reference leaves
-     * between the last dot and where the line resumes.
+     * <p>Read off the reference: it leaves about 3.3% of the height between the
+     * outer dot and the end of the stroke. Without it the row and the line run
+     * together - which is exactly what the first cut did, because its
+     * {@link #capDotReach} was written as "the dots' own span" and nothing else,
+     * so the gap was exactly as wide as the dots and the outer two merged into the
+     * stroke ends. The row then reads as a line with two lumps on it rather than as
+     * four dots interrupting a line.
+     *
+     * <p>A ratio rather than a constant so it holds at every stroke width: the
+     * stroke is a slider, and a clearance in design units would vanish as the user
+     * thickened the line.
+     */
+    static final float CAP_DOT_CLEARANCE_RATIO = 0.033f;
+
+    /** The clear space on one side of a dot row, in design units. */
+    static float capDotClearance() {
+        return CAP_DOT_CLEARANCE_RATIO * (CAP_BOTTOM - CAP_TOP);
+    }
+
+    /**
+     * Half the horizontal span of one dot row: the dots themselves plus the
+     * clearance the stroke keeps from them.
+     *
+     * <p>This is how far the outline is cut away at 12 and 6 o'clock, so it has to
+     * cover both - covering only the dots leaves them touching the line, and
+     * covering more than this opens a gap wide enough to read as a break in the
+     * outline rather than as a row sitting in it.
      */
     static float capDotReach() {
-        return CAP_DOT_PITCH * 1.5f + CAP_DOT_R;
+        return CAP_DOT_PITCH * 1.5f + CAP_DOT_R + capDotClearance();
     }
 
     /**
@@ -688,19 +713,48 @@ final class TrioGeometry {
     /** The gap the two readings keep between each other. */
     static final float CAP_TEXT_GAP = 6f;
 
+    /**
+     * The margin a reading keeps from the outline's inner edge, as a fraction of
+     * the capsule's height.
+     *
+     * <p>Read off the reference at about 8.6% of the height. It matters most for
+     * the time, which sits in the left slot right where the end cap curves back in
+     * underneath it: with the slot starting at the interior's own edge the digits
+     * begin immediately at the stroke's inner face, and at the reference device's
+     * text size the "1" of "19:41" ends up touching the line.
+     *
+     * <p>A ratio rather than a constant for the same reason as the dot clearance -
+     * the stroke is a slider, and the margin has to grow with it.
+     */
+    static final float CAP_TEXT_INSET_RATIO = 0.086f;
+
+    /** The margin on one side of the readings, in design units. */
+    static float capTextInset() {
+        return CAP_TEXT_INSET_RATIO * (CAP_BOTTOM - CAP_TOP);
+    }
+
+    /** Where the readings' usable width starts, inside the outline's inner face. */
+    static float capTextLeft(float stroke) {
+        return capInteriorLeft(stroke) + capTextInset();
+    }
+
+    static float capTextRight(float stroke) {
+        return capInteriorRight(stroke) - capTextInset();
+    }
+
     /** Width of one of the two reading slots. */
     static float capSlotWidth(float stroke) {
-        return (capInteriorRight(stroke) - capInteriorLeft(stroke) - CAP_TEXT_GAP) * 0.5f;
+        return (capTextRight(stroke) - capTextLeft(stroke) - CAP_TEXT_GAP) * 0.5f;
     }
 
     /** Centre of the left-hand slot: the time's own place. */
     static float capLeftCx(float stroke) {
-        return capInteriorLeft(stroke) + capSlotWidth(stroke) * 0.5f;
+        return capTextLeft(stroke) + capSlotWidth(stroke) * 0.5f;
     }
 
     /** Centre of the right-hand slot: the percentage, the arcs or the bolt. */
     static float capRightCx(float stroke) {
-        return capInteriorRight(stroke) - capSlotWidth(stroke) * 0.5f;
+        return capTextRight(stroke) - capSlotWidth(stroke) * 0.5f;
     }
 
     /**
