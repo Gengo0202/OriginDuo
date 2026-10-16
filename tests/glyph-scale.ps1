@@ -41,8 +41,13 @@ $prefs = [System.IO.File]::ReadAllText($prefsPath)
 # has to clamp, because the broadcast path builds an appearance straight from
 # extras and that number reaches the canvas.
 
+# The fit is keyed on the stored style, not on a boolean: with three arrangements
+# the old "rect or not" no longer identifies which ink box to fit. The contract is
+# unchanged - the multiplier is applied to the fit, in one place - so the pin
+# matches the style-keyed call and still rejects the rectangular rewrite
+# (inkScale(w, h, rect)) that would silently mis-fit the capsule.
 if (![regex]::IsMatch($renderer,
-        'final float scale = inkScale\(w, h, rect\) \* appearance\.glyphFit\(\);')) {
+        'final float scale = inkScale\(w, h, appearance\.style\) \* appearance\.glyphFit\(\);')) {
     throw 'the overall-size fit is no longer multiplied into the drawing scale'
 }
 

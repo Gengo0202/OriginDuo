@@ -663,8 +663,8 @@ private fun LazyListScope.generalTab(
                 summary = stringResource(R.string.master_summary),
                 insideMargin = SettingsItemMargin,
             )
-            // 0 = the ring arrangement, 1 = the rectangular one; the option list
-            // is ordered so its index is exactly the stored value.
+            // 0 = the ring arrangement, 1 = the rectangular one, 2 = the capsule;
+            // the option list is ordered so its index is exactly the stored value.
             //
             // Sits directly under the master switch rather than with the sliders:
             // it decides which arrangement every other row below applies to, and
@@ -675,6 +675,7 @@ private fun LazyListScope.generalTab(
             val styles = listOf(
                 stringResource(R.string.trio_style_ring),
                 stringResource(R.string.trio_style_rect),
+                stringResource(R.string.trio_style_capsule),
             )
             OverlayDropdownPreference(
                 items = styles,
@@ -684,18 +685,6 @@ private fun LazyListScope.generalTab(
                 insideMargin = SettingsItemMargin,
                 enabled = a.glyph,
                 onSelectedIndexChange = { index -> update { repo -> repo.setTrioStyle(index) } },
-            )
-            // Where the glyph is drawn, not what it draws. The status bar window
-            // is only about 43dp tall and clips the rest, so this is the switch
-            // between "whole glyph, in a window of its own" and "inside the bar,
-            // cut down to the bar's height".
-            SwitchPreference(
-                checked = settings.overlayGlyph,
-                onCheckedChange = { value -> update { it.setOverlay(value) } },
-                title = stringResource(R.string.overlay_title),
-                summary = stringResource(R.string.overlay_summary),
-                insideMargin = SettingsItemMargin,
-                enabled = a.glyph,
             )
             SwitchPreference(
                 checked = a.wifi,
@@ -848,16 +837,16 @@ private fun LazyListScope.generalTab(
                 onSelectedIndexChange = { index -> update { repo -> repo.setMobileTypeMode(index) } },
             )
             // The centred-percentage row has three dependencies, and the style is
-            // one of them: the rectangle has no notch, so
-            // {@code TrioAppearance.centreValue} is false there whatever the
-            // stored switch says. Gating on that rule - rather than on
-            // {@code settings.valueCentred && !a.rect} - keeps the reason in one
-            // place. It is also the one intended behaviour change of this
-            // refactor: under the rectangle the row is now plainly unavailable
-            // instead of silently doing nothing.
+            // one of them: only the ring has a notch to move the arcs into, so
+            // {@code TrioAppearance.centreValue} is false under the rectangle and
+            // the capsule whatever the stored switch says. Gating on that rule -
+            // rather than on {@code settings.valueCentred && !a.rect} - keeps the
+            // reason in one place. It is also the one intended behaviour change of
+            // this refactor: under any other arrangement the row is now plainly
+            // unavailable instead of silently doing nothing.
             val centreHint = gateHint(
                 a.glyph to R.string.master_title,
-                !a.rect to R.string.trio_style_ring,
+                a.ring to R.string.trio_style_ring,
                 a.wifi to R.string.show_wifi_title,
                 a.value to R.string.show_value_title,
             )
@@ -871,7 +860,7 @@ private fun LazyListScope.generalTab(
                     // The arcs have to be drawn for "move them into the notch" to
                     // mean anything, and the percentage has to be drawn for it to
                     // be centred at all.
-                    enabled = a.glyph && !a.rect && a.wifi && a.value,
+                    enabled = a.glyph && a.ring && a.wifi && a.value,
                 )
             }
             // The performance readouts. They sit at the end of the card because
@@ -955,6 +944,7 @@ private fun LazyListScope.geometryTab(
                     }
                 }
             }
+
         }
     }
 }

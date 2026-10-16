@@ -1,7 +1,7 @@
 param(
     [string]$SourceDirectory,
-    [ValidateSet('overlay','signal','tint','assignment','wifi','clear')]
-    [string[]]$Suite = @('overlay','signal','tint','assignment','wifi','clear')
+    [ValidateSet('signal','tint','assignment','wifi','clear','clock')]
+    [string[]]$Suite = @('signal','tint','assignment','wifi','clear','clock')
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -25,8 +25,8 @@ function Read-Method($source, $signature) {
     if (!$body) { throw "Production method missing: $signature" }
     return $body
 }
-# Execute the real overlay class and the real tint hook. Only Android services,
-# Xposed dispatch and telephony are faked. refresh + its polling guard are spliced
+# Execute the real tint/clock hooks. Android services, Xposed dispatch and
+# telephony are faked. refresh + its polling guard are spliced
 # unchanged so a successful fallback cannot hide the next polling decision.
 $state = [IO.File]::ReadAllText((Join-Path $SourceDirectory 'TrioState.java'))
 $hooks = [IO.File]::ReadAllText((Join-Path $SourceDirectory 'TrioHooks.java'))
@@ -35,7 +35,8 @@ $poll = Read-Method $state 'private static void sampleSimsIfDue()'
 $foreground = Read-Method $state 'int foreground()'
 $meter = Read-Method $hooks 'private static int hookMeterTint(XposedModule module, ClassLoader cl)'
 $rowInk = Read-Method $hooks 'static int rowInk(View row)'
-foreach ($name in @('TrioOverlay.java','TrioZones.java')) {
+$clockVisibility = Read-Method $hooks 'static void applyClockVisibility()'
+foreach ($name in @('TrioZones.java')) {
     Write-Source "io/github/yixing233/hyperduo/$name" ([IO.File]::ReadAllText((Join-Path $SourceDirectory $name)))
 }
 foreach ($name in @('Prefs.java','TrioSettings.java','TrioAppearance.java','TrioGeometry.java')) {
@@ -185,6 +186,7 @@ Write-Source "$pkg/TrioHooks.java" @"
 package io.github.yixing233.hyperduo;
 import android.view.*;
 import java.util.*;
+import java.lang.reflect.Method;
 final class XposedModule {}
 final class XposedInterface {
  interface Hooker {Object intercept(Chain c) throws Throwable;}
@@ -194,6 +196,8 @@ final class TrioHooks {
  static final int LOG_INFO=1,LOG_WARN=2;
  static final Map<View,Integer> ROW_INK=new WeakHashMap<>();
  static XposedInterface.Hooker tintHook;
+ static XposedModule sModule=new XposedModule();
+ static View sStatusClock; static java.lang.reflect.Method sClockSetter; static boolean sClockHidden;
  static boolean covered,island; static View bar;
  static void log(int level,String msg){} static void log(XposedModule m,String msg){}
  static void nudgeHosts(){} static void invalidateHosts(){}
@@ -207,6 +211,7 @@ final class TrioHooks {
  static int hook(XposedModule m,Object method,String name,XposedInterface.Hooker h){tintHook=h;return 1;}
  $rowInk
  $meter
+ $clockVisibility
  static void tint(View meter,float intensity,boolean useTint,int tint)throws Throwable {
   if(tintHook==null)hookMeterTint(new XposedModule(),TrioHooks.class.getClassLoader());
   Object[] args={new ArrayList<>(),intensity,tint,0xFFFFFFFF,0xFF000000,useTint};
@@ -224,38 +229,6 @@ public class IssueRegressionTest {
  static int checks;
  static void ok(String message,boolean value){if(!value)throw new AssertionError(message);checks++;}
  static View host(Context c){ViewGroup row=new ViewGroup(c);View v=new View(c);v.parent=row;row.host=v;return v;}
- static void overlay() {
-  Context c=new Context();View h=host(c);TrioState s=new TrioState(h);
-  TrioOverlay o=TrioOverlay.active(h,s);
-  ok("adding a 1px window must not suppress the host",!o.covering());
-  c.wm.failNext=true;o.sync();
-  ok("failed placement must leave host painting",!o.covering() && c.wm.glyph.getAlpha()==0);
-  int redraws=h.invalidations;c.wm.glyph.delayed.run();
-  ok("same desired params must retry and then cover",c.wm.updates==2 && o.covering());
-  ok("watcher recovery redraws the fallback host",h.invalidations==redraws+1);
-  redraws=h.invalidations;o.sync();ok("stable placement must avoid another IPC",c.wm.updates==2);
-  ok("stable placement does not loop host redraws",h.invalidations==redraws);
-  h.x-=10;c.wm.failNext=true;c.wm.glyph.delayed.run();
-  ok("later placement failure also gives host back",!o.covering());
-  ok("watcher failure requests fallback host drawing",h.invalidations==redraws+1);
-  redraws=h.invalidations;c.wm.glyph.delayed.run();ok("later failure recovers",o.covering() && c.wm.updates==4);
-  ok("second watcher recovery clears fallback ink",h.invalidations==redraws+1);
-  for(int gate=0;gate<6;gate++) {
-   o.hideNow();
-   switch(gate){case 0:h.insets.visible=false;break;case 1:h.insets.top=0;break;
-    case 2:TrioHooks.covered=true;break;case 3:TrioHooks.island=true;break;
-    case 4:h.windowVisibility=4;break;case 5:h.unclipped=false;break;}
-   o.showAgain();ok("settling must obey visibility gate "+gate,!o.covering());
-   h.insets.visible=true;h.insets.top=121;TrioHooks.covered=false;TrioHooks.island=false;h.windowVisibility=0;h.unclipped=true;
-   o.showAgain();ok("restoring visibility gate "+gate,o.covering());
-  }
-  TrioOverlay.onShadeHeight(10);ok("shade hides immediately",!o.covering());
-  h.insets.visible=false;TrioOverlay.onShadeHeight(0);ok("shade settle respects fullscreen",!o.covering());
-  h.insets.visible=true;o.showAgain();
-  TrioOverlay.release(h);o.showAgain();ok("released window stays released",!o.covering() && c.wm.removes==1);
-  c.wm.failAdd=true;ok("failed add returns host path",TrioOverlay.active(h,s)==null);
-  c.wm.failAdd=false;o=TrioOverlay.active(h,s);o.sync();ok("failed add can recover",o.covering());TrioOverlay.release(h);
- }
  static void signal() {
   TrioConfig.settings=TrioSettings.defaults();TrioConfig.settings.dualSim=false;
   TrioState.sMobileLevel=-1;TrioState.sSlotLevels=new int[]{-1,-1};TrioState.sSimsDueAt=0;TrioState.polls=0;
@@ -340,8 +313,29 @@ public class IssueRegressionTest {
   TrioSettings s=TrioSettings.defaults();s.dualSim=false;
   ok("preview's two readings can enable dual rows",TrioZones.assign(TrioZones.Zone.TOP,false,TrioZones.Part.DUAL,s,2)!=null);
  }
+ public static class NativeClock extends View {
+  int calls,value;boolean fail=true;
+  NativeClock(){super(new Context());}
+  public void setMultiTaskVisibility(int visibility){calls++;if(fail){fail=false;throw new IllegalStateException("transient clock setter failure");}value=visibility;}
+ }
+ static void clock()throws Exception {
+  NativeClock clock=new NativeClock();TrioHooks.sStatusClock=clock;
+  TrioHooks.sClockSetter=NativeClock.class.getDeclaredMethod("setMultiTaskVisibility",int.class);
+  TrioHooks.sClockSetter.setAccessible(true);TrioHooks.sClockHidden=false;
+  TrioConfig.settings=TrioSettings.defaults();TrioConfig.settings.trioStyle=Prefs.STYLE_CAPSULE;
+  TrioHooks.applyClockVisibility();
+  ok("failed clock hide is not cached as success",!TrioHooks.sClockHidden && clock.calls==1);
+  TrioHooks.applyClockVisibility();
+  ok("failed clock hide retries",TrioHooks.sClockHidden && clock.calls==2 && clock.value==8);
+  TrioHooks.applyClockVisibility();ok("stable clock hiding is idempotent",clock.calls==2);
+  TrioConfig.settings.trioStyle=Prefs.STYLE_RING;TrioHooks.applyClockVisibility();
+  ok("leaving capsule restores native clock",!TrioHooks.sClockHidden && clock.value==0);
+  TrioConfig.settings.trioStyle=Prefs.STYLE_CAPSULE;TrioHooks.applyClockVisibility();
+  TrioConfig.settings.enabled=false;TrioHooks.applyClockVisibility();
+  ok("master off restores native clock",!TrioHooks.sClockHidden && clock.value==0);
+ }
  public static void main(String[] args)throws Throwable {
-  switch(args[0]){case "overlay":overlay();break;case "signal":signal();break;case "tint":tint();break;case "assignment":assignment();break;case "wifi":wifi();break;case "clear":clear();break;default:throw new AssertionError(args[0]);}
+  switch(args[0]){case "signal":signal();break;case "tint":tint();break;case "assignment":assignment();break;case "wifi":wifi();break;case "clear":clear();break;case "clock":clock();break;default:throw new AssertionError(args[0]);}
   System.out.println("PASS: "+args[0]+" / "+checks+" assertions");
  }
 }

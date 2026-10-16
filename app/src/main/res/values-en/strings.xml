@@ -20,6 +20,12 @@
     <string name="drawing_title">Tap the part of the icon you want to change</string>
     <string name="drawing_summary">Tap a part and pick a component to put there; press and hold to change its size and colours.</string>
     <string name="drawing_zone_change">Change…</string>
+    <string name="drawing_zone_edit">Adjust…</string>
+    <string name="drawing_occupant_clock">Time</string>
+    <string name="drawing_hint_clock">Left clock</string>
+    <string name="drawing_hint_reading">Right reading</string>
+    <string name="drawing_hint_signal">Signal rows</string>
+    <string name="drawing_clock_fixed">The clock is fixed in the capsule; its size and weight can be adjusted.</string>
     <string name="drawing_pick_title">%1$s: currently %2$s</string>
     <string name="drawing_pick_none_summary">Remove optional components from this area; the ring and battery bar stay.</string>
     <string name="drawing_feedback_charging">%1$s is set in %2$s; the charging bolt takes priority while charging. Select Normal to preview it.</string>
@@ -54,12 +60,10 @@
     <string name="master_summary">Master switch; turn off to restore the stock battery and signal icons.</string>
 
     <string name="trio_style_title">Trio style</string>
-    <string name="trio_style_summary">The ring is the default; the rectangular one puts a column of signal dots on each side of the centre.</string>
+    <string name="trio_style_summary">The ring is the default; the rectangular one puts a column of signal dots on each side of the centre; the capsule uses its own outline as the battery gauge.</string>
     <string name="trio_style_ring">Ring</string>
     <string name="trio_style_rect">Rectangular</string>
-
-    <string name="overlay_title">Draw in its own window</string>
-    <string name="overlay_summary">Draw in a window of its own, no longer clipped to the status bar\'s height (about 43dp).</string>
+    <string name="trio_style_capsule">Capsule</string>
 
     <string name="show_wifi_title">Show Wi-Fi arcs</string>
     <string name="show_wifi_summary">Draw the Wi-Fi arcs; the number of arcs follows the real signal level.</string>
@@ -150,6 +154,12 @@
 
     <string name="value_weight_title">Number weight</string>
     <string name="value_weight_summary">Stroke weight of the battery number, 100 lightest to 900 heaviest.</string>
+
+    <string name="clock_size_title">Clock size</string>
+    <string name="clock_size_summary">Font size of the time in the capsule\'s left slot, independent of the battery number.</string>
+
+    <string name="clock_weight_title">Clock weight</string>
+    <string name="clock_weight_summary">Stroke weight of the time, 100 lightest to 900 heaviest.</string>
 
     <string name="type_size_title">Network type size</string>
     <string name="type_size_summary">Font size of the 3G/4G/5G label in the ring centre.</string>

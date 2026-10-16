@@ -61,9 +61,6 @@ class SettingsRepository(context: Context) {
     fun setStackedSignal(value: Boolean) = writeBoolean(Prefs.KEY_STACKED_SIGNAL, value)
     fun setDataSimOnly(value: Boolean) = writeBoolean(Prefs.KEY_DATA_SIM_ONLY, value)
 
-    /** Draws the glyph in a window of its own - see [Prefs.KEY_OVERLAY]. */
-    fun setOverlay(value: Boolean) = writeBoolean(Prefs.KEY_OVERLAY, value)
-
     // ------------------------------------------------------- performance readouts
 
     /** Charging power in the out-of-ring strip - see [Prefs.KEY_PERF_POWER]. */
@@ -113,6 +110,8 @@ class SettingsRepository(context: Context) {
     fun setArcStroke(value: Int) = writeInt(Prefs.KEY_ARC_STROKE, value)
     fun setValueSize(value: Int) = writeInt(Prefs.KEY_VALUE_SIZE, value)
     fun setValueWeight(value: Int) = writeInt(Prefs.KEY_VALUE_WEIGHT, value)
+    fun setClockSize(value: Int) = writeInt(Prefs.KEY_CLOCK_SIZE, value)
+    fun setClockWeight(value: Int) = writeInt(Prefs.KEY_CLOCK_WEIGHT, value)
     fun setTypeSize(value: Int) = writeInt(Prefs.KEY_TYPE_SIZE, value)
     fun setOutTypeSize(value: Int) = writeInt(Prefs.KEY_OUT_TYPE_SIZE_DP, value)
     fun setOutSignalSize(value: Int) = writeInt(Prefs.KEY_OUT_SIGNAL_SIZE, value)
@@ -155,7 +154,6 @@ class SettingsRepository(context: Context) {
             prefs.putInt(Prefs.KEY_SIGNAL_MODE, snapshot.signalMode)
             prefs.putBoolean(Prefs.KEY_STACKED_SIGNAL, snapshot.stackedSignal)
             prefs.putBoolean(Prefs.KEY_DATA_SIM_ONLY, snapshot.dataSimOnly)
-            prefs.putBoolean(Prefs.KEY_OVERLAY, snapshot.overlayGlyph)
             prefs.putBoolean(Prefs.KEY_PERF_POWER, snapshot.perfPower)
             prefs.putBoolean(Prefs.KEY_PERF_TEMP, snapshot.perfTemp)
             prefs.putInt(Prefs.KEY_PERF_SCALE, snapshot.perfScale)
@@ -175,6 +173,13 @@ class SettingsRepository(context: Context) {
             prefs.putInt(Prefs.KEY_ARC_STROKE, snapshot.arcStroke)
             prefs.putInt(Prefs.KEY_VALUE_SIZE, snapshot.valueSize)
             prefs.putInt(Prefs.KEY_VALUE_WEIGHT, snapshot.valueWeight)
+            // The clock's own pair. No migration is needed here even though the two
+            // keys are new: TrioSettings reads them with the value's size and weight
+            // as the fallback, so writing the snapshot's own clockSize - which the
+            // repository has already defaulted to the value's - reproduces exactly
+            // the look an install had when the two readings shared one size.
+            prefs.putInt(Prefs.KEY_CLOCK_SIZE, snapshot.clockSize)
+            prefs.putInt(Prefs.KEY_CLOCK_WEIGHT, snapshot.clockWeight)
             prefs.putInt(Prefs.KEY_TYPE_SIZE, snapshot.typeSize)
             prefs.putInt(Prefs.KEY_OUT_TYPE_SIZE_DP, snapshot.outTypeSize)
             prefs.putInt(Prefs.KEY_OUT_SIGNAL_SIZE, snapshot.outSignalSize)

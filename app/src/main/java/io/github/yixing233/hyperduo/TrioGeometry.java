@@ -251,6 +251,12 @@ final class TrioGeometry {
     /** Topmost ink of the outer arc, at its apex. */
     static final float W_TOP = W1_CY - W1_R;
     /**
+     * Lowest ink of the group: the underside of the dot beneath the middle arc.
+     * Read off {@code TrioRenderer.buildWifiDot}, whose path bottoms out at
+     * y=80.95.
+     */
+    static final float W_BOTTOM = 80.95f;
+    /**
      * Scale of the Wi-Fi group when the percentage is centred
      * ({@code Prefs.KEY_VALUE_CENTRED}) and the group is moved into the 12
      * o'clock notch. The notch is 69.6 units of chord at the mouth and the group
@@ -537,6 +543,520 @@ final class TrioGeometry {
     static final float RECT_INK_Y = 1.0f;
     static final float RECT_INK_W = 118.0f;
     static final float RECT_INK_H = 114.4f;
+
+    // ------------------------------------------------------- capsule arrangement
+    //
+    // The outline itself is the battery gauge: its length is the full track and
+    // the role-coloured part of it is the level, so the shape fills up instead of
+    // containing a gauge. Two four-dot rows interrupt the stroke at 12 and 6
+    // o'clock, and the time and the right-hand reading share the interior.
+    //
+    // The shape is quoted against the reference the design was drawn from: a
+    // capsule 2.34 times as wide as it is tall, a stroke 12.6% of that height,
+    // dots as thick as the stroke with a pitch of 18.5%, and text 26.5% of the
+    // height. All four of those are kept, and the reason they can be is the host
+    // width - see CAP_RIGHT.
+
+    /** Outer bounds of the capsule outline, in design units. */
+    static final float CAP_LEFT = 1.0f;
+    /**
+     * Right edge of the outline.
+     *
+     * <p>Set so the shape is the reference's own 2.34:1 - the width the design was
+     * drawn at. It is a free parameter rather than a derived one because the host
+     * is no longer a fixed box: {@code MiuiBatteryMeterIconView.onMeasure} used to
+     * pin the glyph's width to MIUI's 28dp battery, which left the fit decided by
+     * the width and forced the shape down to 2:1 (84x46px in a 60px-tall bar, with
+     * a third of the bar's height unused). The module now answers that measurement
+     * with the width this aspect ratio asks for, so the proportions are the
+     * designer's again rather than the stock icon's.
+     *
+     * <p>The height is untouched by that: {@link #CAP_BOTTOM} is what the bar
+     * offers, and only the width grows to meet it.
+     */
+    static final float CAP_RIGHT = 139.0f;
+    static final float CAP_TOP = 1.0f;
+    /**
+     * Bottom edge of the outline.
+     *
+     * <p>Quoted against the height the status bar offers its icons -
+     * {@code status_bar_icon_height}, 20dp, 60px at density 3 - less the two
+     * units of the design space that keep the ink off the host's edge. The
+     * reference's 26.5% text rule then lands at 15.6 units of cap height, which
+     * is what the stock battery percentage is drawn at, so the readings are the
+     * size they would be anywhere else on the bar.
+     *
+     * <p>Deliberately the number that does <em>not</em> move when the shape gets
+     * wider: the bar's height is fixed, and the capsule grows sideways into it
+     * rather than up. See {@link #CAP_RIGHT}.
+     */
+    static final float CAP_BOTTOM = 60.0f;
+
+    /**
+     * Corner radius: half the height, which is what makes the outline a stadium
+     * rather than a rounded rectangle.
+     */
+    static final float CAP_RADIUS = (CAP_BOTTOM - CAP_TOP) * 0.5f;
+
+    /**
+     * The outline's thickness, as a fraction of {@code ringStroke}.
+     *
+     * <p>The reference draws it at 12.6% of the capsule's height, which is 7.4
+     * units here; {@code ringStroke} defaults to 14, so this is the factor that
+     * lands there. Kept as a ratio rather than a constant so the stroke slider
+     * still means something in this arrangement - it is the one row that adjusts
+     * the glyph's weight in every style.
+     */
+    static final float CAP_STROKE_RATIO = 0.53f;
+
+    /**
+     * Radius of one signal dot, and the pitch between their centres.
+     *
+     * <p>From the reference: a dot is as thick as the stroke (12.6% of the
+     * height) and the pitch is 18.5% of it. Dots thinner than the line they
+     * interrupt read as beads dropped on top of it, which is the one thing the
+     * reference is careful not to look like.
+     */
+    static final float CAP_DOT_R = 3.7f;
+    static final float CAP_DOT_PITCH = 10.9f;
+
+    /** Centre x of the four-dot row: the capsule's own centre. */
+    static final float CAP_DOT_CX = (CAP_LEFT + CAP_RIGHT) * 0.5f;
+
+    /**
+     * The clear space the stroke leaves on each side of a dot row, as a fraction
+     * of the capsule's <em>path</em> height - the outline's own height, excluding
+     * the stroke, which is the measure the reference's own figures are stated
+     * against.
+     *
+     * <p><b>9%, against the reference's 6.67%, at the user's request.</b> The
+     * reference leaves 9px out of a 135px path height. Measured on the device at
+     * that value the gap is 3px, which is faithful to the mockup but was reported
+     * as still too tight - and on a 60px-tall glyph 6.67% is under four pixels, so
+     * there is not much of it to see. 9% is about a third more than the reference
+     * and stays well inside the point where the outline would read as broken
+     * rather than as a row sitting in it.
+     *
+     * <p>A ratio rather than a constant: the stroke is a slider, and the clearance
+     * has to hold at every width. It is measured against the PATH rather than the
+     * ink height because the ink height depends on the stroke - a ratio against
+     * that would move the clearance whenever the user changed the line's weight.
+     *
+     * <p>The first cut of this used 3.3%, which was a measurement error and a bad
+     * one to have shipped: it came from counting the antialiased pixels between the
+     * dot and the stroke as track, which made the gap look half its real size.
+     *
+     * <p>Without any clearance the row and the line run together, which is what the
+     * very first cut did: its {@link #capDotReach} was written as "the dots' own
+     * span" and nothing else, so the gap was exactly as wide as the row it held and
+     * the outer two merged into the stroke ends. The row then reads as a line with
+     * two lumps on it rather than as four dots interrupting a line.
+     */
+    static final float CAP_DOT_CLEARANCE_RATIO = 0.09f;
+
+    /** The clear space on one side of a dot row, in design units. */
+    static float capDotClearance() {
+        return CAP_DOT_CLEARANCE_RATIO * (CAP_BOTTOM - CAP_TOP);
+    }
+
+    /**
+     * Half the horizontal span of one dot row: how far the outline's path must be
+     * cut back at 12 and 6 o'clock for the row to sit in a real gap.
+     *
+     * <p><b>Three terms, and the third is the one that was missing.</b> The path
+     * has to be cut back by the dots' own half-span, by the clearance wanted
+     * between them and the line, and by half the stroke - because {@code STROKE}
+     * is drawn with {@link android.graphics.Paint.Cap#ROUND}, so the cut end inks
+     * a semicircle of radius {@code stroke / 2} <em>past</em> its endpoint. Cutting
+     * the path back by only the first two terms therefore spends the whole
+     * clearance on that semicircle.
+     *
+     * <p>Measured, at the two ends of the stroke slider, with the first two terms
+     * alone and {@link #CAP_DOT_CLEARANCE_RATIO} at the reference's own 6.67%:
+     * the visible gap is +0.23 units at {@code ringStroke} 14 and -0.31 at 16. It
+     * is negative at the top of the range - the round cap overlaps the outer dot -
+     * and near enough to zero at the default to be invisible. That is what "the
+     * dots still have no room" was, and it is why raising the ratio alone did not
+     * fix it: the clearance was being eaten, not miscalculated.
+     *
+     * <p>The stroke is a slider, so the third term belongs in the geometry rather
+     * than in a constant: at the default it is 3.71 units and at the maximum 4.24.
+     */
+    static float capDotReach(float stroke) {
+        return CAP_DOT_PITCH * 1.5f + CAP_DOT_R + capDotClearance() + stroke * 0.5f;
+    }
+
+    /**
+     * The same at the default stroke, for the two places that have no stroke to
+     * hand: the offline harness's own reporting and {@code buildCapsuleOutline}'s
+     * caller, which reads the stroke from the settings it was given.
+     */
+    static float capDotReach() {
+        return capDotReach(Prefs.DEF_RING_STROKE * CAP_STROKE_RATIO);
+    }
+
+    /**
+     * Centre y of the top and bottom dot rows.
+     *
+     * <p>Exactly the outline's path coordinates, and deliberately not
+     * {@code CAP_TOP + stroke / 2}: the stroke straddles the path, so the path's
+     * own y is the line's centre. Putting the dots on the stroke's inner edge
+     * instead - which the first cut of this did - hangs them below the line they
+     * are supposed to be set into.
+     */
+    static float capDotTopY() {
+        return CAP_TOP;
+    }
+
+    static float capDotBottomY() {
+        return CAP_BOTTOM;
+    }
+
+    /** Where the two end caps stop and the flat runs begin. */
+    static float capFlatLeft() {
+        return CAP_LEFT + CAP_RADIUS;
+    }
+
+    static float capFlatRight() {
+        return CAP_RIGHT - CAP_RADIUS;
+    }
+
+    /**
+     * The interior, and the two reading slots inside it.
+     *
+     * <p>Not the flat run between the caps: the caps curve in only near the top
+     * and bottom edges, so at the height the readings are drawn the interior runs
+     * almost the full width. The reference relies on exactly that - its text
+     * spans well past the point where the flat run ends - so insetting by the
+     * radius would shrink the type for no reason.
+     *
+     * <p>Everything is derived from the stroke rather than fixed, because the
+     * stroke is a slider: a heavier line eats into the room the readings have, and
+     * they have to give way rather than overrun.
+     */
+    static float capInteriorLeft(float stroke) {
+        return CAP_LEFT + stroke * 0.5f;
+    }
+
+    static float capInteriorRight(float stroke) {
+        return CAP_RIGHT - stroke * 0.5f;
+    }
+
+    /**
+     * The interior's vertical extent - and this is the bound that matters.
+     *
+     * <p>The two dot rows ride the outline's own centreline, so the top row's ink
+     * reaches {@code CAP_TOP + stroke / 2 + CAP_DOT_R} and the bottom row's
+     * mirrors it. Anything drawn inside the capsule has to live between them;
+     * measuring against the outline's outer bounds instead - which is what the
+     * first cut of this did - lets the Wi-Fi arcs and the digits run straight
+     * through the dot rows, which is exactly what the offline render showed.
+     */
+    static float capInteriorTop(float stroke) {
+        return CAP_TOP + stroke * 0.5f + CAP_DOT_R;
+    }
+
+    static float capInteriorBottom(float stroke) {
+        return CAP_BOTTOM - stroke * 0.5f - CAP_DOT_R;
+    }
+
+    static float capInteriorHeight(float stroke) {
+        return capInteriorBottom(stroke) - capInteriorTop(stroke);
+    }
+
+    static float capInteriorCy(float stroke) {
+        return (capInteriorTop(stroke) + capInteriorBottom(stroke)) * 0.5f;
+    }
+
+    /** The gap the two readings keep between each other. */
+    static final float CAP_TEXT_GAP = 6f;
+
+    /**
+     * The margin a reading keeps from the outline's inner edge, as a fraction of
+     * the capsule's height.
+     *
+     * <p>Read off the reference at about 8.6% of the height. It matters most for
+     * the time, which sits in the left slot right where the end cap curves back in
+     * underneath it: with the slot starting at the interior's own edge the digits
+     * begin immediately at the stroke's inner face, and at the reference device's
+     * text size the "1" of "19:41" ends up touching the line.
+     *
+     * <p>A ratio rather than a constant for the same reason as the dot clearance -
+     * the stroke is a slider, and the margin has to grow with it.
+     */
+    static final float CAP_TEXT_INSET_RATIO = 0.086f;
+
+    /** The margin on one side of the readings, in design units. */
+    static float capTextInset() {
+        return CAP_TEXT_INSET_RATIO * (CAP_BOTTOM - CAP_TOP);
+    }
+
+    /** Where the readings' usable width starts, inside the outline's inner face. */
+    static float capTextLeft(float stroke) {
+        return capInteriorLeft(stroke) + capTextInset();
+    }
+
+    static float capTextRight(float stroke) {
+        return capInteriorRight(stroke) - capTextInset();
+    }
+
+    /**
+     * Natural width of each reading per unit of font size, at the default face.
+     *
+     * <p>Measured off the platform's own metrics, not guessed: "19:41" is 2.52
+     * units wide per unit of size and "100" is 1.68. Their ratio is what the two
+     * slots are divided by, and it is the whole reason a half each was wrong.
+     */
+    static final float CAP_TIME_TEXT_PER_UNIT = 2.52f;
+    static final float CAP_VALUE_TEXT_PER_UNIT = 1.68f;
+
+    /**
+     * The share of the readings' width the time takes, the rest going to the
+     * right-hand slot.
+     *
+     * <p><b>Not a half, and the even split was the bug behind "the clock's maximum
+     * is too small".</b> The two slots held equal halves of the interior, but the
+     * strings in them are not equal: at one unit of font size "19:41" is 2.52 units
+     * wide and "100" is 1.68, so the time ran out of width long before the number
+     * did. The clock's slider stopped doing anything above a setting of about 36 -
+     * its documented maximum of 44 was unreachable, and raising that maximum would
+     * have changed nothing. Measured before this fix: setting 44 drew the time at
+     * 23.03 units instead of the 27.37 it asks for, and settings of 44, 60 and 120
+     * all drew it at the same size. The slot was the binding constraint, not the
+     * ceiling.
+     *
+     * <p>2.52 / (2.52 + 1.68) = 0.60, the two strings' natural widths at a common
+     * size, so each reading gets the room its own string needs and both reach their
+     * documented maximum together. The reference agrees: its time spans 156px
+     * against its number's 92px, a share of 0.63.
+     *
+     * <p><b>A fixed ratio, deliberately, and the choice is a real one.</b> Dividing
+     * instead in proportion to the two <em>size settings</em> would let the clock go
+     * larger - up to about setting 62 with the number at its smallest, where this
+     * caps it at 44 - but it would also make the time drift sideways every time the
+     * number's slider moved, because its slot would be re-divided underneath it. Two
+     * settings that the user is told are independent cannot behave that way, and the
+     * fixed ratio costs only the ceiling that a 60px capsule cannot honestly hold
+     * anyway. Following the current strings rather than the settings was rejected
+     * for a second reason: the number is "9" at one level and "100" at another, and
+     * is replaced entirely by the arcs, the bolt or the type while charging, so the
+     * clock would resize itself as the battery moved.
+     */
+    static final float CAP_TIME_WIDTH_SHARE =
+            CAP_TIME_TEXT_PER_UNIT / (CAP_TIME_TEXT_PER_UNIT + CAP_VALUE_TEXT_PER_UNIT);
+
+    /** The width the two readings have to share, once the gap between them is taken out. */
+    static float capReadingsWidth(float stroke) {
+        return capTextRight(stroke) - capTextLeft(stroke) - CAP_TEXT_GAP;
+    }
+
+    /** Usable width of the left-hand slot, where the time is drawn. */
+    static float capTimeSlotWidth(float stroke) {
+        return capReadingsWidth(stroke) * CAP_TIME_WIDTH_SHARE;
+    }
+
+    /** Usable width of the right-hand slot: the number, the arcs, the bolt or the type. */
+    static float capValueSlotWidth(float stroke) {
+        return capReadingsWidth(stroke) * (1f - CAP_TIME_WIDTH_SHARE);
+    }
+
+    /** Centre of the left-hand slot: the time's own place. */
+    static float capLeftCx(float stroke) {
+        return capTextLeft(stroke) + capTimeSlotWidth(stroke) * 0.5f;
+    }
+
+    /** Centre of the right-hand slot: the percentage, the arcs or the bolt. */
+    static float capRightCx(float stroke) {
+        return capTextRight(stroke) - capValueSlotWidth(stroke) * 0.5f;
+    }
+
+    /**
+     * Where a line of digits sits, so its cap height is centred in the interior:
+     * half the cap above and half below the interior's own middle.
+     */
+    static float capTextBaseline(float stroke, float size) {
+        return capInteriorCy(stroke) + size * CAP_HEIGHT_RATIO * 0.5f;
+    }
+
+    /**
+     * How tall a reading may be, as a fraction of the interior.
+     *
+     * <p>Not a fraction of the capsule's outer height: the dot rows are inside
+     * that, and a reading has to clear them. The other two arrangements never
+     * needed this - they are 117 and 114 units tall, so a size that fits their
+     * width always fits their height too.
+     *
+     * <p><b>A backstop, not the binding bound.</b> Measured rather than assumed:
+     * with the size slider at its own ceiling the width fit is what decides the
+     * type, and the height only takes over for a single narrow glyph at a
+     * {@code valueSize} the slider cannot reach. A negative control that made
+     * this limit a hundred times larger still passed every pixel assertion in
+     * {@code tests/capsule.ps1}. It is kept because the two bounds are computed
+     * from different things and the height is the one that would fail silently if
+     * a future size range grew past it - but it is not what keeps the digits
+     * inside the outline today, and saying otherwise would be a comment that
+     * lies about which line is doing the work.
+     */
+    static final float CAP_TEXT_HEIGHT_RATIO = 0.82f;
+
+    /**
+     * The requested reading size, as a multiple of {@code valueSize}.
+     *
+     * <p>Two conversions, and leaving either out is what makes the type come out
+     * the wrong size: the reference draws text whose <em>cap height</em> is 26.5%
+     * of the capsule's height, and a font's em size is that cap height divided by
+     * {@link #CAP_HEIGHT_RATIO}. Quoted against {@code valueSize} so the existing
+     * size slider keeps control of it exactly as it does in the other two
+     * arrangements.
+     */
+    static final float CAP_TEXT_SCALE = 0.265f * CAP_BOTTOM / (CAP_HEIGHT_RATIO * 36f);
+
+    /**
+     * Largest size the capsule's interior allows.
+     *
+     * <p>A backstop for a size the slider cannot currently reach - see
+     * {@link #CAP_TEXT_HEIGHT_RATIO} for why it is stated as one.
+     */
+    static float capTextMaxSize(float stroke) {
+        return capInteriorHeight(stroke) * CAP_TEXT_HEIGHT_RATIO / CAP_HEIGHT_RATIO;
+    }
+
+    /**
+     * The Wi-Fi group's ink extents, in design units.
+     *
+     * <p>Measured off the geometry rather than read off a constant, because the
+     * obvious constants are the wrong ones: {@code W1_R} is the arc's centre-line
+     * radius, and the ink reaches half a stroke beyond it, while the arc's
+     * <em>endpoints</em> are what set the width - not its apex. Taking the chord
+     * for the width and the centre-line span for the height - which the first cut
+     * of this did - understates both, and the group then overruns the slot it was
+     * fitted to.
+     *
+     * <p>Quoted at {@code DEF_ARC_STROKE}, the default the arcs are drawn at; the
+     * fit below is against this height, and the offset compensates for the stroke
+     * actually in force the way the ring's own Wi-Fi offsets do.
+     */
+    static final float W_INK_W = 54.0f;
+    static final float W_INK_H = 39.65f;
+    /**
+     * The group's ink centre. Centring on this - rather than aligning its top
+     * edge - is what keeps the arcs optically centred in a slot whose height
+     * comes from the dot rows rather than from the group itself.
+     */
+    static final float W_INK_CY = 61.13f;
+
+    /** The bolt's ink extremes, from {@code buildBolt}'s own coordinates. */
+    static final float BOLT_INK_H = 19.9f;
+    static final float BOLT_INK_CY = 12.05f;
+
+    /**
+     * The height every reading and icon in the capsule is drawn at, in design
+     * units: the reference's 26.5% of the capsule's height, as a cap height.
+     *
+     * <p>The same number {@link #CAP_TEXT_SCALE} produces, restated as the height
+     * the icons are matched against so the two cannot drift apart. Measured off
+     * the reference: its arcs and its digits are both 41px in a 151px capsule -
+     * the same height to the pixel - and its percentage matches them.
+     */
+    static final float CAP_ICON_H = 0.265f * CAP_BOTTOM;
+
+    /**
+     * The arcs' and the bolt's scales, each sized so its own ink is
+     * {@link #CAP_ICON_H} tall.
+     *
+     * <p>Two scales, not one shared, because the two icons have different ink
+     * heights - the group is 39.65 units tall and the bolt 19.9 - so a single
+     * factor would draw the bolt at half the height of the arcs. The ring
+     * arrangement keeps them separate for the same reason.
+     *
+     * <p>Each is also capped by the interior, so an extreme stroke setting makes
+     * the icons give way rather than cross the dot rows.
+     */
+    static float capWifiScale(float stroke) {
+        return Math.min(CAP_ICON_H / W_INK_H, capInteriorHeight(stroke) / W_INK_H);
+    }
+
+    static float capBoltScale(float stroke) {
+        return Math.min(CAP_ICON_H / BOLT_INK_H, capInteriorHeight(stroke) / BOLT_INK_H);
+    }
+
+    /** Places the arcs' ink centre on the right-hand slot's own centre. */
+    static float capWifiOffsetX(float stroke) {
+        return capRightCx(stroke) - W_CX * capWifiScale(stroke);
+    }
+
+    static float capWifiOffsetY(float stroke) {
+        return capInteriorCy(stroke) - W_INK_CY * capWifiScale(stroke);
+    }
+
+    /**
+     * The bolt's offset. Written against {@code BOLT_CX_REF} and
+     * {@link #BOLT_INK_CY} - which are the bolt path's own ink centre - and never
+     * against {@code BOLT_CX}/{@code BOLT_TOP}: those two are the ring's
+     * <em>targets</em>, so treating them as path coordinates a second time puts
+     * the bolt down and to the right of where it belongs.
+     */
+    static float capBoltOffsetX(float stroke) {
+        return capRightCx(stroke) - BOLT_CX_REF * capBoltScale(stroke);
+    }
+
+    static float capBoltOffsetY(float stroke) {
+        return capInteriorCy(stroke) - BOLT_INK_CY * capBoltScale(stroke);
+    }
+
+    /**
+     * The capsule's ink box: the outline plus its stroke, which is what has to
+     * fit inside the host view.
+     *
+     * <p>Sized against the largest stroke the slider offers rather than the
+     * default, the way {@link #RECT_INK_W} is: fitting the extremes means no
+     * setting can push ink outside the host, where the platform clips it.
+     */
+    static final float CAP_INK_X = CAP_LEFT - Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f;
+    static final float CAP_INK_Y = CAP_TOP - Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f;
+    static final float CAP_INK_W =
+            (CAP_RIGHT + Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f) - CAP_INK_X;
+    static final float CAP_INK_H =
+            (CAP_BOTTOM + Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f) - CAP_INK_Y;
+
+    /**
+     * The width the capsule's host view has to ask the status bar for, so that the
+     * shape can be as tall as the bar allows.
+     *
+     * <p><b>Why this method exists at all.</b> The host is not a square like the
+     * other two arrangements' - it is MIUI's battery icon, and
+     * {@code MiuiBatteryMeterIconView.onMeasure} pins its width to
+     * {@code R.dimen.battery_meter_width}, which is 28dp. That number is a
+     * property of the <em>stock</em> battery glyph, which is a narrow vertical
+     * battery; the capsule is a wide shape, so being handed a tall narrow box
+     * means the fit is decided by the width and the shape ends up short. On the
+     * reference device that is 84x46px in a 60px-tall bar - fourteen pixels of
+     * the bar's height go unused, and the glyph looks like a squashed pill.
+     *
+     * <p>The fix is to answer {@code onMeasure} with the width this aspect ratio
+     * actually needs for the height being offered, rather than the stock width.
+     * Nothing has to be told about it: {@code MiuiBatteryMeterView.onMeasure} does
+     * not measure its icon child at all, it just adds up
+     * {@code mBatteryDigitalView.getMeasuredWidth()}, and
+     * {@code MiuiStatusBatteryContainer.onMeasure} adds up the meter's - so
+     * widening this one view widens the battery slot and the status bar makes room
+     * for it on its own.
+     *
+     * <p>Deliberately <em>not</em> scaled by {@code glyphFit}: that multiplier is
+     * already applied to the drawing scale, and folding it in here as well would
+     * apply it twice - the ink would shrink by the square of the setting. The
+     * consequence is that the host keeps its full width when the user shrinks the
+     * glyph, which is what the ring arrangement already does with its square host.
+     *
+     * @param heightPx the height the bar is offering, in pixels
+     * @return the width to measure at, or 0 when there is no height to work from
+     */
+    static int capHostWidthPx(int heightPx) {
+        if (heightPx <= 0) {
+            return 0;
+        }
+        return Math.round(heightPx * (CAP_INK_W / CAP_INK_H));
+    }
 
     // ------------------------------------------------------------------ colours
     static final int CRITICAL = 0xFFFF3B30;

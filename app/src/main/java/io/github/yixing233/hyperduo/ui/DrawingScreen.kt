@@ -210,6 +210,13 @@ private fun DrawingEditorCard(
     // This page previews synthetic readings, independently of the switch being
     // edited. Counting the switch would make enabling the second row unreachable.
     val sims = scene.previewSlots.count { it >= 0 }
+    val chooseZone: (TrioZones.Zone) -> Unit = { zone ->
+        if (appearance.capsule && zone == TrioZones.Zone.TOP) {
+            editing = TrioSettingsPart.Clock
+        } else {
+            picking = zone
+        }
+    }
 
     Card {
         Column(modifier = Modifier.padding(DrawingItemMargin)) {
@@ -233,7 +240,7 @@ private fun DrawingEditorCard(
                 // A press on the glyph opens that zone's picker: the request is not
                 // "flip something" but "put something else here", so pointing at the
                 // zone is choosing which slot to fill, and the list follows.
-                onPickZone = { zone -> picking = zone },
+                onPickZone = chooseZone,
                 onEditZone = { zone ->
                     val part = TrioZones.occupant(
                         zone, appearance, scene.level, scene.charging,
@@ -258,21 +265,21 @@ private fun DrawingEditorCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 ZoneRow(
-                    TrioZones.Zone.TOP, R.string.drawing_hint_top, ZoneInkTop,
+                    TrioZones.Zone.TOP, zoneLabelRes(TrioZones.Zone.TOP, appearance), ZoneInkTop,
                     settings, appearance, scene, sims, pressed,
-                    onPick = { picking = TrioZones.Zone.TOP },
+                    onPick = { chooseZone(TrioZones.Zone.TOP) },
                     onEdit = { part -> editing = TrioSettingsPart.of(part) },
                 )
                 ZoneRow(
-                    TrioZones.Zone.CENTRE, R.string.drawing_hint_centre, ZoneInkCentre,
+                    TrioZones.Zone.CENTRE, zoneLabelRes(TrioZones.Zone.CENTRE, appearance), ZoneInkCentre,
                     settings, appearance, scene, sims, pressed,
-                    onPick = { picking = TrioZones.Zone.CENTRE },
+                    onPick = { chooseZone(TrioZones.Zone.CENTRE) },
                     onEdit = { part -> editing = TrioSettingsPart.of(part) },
                 )
                 ZoneRow(
-                    TrioZones.Zone.BOTTOM, R.string.drawing_hint_bottom, ZoneInkBottom,
+                    TrioZones.Zone.BOTTOM, zoneLabelRes(TrioZones.Zone.BOTTOM, appearance), ZoneInkBottom,
                     settings, appearance, scene, sims, pressed,
-                    onPick = { picking = TrioZones.Zone.BOTTOM },
+                    onPick = { chooseZone(TrioZones.Zone.BOTTOM) },
                     onEdit = { part -> editing = TrioSettingsPart.of(part) },
                 )
             }
@@ -380,7 +387,7 @@ private fun PlacementFeedback(
         text = stringResource(
             messageRes,
             stringResource(occupantLabelRes(selection.part)),
-            stringResource(zoneLabelRes(selection.zone)),
+            stringResource(zoneLabelRes(selection.zone, appearance)),
             stringResource(occupantLabelRes(actual)),
         ),
         style = MiuixTheme.textStyles.footnote1,
@@ -450,12 +457,13 @@ private fun ZonePickerDialog(
         scene.wifiLevel, PREVIEW_TYPE, sims,
     )
     val solvable = TrioZones.choices(zone, appearance.rect, settings, sims)
+    val canEmpty = TrioZones.assign(zone, appearance.rect, null, settings, sims) != null
 
     OverlayDialog(
         show = true,
         title = stringResource(
             R.string.drawing_pick_title,
-            stringResource(zoneLabelRes(zone)),
+            stringResource(zoneLabelRes(zone, appearance)),
             stringResource(occupantLabelRes(current)),
         ),
         onDismissRequest = onDismiss,
@@ -465,10 +473,10 @@ private fun ZonePickerDialog(
             // it off the bottom of a long list.
             PickerRow(
                 title = stringResource(R.string.drawing_occupant_none),
-                summary = stringResource(R.string.drawing_pick_none_summary),
+                summary = stringResource(if (canEmpty) R.string.drawing_pick_none_summary else R.string.drawing_clock_fixed),
                 selected = current == null,
-                enabled = true,
-                onClick = { onChoose(null) },
+                enabled = canEmpty,
+                onClick = { if (canEmpty) onChoose(null) },
                 onLongClick = null,
             )
 
@@ -479,7 +487,7 @@ private fun ZonePickerDialog(
                 // ring's bottom band is the level dots and nothing else.
                 val reason = if (canPlace) null else stringResource(
                     R.string.drawing_pick_impossible,
-                    stringResource(zoneLabelRes(zone)),
+                    stringResource(zoneLabelRes(zone, appearance)),
                 )
                 PickerRow(
                     title = stringResource(occupantLabelRes(part)),
@@ -640,7 +648,7 @@ private fun ZoneRow(
             modifier = Modifier.weight(0.44f),
         )
         Text(
-            text = stringResource(R.string.drawing_zone_change),
+            text = stringResource(if (current == TrioZones.Part.CLOCK) R.string.drawing_zone_edit else R.string.drawing_zone_change),
             style = MiuixTheme.textStyles.footnote2,
             color = MiuixTheme.colorScheme.primary,
             textAlign = TextAlign.End,
@@ -747,14 +755,15 @@ private fun occupantLabelRes(part: TrioZones.Part?): Int = when (part) {
     TrioZones.Part.BOLT -> R.string.drawing_occupant_bolt
     TrioZones.Part.TYPE -> R.string.drawing_occupant_type
     TrioZones.Part.DUAL -> R.string.drawing_occupant_dual
+    TrioZones.Part.CLOCK -> R.string.drawing_occupant_clock
     null -> R.string.drawing_occupant_none
 }
 
 /** The zone's own name, for the picker's title and its refusals. */
-private fun zoneLabelRes(zone: TrioZones.Zone): Int = when (zone) {
-    TrioZones.Zone.TOP -> R.string.drawing_hint_top
-    TrioZones.Zone.CENTRE -> R.string.drawing_hint_centre
-    TrioZones.Zone.BOTTOM -> R.string.drawing_hint_bottom
+private fun zoneLabelRes(zone: TrioZones.Zone, a: TrioAppearance): Int = when (zone) {
+    TrioZones.Zone.TOP -> if (a.capsule) R.string.drawing_hint_clock else R.string.drawing_hint_top
+    TrioZones.Zone.CENTRE -> if (a.capsule) R.string.drawing_hint_reading else R.string.drawing_hint_centre
+    TrioZones.Zone.BOTTOM -> if (a.capsule) R.string.drawing_hint_signal else R.string.drawing_hint_bottom
 }
 
 /** One line saying what a piece is, for the picker. */
@@ -765,6 +774,7 @@ private fun partSummaryRes(part: TrioZones.Part): Int = when (part) {
     TrioZones.Part.BOLT -> R.string.show_bolt_summary
     TrioZones.Part.TYPE -> R.string.show_mobile_type_summary
     TrioZones.Part.DUAL -> R.string.dual_sim_summary
+    TrioZones.Part.CLOCK -> R.string.clock_size_summary
 }
 
 /**

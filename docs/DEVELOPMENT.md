@@ -36,8 +36,8 @@ io.github.yixing233.hyperduo
 ├─ TrioSettings.java     跨进程配置快照（值对象，刻意不依赖 Xposed API）
 ├─ TrioConfig.java       hook 侧：绑定 remote preferences 并热更新快照
 ├─ TrioHooks.java        全部 hook 安装与容器折叠逻辑
-├─ TrioOverlay.java      独立窗口绘制：状态栏窗口只有约 43dp 高并裁掉多余部分，
-│                      这里另开一个只有图标那么大、不接收触摸的窗口
+├─ GlyphDrawable.java    把三合一画进 MIUI 电池图标自己的 drawable 槽
+│                      （不建窗口：画布 / bounds / 裁剪都归系统）
 ├─ TrioState.java        电量 / 信号等级 / 前景色等运行期状态
 ├─ BatteryPresence.java  粘性电池广播采样：是否接着充电器 / 充电功率 / 电池温度
 ├─ TrioGeometry.java     120×120 设计空间的几何常量
@@ -247,14 +247,14 @@ adb shell am start -n io.github.yixing233.hyperduo/.ui.MainActivity
 ## 配置通道
 
 设置走 libxposed 的 remote preferences，组名 / 文件名同为 `Prefs.NAME = "hyperduo_settings"`；
-键与默认值集中在 `Prefs.java`，上下界也在那里（第十五轮后共 42 个 `KEY_*` 常量，其中
-`KEY_SHOW_MOBILE_TYPE` 与 `KEY_OUT_TYPE_SIZE` 是只读的迁移遗留键，实际读写的 40 个键见配置项参考）。
+键与默认值集中在 `Prefs.java`，上下界也在那里（第十七轮后共 41 个 `KEY_*` 常量，其中
+`KEY_SHOW_MOBILE_TYPE` 与 `KEY_OUT_TYPE_SIZE` 是只读的迁移遗留键，实际读写的 39 个键见配置项参考）。
 
 - **写侧**（设置 App）：`HyperDuoApp.onServiceBind` 拿到 `XposedService`，之后每次改动都
   `getRemotePreferences(NAME).edit().putX(...).commit()`，并把同一份写进本应用的
   `SharedPreferences`（即 `shared_prefs\hyperduo_settings.xml`）。服务是异步绑定、也可能随时
   死亡，所以 `SettingsRepository` 每次写入都实时取 `HyperDuoApp.xposedService`，**不缓存
-  service**；绑定成功时还会 `syncAllToFramework()` 全量重放这 40 个键，补齐框架缺席期间的改动。
+  service**；绑定成功时还会 `syncAllToFramework()` 全量重放这 39 个键，补齐框架缺席期间的改动。
   **每新增一个键都必须同时加到 `syncAllToFramework()`**，否则该键在框架重连后不会下发。
 - **读侧**（hook 进程）：remote `SharedPreferences` 是**只读**的，但支持
   `registerOnSharedPreferenceChangeListener`，框架会实时投递变更。`TrioConfig` 注册一个监听器，
@@ -529,10 +529,10 @@ Wi-Fi 搬进缺口仍是 canvas 变换（`translate` + `scale`）完成的，几
 数字按同一比例变化，而后面那次 `translate` 仍然居中原点；若改成对设计单位另做一次
 `canvas.scale`，线宽（`Paint.setStrokeWidth` 给的是设计单位下的常量）与半径的缩放口径就会分家。
 
-**`TrioOverlay` 刻意不拿这一项缩窗口**：独立窗口里那个字形是 `drawState` 画的，而 `drawState` 走的
-正是上面那条已经乘过 `glyphFit()` 的路径。窗口本身再按同一个百分比缩一次，等于把设置乘两遍——
-字形的缩放是「框不变、画小一点」，所以正确的形态是**宿主大小的透明窗口 + 居中的小字形**，
-而不是一个跟着变小的窗口。（窗口尺寸仍由 `TrioOverlay.sync()` 按宿主测量决定。）
+**缩放只在适配这一处应用一次**：槽里的字形是 `drawState` 画的，而 `drawState` 走的正是上面那条
+已经乘过 `glyphFit()` 的路径。任何「再按同一个百分比缩一次交给 drawable 的 bounds」的做法，等于
+把设置乘两遍。`GlyphDrawable.draw` 因此直接把 `getBounds()` 的宽高交给 `drawState`，不做第二次
+换算：bounds 就是 MIUI 给电池图标的那个框，「框不变、画小一点」正是缩放语义。
 
 矩形排布（设计空间仍是 120×120，`TrioGeometry` 的 `rectangular arrangement` 一节）：
 
@@ -974,40 +974,46 @@ live host（宿主匹配只认状态栏那一行），于是它的容器什么�
 `Keyguard` 的容器**放行：这些容器照常折叠自己的图标。只放开折叠这一项——采样仍只认权威状态栏
 容器（`isStatusBarContainer`），绘制路径也不变。
 
-### 独立窗口绘制：窗口类型与被判为可疑覆盖层的那一段
+### 字形落在哪里：MIUI 电池图标自己的 drawable 槽（1.6.13 起）
 
-`TrioOverlay` 另开一个只有图标那么大、不接收触摸的窗口（`glyph_window` 开关）。这个窗口用的是
-**系统级 overlay 类型**，因此会被平台的触摸遮挡判定盯上 —— 这一段记两件事：类型怎么选，
-以及为什么还必须再打一个私有标记。
+三合一不在另一个窗口里，而是写进 MIUI 电池图标**自己**的 drawable 槽
+（`MiuiBatteryMeterIconView.mTintBgDrawable`，由 `GlyphDrawable` 安装）。画布、bounds、裁剪与硬件
+层全部由平台提供，模块只是往槽里放一个自己画的 `Drawable`；`GlyphDrawable.draw(Canvas)` 把
+`getBounds()` 的宽高交给 `TrioRenderer.drawState`，字号与缩放路径与宿主内绘制完全一致。
 
-**窗口类型优先 `TYPE_STATUS_BAR_SUB_PANEL`（2017）**：MIUI 的 `StatusBar1`
-（`(0,0)(fillx121)`）与 `TYPE_STATUS_BAR_ADDITIONAL`（2041）同在一个 base layer（161000），
-**后加者赢**；而 `StatusBar1` 会在配置变更与 SystemUI 重启时重新加窗，于是 2041 会被它盖住。
-`windowType()` 因此先反射取 2017，取不到才退 2041，再取不到用 `TYPE_FALLBACK = 2038`；
-结果缓存进 `sWindowType`，进程存活期内不再重试。
+**为什么不再另开窗口**：`TrioOverlay` 用的是系统级 overlay 类型，因此会被平台的触摸遮挡判定盯上。
+`InputMonitor.isTrustedOverlay(int type)` 认的类型里**有 `TYPE_STATUS_BAR_ADDITIONAL`（2041）、没有
+`TYPE_STATUS_BAR_SUB_PANEL`（2017）**（AOSP `android-14.0.0_r1`，`InputMonitor.java:740-753`）；而
+`WindowState.getTouchOcclusionMode()` 对状态栏类型走 `BLOCK_UNTRUSTED`（它们不是 system-alert 类型，
+拿不到 `USE_OPACITY` 这条捷径）。合起来的结果是：窗口虽然不可触摸、只占一个图标的宽、位于状态栏、
+且属于 SystemUI，仍会被读作「可能劫持触摸的覆盖层」，落在它下面的触摸被标记为 obscured —— 带防护的
+应用（被报告的就是 LSPosed 的权限请求界面，issue #28 / #33）看到这个标记就拒绝响应。当时的补丁是给
+窗口打 `PRIVATE_FLAG_TRUSTED_OVERLAY`（`1 << 29`，反射读写 `privateFlags`），但**只要还在建窗口，
+就永远要跟这份白名单和这套遮挡判定打交道**；改用槽之后模块不创建任何窗口，这条判定从根上消失。
+完整历史（窗口类型怎么选、私有位为什么必须走反射、`tests\overlay-window.ps1` 的三形状验证）留在
+`docs\SWITCHES-REVIEW.md` §6.15。
 
-**★ 但 2017 恰恰不在平台的类型白名单里**：`InputMonitor.isTrustedOverlay(int type)` 认的
-类型里**有 `TYPE_STATUS_BAR_ADDITIONAL`，没有 `TYPE_STATUS_BAR_SUB_PANEL`**（AOSP
-`android-14.0.0_r1`，`InputMonitor.java:740-753`）；而 `WindowState.getTouchOcclusionMode()`
-对状态栏类型走的是 `BLOCK_UNTRUSTED`（它们不是 system-alert 类型，所以拿不到 `USE_OPACITY`
-这条捷径）。合起来的结果是：窗口虽然不可触摸、只占一个图标的宽、位于状态栏、且属于 SystemUI，
-仍会被读作「可能劫持触摸的覆盖层」，落在它下面的触摸被标记为 obscured —— 带防护的应用
-（被报告的就是 LSPosed 的权限请求界面，issue #28 / #33）看到这个标记就拒绝响应。
+**槽不是永久归模块的，必须每帧重新确认**：MIUI 会从 `clearTint()`、暗色通道、资源重建里改写它，
+并在中间整个丢掉；每一次后面都跟一次绘制，而 `GlyphDrawable.install(...)` 是幂等的，所以下一帧会
+抢回来。`install` 的返回值只用于区分「这一帧刚抢到槽」——那一帧 MIUI 自己的电池已经画进同一个
+canvas，调用方必须再 `TrioRenderer.draw(...)` 覆盖一次，否则两个电池会交替闪现。
 
-**修法是给窗口打 `PRIVATE_FLAG_TRUSTED_OVERLAY`**（`1 << 29`）。它经 Binder 到服务端
-（`WindowManagerService` 把该位转成 `InputConfig.TRUSTED_OVERLAY`），是否采信由
-`WindowState.shouldWindowHandleBeTrusted(...)` 决定 —— 除了这一位，还要求该 session 有
-`INTERNAL_SYSTEM_WINDOW` 权限；SystemUI 进程满足这一条。标记必须在**设置窗口 flags 的同一处**
-定下来（`markTrustedOverlay(params)` 紧跟 `params.flags = …`），这样日志里那句
-`overlay: added type=… privateFlags=0x…` 就能就地证明它生效。
+**一个 build 够不着**：`res\values\bools.xml` 的 `battery_meter_use_legacy_drawable` 为 `true` 时，
+`MiuiBatteryMeterIconView.onDraw` 走 legacy 分支（`super.onDraw` 后直接 return），tint 槽根本不会被
+画到，这个 drawable 永不被调用 —— 那种 ROM 上字形是**静默不出现**，而不是画错。本机该 bool 为
+`false`，实测槽路径正常。
 
-**两个名字都必须走反射**：`PRIVATE_FLAG_TRUSTED_OVERLAY` 与 `privateFlags` 都是 `@hide`，
-本机 `android.jar` 的 `javap -p 'android.view.WindowManager$LayoutParams'` 里
-**连 `TYPE_STATUS_BAR_SUB_PANEL` 都找不到**，所以 `params.privateFlags |= …` 这种直写
-根本编译不过。`markTrustedOverlay` 因此读常量、再 `field.getInt(params) | trusted` 写回 ——
-**必须是「或」而不是赋值**，否则会把平台自己拥有的那些位抹掉；常量读不到（老平台）时原样放过，
-不凭空造一个位。这条接线由 `tests\overlay-window.ps1` 用三种平台形状（字段与常量都在 / 只有字段 /
-都没有）各编一遍来锁。
+**master 开关关闭时要把槽交回**：`GlyphDrawable.uninstall(View)` 调 `clearTint()` 让 MIUI 按电池此刻的
+状态重建槽（放回记住的 drawable 会把早已离开的状态画回来）；若该 build 没有 `clearTint`，退化为
+把槽置 null。槽的生命周期比任何一次重绘都长，不交回就会留下一个「模块已关闭、却仍盖着 MIUI 电池」
+的 drawable。
+
+**真机确认（1.6.13 重构版，小米 14 / houji / HyperOS 4）**：桌面、应用内、锁屏、控制中心四态字形与
+读数都正常；桌面连续 5 帧里充电绿弧的像素包围盒**逐帧完全相同**（`1052,44..1111,86`，60×43，
+668 px）；`dumpsys window windows | grep hyperduo` **四态计数全 0**，重启 SystemUI 后复拍仍为 0 而
+字形照常（666 px）。日志里 `has no mTintBgDrawable` 与 `legacy drawable` 两条失败路径都没触发 ——
+本机 `battery_meter_use_legacy_drawable` 确为 `false`。控制中心里也**没有** §6.15 记的那个方块背景
+残影（窗口不在了，残影的载体就没有了）。
 
 ### 实时刷新
 
@@ -1464,8 +1470,9 @@ HyperOS）在 `USB powered: true`、`status: charging`、`charge_counter` 上升
 | `hyperduo-keep-island-battery` | 同上（meter 侧） | 见「充电超级岛」一节 |
 | `hyperduo-tint-dark` / `hyperduo-tint-set` | `StatusBarIconView.onDarkChanged` / `.setIconColor` | 听图标自己的上色调用，`sBarInk` 供 `foreground()` 优先取用 |
 
-共 16 组 hook（含 overlay 带进来的 11–15 与上述新增）。每个 hook 组独立容错：固件重命名某个
-方法只会让该组打日志跳过，不影响其余。
+共 13 组 hook（第十七轮随独立窗口路线删掉了 11–15 那五组：下拉展开高度与最近任务 / 启动动画的
+脉冲信号只服务于窗口的显隐，槽路线不再需要——槽里的 drawable 由 MIUI 每帧自己调用）。每个 hook
+组独立容错：固件重命名某个方法只会让该组打日志跳过，不影响其余。
 设置通道不占 hook —— `TrioConfig` 是注册在 remote `SharedPreferences` 上的变更监听器。
 
 > **新增 hook 组必须同时改两处**：`group()` 的 `switch` 与 `install()` 里的
@@ -1560,7 +1567,7 @@ hook 组 10 拦 `setIsHideBattery`，把值记进 `TrioState.sIslandHideBattery`
 | `debug_log` | `false` | — |
 | `perf_power` | `false` | —（在电池图标旁追加充电功率读数，与 `perf_temp` 共用同一个环外 `TextView`；功率是电池自身电流 × 电压，没接充电器时不显示这一段） |
 | `perf_temp` | `false` | —（在同一处追加电池温度读数，单位摄氏度、取整；不接充电器同样显示） |
-| `glyph_scale_pct` | `100` | 60 – 100（三合一字形的整体缩放百分比。乘在 `TrioRenderer.drawInto` 那个适配系数上——`inkScale(...) * appearance.glyphFit()`——所以整块 120×120 几何里每一笔描边、弧线与数字按同一比例缩放，`translate` 的居中不变。上界只有 100 是因为宿主给电池图标的框只有 28dp × 20dp，超过 100 只会画到视野外、裁不裁由 MIUI 说了算；下界 60 避免缩到看不见。`TrioOverlay` **刻意不**拿它缩窗口——窗口里那个字形由 `drawState` 画，而 `drawState` 已经乘过这一项，再缩一次就是双重缩放） |
+| `glyph_scale_pct` | `100` | 60 – 100（三合一字形的整体缩放百分比。乘在 `TrioRenderer.drawInto` 那个适配系数上——`inkScale(...) * appearance.glyphFit()`——所以整块 120×120 几何里每一笔描边、弧线与数字按同一比例缩放，`translate` 的居中不变。上界只有 100 是因为宿主给电池图标的框只有 28dp × 20dp，超过 100 只会画到视野外、裁不裁由 MIUI 说了算；下界 60 避免缩到看不见。缩放**只在适配系数这一处应用一次**——`GlyphDrawable.draw` 把 `getBounds()` 的宽高原样交给 `drawState`，不做第二次换算） |
 | `perf_scale_pct` | `100` | 60 – 150（两项性能读数的整体缩放百分比，**最后**一步乘在 `TrioHooks.perfTextSize` 的答案上——`Math.max(base * PERF_MIN_SIZE_RATIO, Math.min(base, size)) * factor`——并且同样乘上三条兜底分支（`base * factor`），所以单项读数、测不出宿主、测不出行高这三种答案都会跟着动。它是「自适应结果之上的倍数」而不是第二个绝对字号，因此两项读数仍然跟着图标与 `out_type_size_dp` 走。范围比字形那条宽、且允许超过 100，是因为它乘的是字号而不是一个被框限死的绘制） |
 | `perf_weight` | `700` | 100 – 900（两项性能读数文字的笔画粗细，`TrioAppearance.perfTypeWeight()` clamp 后交给 `perfLineHeight`。**独立于 `type_weight`**：后者驱动的是网络类型标签字重，与状态栏上这两项读数无关。改粗会同时改变行高，所以 `refreshPerfLabel` 的重同步条件里有它的第五个分句；预留宽度另由 `perfWidth` 按最宽形态量出，见「环外性能读数」） |
 
@@ -1751,6 +1758,30 @@ work\overview\                         全部支持样式的状态总览图（�
    → `painted ink at 858,311 resolves to no zone`；两条都 `exit 1`。
 
    六个脚本都只读源码、写到 `work\` 下编译，不碰 `app\src`。
+
+   `tests\overlay-window.ps1` 曾经锁**独立窗口那个私有标记**的整条接线（第三十轮，issue #28 / #33）：
+   平台的 `WindowManager.LayoutParams` 可能**两个隐藏名字都有、只有 `privateFlags` 字段、或两个都
+   没有**，而「有没有」是编译期事实——一个测试类编不了三种平台，所以那个脚本整棵重建
+   `work\overlaywindow\{src,classes}` 三次、每次换一种形状的桩。**第十七轮随窗口一起删除了**：
+   字形改由 `GlyphDrawable` 走 MIUI 自己的 drawable 槽，模块不再创建窗口，私有标记与遮挡判定都不
+   再适用（历史见 `docs\SWITCHES-REVIEW.md` §6.15）。
+   它的接班人是 `tests\glyph-drawable.ps1`：窗口路线换成槽路线，**被锁的机件换了，但「平台可能长
+   什么样」这件事没变**——这个脚本把真 `GlyphDrawable.java` 与真 `Refl.java` 编进**五种宿主形状**
+   （字段 + public `clearTint` 的正常 build、`mUseLegacyDrawable=true` 的 legacy build、没有
+   `clearTint`、`clearTint` 是**包级私有**、以及连 `mTintBgDrawable` 字段都没有），共 105 条断言。
+   包级私有那一形状不是凑数：`Refl.callByName` 走 `getMethod`，看不到非 public 成员，所以「交不回槽
+   就置 null」这条兜底必须有；去掉这条兜底，只有那个形状会红。断言分两类：**源码契约钉**锁桌面看不见
+   的（槽名与 legacy 名仍是那两个、`GlyphDrawable` 不再乘一次 `glyphFit`、类里不出现任何
+   `WindowManager`/`addView` 窗口痕迹、`install` 写完必须读回校验、`uninstall` 是「先判归属 → 再求
+   MIUI 重建 → 最后才置 null」的次序、`TrioHooks` 里重绘必须由 `install` 的返回值 gate、总开关关闭
+   时必须 `uninstall`）；**执行级用例**驱动真类跑（首次抢槽、第二帧不重复抢且换的是同一个 drawable、
+   重新 `install` 会把旧 drawable 重新指向新 state、`draw` 交出去的宽高就是 `getBounds()` 的宽高、
+   零面积/零高/倒置的盒子不画也不刷新 state、`uninstall` 后槽归 MIUI、对持有 MIUI 自己 artwork 的
+   宿主**完全不打扰**、重复 `uninstall` 无害）。**负控实测七条**：`install` 去掉写回校验、反转载
+   bounds 守卫、`uninstall` 不再判归属、把「置 null」挪到 `clearTint` 之前、`drawState` 的宽高对调、
+   重新 `install` 不再重新指向 state、以及把 `getBounds()` 换成常量。其中**后三条只被执行级断言抓到**
+   （源码钉全部原样通过），证明这个探针的运行时那半独立承重，不是给契约钉当装饰。
+   五个脚本都只读源码、写到 `work\` 下编译，不碰 `app\src`。
    **垫片放在 `tests\shims`（入库）而不是 `work\preview\src`（`work\` 被 gitignore）**：`tests\glyph-scale.ps1`
    编译的是**真 `TrioRenderer`**，需要 `android/graphics/{Canvas,Paint,Path,RectF,Color,PorterDuff,
    Typeface}`、`android/view/View`、`android/{content/SharedPreferences,os/Bundle}` 与两个同名桌面替身
@@ -1760,6 +1791,10 @@ work\overview\                         全部支持样式的状态总览图（�
    （`tests\overlay-window.ps1` 不在此列：它自己生成 `android.view.WindowManager` 的三种桩，
    与 `tests\shims` 无关。）
    判断方法很简单：把 `work\preview\src` 改名后再跑，六个脚本都应仍 `exit 0`。
+
+   （已删除的 `tests\overlay-window.ps1` 曾不在此列：它自己生成 `android.view.WindowManager`
+   的三种桩，与 `tests\shims` 无关。）
+   判断方法很简单：把 `work\preview\src` 改名后再跑，五个脚本都应仍 `exit 0`。
    **注意它们不会被自动发现**，要手动跑：
    `powershell -NoProfile -ExecutionPolicy Bypass -File tests\battery-presence.ps1`。
    PS 5.1 下**必须**这样经由 `cmd`（或让脚本自己吞掉 javac 的 stderr）运行：javac 会往 stderr 写

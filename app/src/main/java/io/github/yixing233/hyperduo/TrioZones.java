@@ -85,7 +85,9 @@ public final class TrioZones {
         /** The in-glyph mobile network type, "5G" / "5GA". */
         TYPE,
         /** The second row of level dots, one per SIM. */
-        DUAL
+        DUAL,
+        /** The capsule's fixed left clock, editable but not removable. */
+        CLOCK
     }
 
     // ------------------------------------------------------------------ bounds
@@ -209,6 +211,50 @@ public final class TrioZones {
                 return new float[][] { {
                         0f, RING_CENTRE_BOTTOM, TrioGeometry.BOX, TrioGeometry.BOX } };
         }
+    }
+
+    /** Layout-aware regions, including the capsule's two readings and dot bands. */
+    public static float[][] boxes(Zone zone, TrioAppearance a) {
+        if (!a.capsule) {
+            return boxes(zone, a.rect);
+        }
+        final float stroke = a.ringStroke * TrioGeometry.CAP_STROKE_RATIO;
+        final float top = TrioGeometry.capInteriorTop(stroke);
+        final float bottom = TrioGeometry.capInteriorBottom(stroke);
+        final float split = TrioGeometry.capLeftCx(stroke)
+                + TrioGeometry.capTimeSlotWidth(stroke) / 2f + TrioGeometry.CAP_TEXT_GAP / 2f;
+        // Include the antialiased fringe outside the mathematical stroke bounds;
+        // this does not move the seams between the readings and signal rows.
+        final float fringe = 1f;
+        final float left = TrioGeometry.CAP_INK_X - fringe;
+        final float right = TrioGeometry.CAP_INK_X + TrioGeometry.CAP_INK_W + fringe;
+        if (zone == Zone.TOP) {
+            return new float[][] { { left, top, split, bottom } };
+        }
+        if (zone == Zone.CENTRE) {
+            return new float[][] { { split, top, right, bottom } };
+        }
+        return new float[][] {
+                { left, TrioGeometry.CAP_INK_Y - fringe, right, top },
+                { left, bottom, right, TrioGeometry.CAP_INK_Y + TrioGeometry.CAP_INK_H + fringe }
+        };
+    }
+
+    /** The same shared inverse transform, with style-aware region boundaries. */
+    public static Zone zoneAt(float[] transform, TrioAppearance a, float viewX, float viewY) {
+        if (a == null || transform == null || transform.length < 3 || transform[0] <= 0f) {
+            return null;
+        }
+        final float x = (viewX - transform[1]) / transform[0];
+        final float y = (viewY - transform[2]) / transform[0];
+        for (Zone zone : Zone.values()) {
+            for (float[] box : boxes(zone, a)) {
+                if (inside(box, x, y)) {
+                    return zone;
+                }
+            }
+        }
+        return null;
     }
 
     /** Whether a point in design units falls inside {@code box}. */
@@ -442,6 +488,15 @@ public final class TrioZones {
         if (a == null) {
             return null;
         }
+        if (a.capsule) {
+            final TrioAppearance.Capsule c = a.capsule(level, charging, wifiLevel, mobileType, sims);
+            if (zone == Zone.TOP) { return Part.CLOCK; }
+            if (zone == Zone.BOTTOM) { return c.dots ? Part.MOBILE : null; }
+            if (c.bolt) { return Part.BOLT; }
+            if (c.wifi) { return Part.WIFI; }
+            if (c.value) { return Part.VALUE; }
+            return c.type ? Part.TYPE : null;
+        }
         return a.rect
                 ? occupant(zone, a, a.rect(level, charging, wifiLevel, mobileType, sims))
                 : occupant(zone, a, a.ring(level, charging, wifiLevel, mobileType, sims));
@@ -498,6 +553,9 @@ public final class TrioZones {
         if (current == null) {
             return null;
         }
+        if (current.trioStyle == Prefs.STYLE_CAPSULE && zone == Zone.TOP) {
+            return want == Part.CLOCK ? new Assignment(current.copy(), 0) : null;
+        }
         final int level = ASSIGN_LEVEL;
         final int wifiLevel = ASSIGN_WIFI_LEVEL;
         final int slots = Math.max(0, sims);
@@ -553,9 +611,7 @@ public final class TrioZones {
     private static Part occupantOf(TrioSettings s, Zone zone, int level, boolean charging,
                                    int wifiLevel, int slots) {
         final TrioAppearance a = TrioAppearance.of(s);
-        return a.rect
-                ? occupant(zone, a, a.rect(level, charging, wifiLevel, ASSIGN_TYPE, slots))
-                : occupant(zone, a, a.ring(level, charging, wifiLevel, ASSIGN_TYPE, slots));
+        return occupant(zone, a, level, charging, wifiLevel, ASSIGN_TYPE, slots);
     }
 
     /**
@@ -662,6 +718,8 @@ public final class TrioZones {
                                                            Zone zone) {
         final java.util.List<TrioSettings> out = new java.util.ArrayList<>();
         final boolean[] bools = { false, true };
+        final boolean capsule = current.trioStyle == Prefs.STYLE_CAPSULE;
+        final boolean[] centres = capsule ? new boolean[] { current.valueCentred } : bools;
         // Keep an existing outside label when a request does not need to change it.
         // The editor places pieces inside the glyph, so it may preserve OUT_RING
         // but must not turn that separate label on as a side effect of clearing ink.
@@ -672,7 +730,7 @@ public final class TrioZones {
         // The dual reading only ever adds a second row to the ring's notch, so it is
         // the one switch worth varying only for that zone. Everywhere else it is held
         // where the user had it.
-        final boolean[] duals = (!rect && zone == Zone.TOP) ? bools
+        final boolean[] duals = (!capsule && !rect && zone == Zone.TOP) ? bools
                 : new boolean[] { current.dualSim };
         // The signal meter's switch decides whether the bottom band and the
         // rectangle's columns hold anything, so it is varied there and held
@@ -683,7 +741,7 @@ public final class TrioZones {
 
         for (boolean wifi : bools) {
             for (boolean value : bools) {
-                for (boolean centred : bools) {
+                for (boolean centred : centres) {
                     for (boolean bolt : bools) {
                         for (boolean dual : duals) {
                             for (int typeMode : typeModes) {

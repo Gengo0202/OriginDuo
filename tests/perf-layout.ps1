@@ -137,6 +137,11 @@ $inkScale1=[regex]::Match($rend,'(?s)static float inkScale\(int w, int h\) \{.*?
 if(!$inkScale1){throw 'Production inkScale(w,h) missing'}
 $inkScale2=[regex]::Match($rend,'(?s)static float inkScale\(int w, int h, boolean rect\) \{.*?\n    \}').Value
 if(!$inkScale2){throw 'Production inkScale(w,h,rect) missing'}
+# The style-keyed overload. perfTextSize picks its ink box from the style, so the
+# probe needs the same three-way fit the glyph is drawn with - without it the
+# spliced perfTextSize below would not compile at all.
+$inkScale4=[regex]::Match($rend,'(?s)static float inkScale\(int w, int h, int style\) \{.*?\n    \}').Value
+if(!$inkScale4){throw 'Production inkScale(w,h,style) missing'}
 $inkScale3=[regex]::Match($rend,'(?s)static float inkScale\(int w, int h, float inkW, float inkH\) \{.*?\n    \}').Value
 if(!$inkScale3){throw 'Production inkScale(w,h,inkW,inkH) missing'}
 $typefaceFor=[regex]::Match($rend,'(?s)static Typeface typefaceFor\(int weight\) \{.*?\n    \}').Value
@@ -149,6 +154,26 @@ $inkH=[regex]::Match($geom,'static final float INK_H = ([0-9.]+)f;').Groups[1].V
 $rectInkW=[regex]::Match($geom,'static final float RECT_INK_W = ([0-9.]+)f;').Groups[1].Value
 $rectInkH=[regex]::Match($geom,'static final float RECT_INK_H = ([0-9.]+)f;').Groups[1].Value
 if(!$inkW -or !$inkH -or !$rectInkW -or !$rectInkH){throw 'could not read the ink boxes from TrioGeometry'}
+# The capsule's ink box is derived, not a literal: it is the outline's bounds
+# grown by half the heaviest stroke the slider offers. Its inputs are read and its
+# derivation is emitted verbatim, so the harness measures with the production
+# arithmetic instead of a transcription of it that could silently disagree.
+$capLeft=[regex]::Match($geom,'static final float CAP_LEFT = ([0-9.]+)f;').Groups[1].Value
+$capRight=[regex]::Match($geom,'static final float CAP_RIGHT = ([0-9.]+)f;').Groups[1].Value
+$capTop=[regex]::Match($geom,'static final float CAP_TOP = ([0-9.]+)f;').Groups[1].Value
+$capBottom=[regex]::Match($geom,'static final float CAP_BOTTOM = ([0-9.]+)f;').Groups[1].Value
+$capStrokeRatio=[regex]::Match($geom,'static final float CAP_STROKE_RATIO = ([0-9.]+)f;').Groups[1].Value
+$maxRingStroke=[regex]::Match($prefs,'static final int MAX_RING_STROKE = (\d+);').Groups[1].Value
+if(!$capLeft -or !$capRight -or !$capTop -or !$capBottom -or !$capStrokeRatio -or !$maxRingStroke){
+    throw 'could not read the capsule ink inputs from TrioGeometry/Prefs'}
+$capInkDerivation=[regex]::Match($geom,'(?s)static final float CAP_INK_X =.*?CAP_INK_H =[^;]*;').Value
+if(!$capInkDerivation){throw 'could not read the capsule ink derivation from TrioGeometry'}
+# The style ordinals, read for the same reason: the spliced inkScale(w,h,style)
+# switches on them, and a stub that restated 0/1/2 could drift from the real ones.
+$styleRing=[regex]::Match($prefs,'static final int STYLE_RING = (\d+);').Groups[1].Value
+$styleRect=[regex]::Match($prefs,'static final int STYLE_RECT = (\d+);').Groups[1].Value
+$styleCapsule=[regex]::Match($prefs,'static final int STYLE_CAPSULE = (\d+);').Groups[1].Value
+if(!$styleRing -or !$styleRect -or !$styleCapsule){throw 'could not read the style ordinals from Prefs'}
 $minSize=[regex]::Match($hooks,'static final float PERF_MIN_SIZE_RATIO = ([0-9.]+)f;').Groups[1].Value
 $minSpace=[regex]::Match($hooks,'static final float PERF_MIN_LINE_SPACING = ([0-9.]+)f;').Groups[1].Value
 if(!$minSize -or !$minSpace){throw 'could not read the perf floors from TrioHooks'}
@@ -402,6 +427,13 @@ final class TrioGeometry {
     static final float INK_H = $($inkH)f;
     static final float RECT_INK_W = $($rectInkW)f;
     static final float RECT_INK_H = $($rectInkH)f;
+    static final float CAP_LEFT = $($capLeft)f;
+    static final float CAP_RIGHT = $($capRight)f;
+    static final float CAP_TOP = $($capTop)f;
+    static final float CAP_BOTTOM = $($capBottom)f;
+    static final float CAP_STROKE_RATIO = $($capStrokeRatio)f;
+
+    $capInkDerivation
 }
 "@
 
@@ -416,6 +448,12 @@ final class Prefs {
     static final int MAX_GLYPH_SCALE = $maxGlyphScale;
     static final int MIN_PERF_WEIGHT = $minPerfWeight;
     static final int MAX_PERF_WEIGHT = $maxPerfWeight;
+    static final int MAX_RING_STROKE = $maxRingStroke;
+    // The style ordinals the spliced inkScale(w,h,style) switches on, read from
+    // the real Prefs so the stub cannot disagree with the renderer about them.
+    static final int STYLE_RING = $styleRing;
+    static final int STYLE_RECT = $styleRect;
+    static final int STYLE_CAPSULE = $styleCapsule;
 
     $clamp
 }
@@ -427,6 +465,8 @@ package io.github.yixing233.hyperduo;
 /** Only the fields the size fit reads, plus the real accessors. */
 final class TrioAppearance {
     boolean rect;
+    boolean capsule;
+    int style;
     int typeWeight = 400;
     int outTypeSize = 14;
     int perfScale = 100;
@@ -463,6 +503,8 @@ final class TrioRenderer {
     $inkScale1
 
     $inkScale2
+
+    $inkScale4
 
     $inkScale3
 

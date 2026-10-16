@@ -100,6 +100,11 @@ public final class TrioPreviewView extends View {
 
     public void setSettings(TrioSettings value) {
         this.settings = value == null ? TrioSettings.defaults() : value;
+        // This View belongs to the settings process: use synthetic time just as
+        // its battery and SIM readings are synthetic. SystemUI uses ClockTicker.
+        if (this.settings.trioStyle == Prefs.STYLE_CAPSULE && TrioState.sClockText.isEmpty()) {
+            TrioState.sClockText = "19:41";
+        }
         invalidate();
     }
 
@@ -222,7 +227,7 @@ public final class TrioPreviewView extends View {
         if (t == null) {
             return null;
         }
-        return TrioZones.zoneAt(t, settings.trioStyle == Prefs.STYLE_RECT, x, y);
+        return TrioZones.zoneAt(t, TrioAppearance.of(settings), x, y);
     }
 
     /**
@@ -313,8 +318,7 @@ public final class TrioPreviewView extends View {
         guidePaint.setColor(highlightColor);
         guidePaint.setStrokeWidth(Math.max(1f, HIGHLIGHT_STROKE_DP * density));
 
-        final boolean rect = settings.trioStyle == Prefs.STYLE_RECT;
-        for (float[] box : TrioZones.boxes(highlight, rect)) {
+        for (float[] box : TrioZones.boxes(highlight, TrioAppearance.of(settings))) {
             // Two opposite corners is enough: the transform is a uniform scale and
             // a translation, so an axis-aligned box stays axis-aligned.
             if (!TrioZones.toView(t, box[0], box[1], guidePoint)) {

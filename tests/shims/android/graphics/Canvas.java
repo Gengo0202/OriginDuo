@@ -95,6 +95,18 @@ public class Canvas {
         apply(paint, path.delegate);
     }
 
+    /**
+     * A stroked straight line. Needed by the capsule arrangement, which walks its
+     * outline in segments so the charged fraction is exactly the fraction drawn.
+     * Java2D has no call that honours the Android paint's stroke, so the stroke is
+     * taken from the paint the same way {@link #apply} takes it.
+     */
+    public void drawLine(float x1, float y1, float x2, float y2, Paint paint) {
+        g.setColor(new java.awt.Color(paint.getColor(), true));
+        g.setStroke(paint.stroke());
+        g.draw(new java.awt.geom.Line2D.Float(x1, y1, x2, y2));
+    }
+
     public void drawText(String text, float x, float y, Paint paint) {
         g.setColor(new java.awt.Color(paint.getColor(), true));
         java.awt.Font font = paint.font();

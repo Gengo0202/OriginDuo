@@ -38,14 +38,18 @@ public final class TrioSettings {
      */
     public boolean valueCentred;
     /**
-     * Which three-in-one layout is drawn: {@link Prefs#STYLE_RING} or
-     * {@link Prefs#STYLE_RECT}. Clamped to that range wherever it is read.
+     * Which three-in-one layout is drawn: {@link Prefs#STYLE_RING},
+     * {@link Prefs#STYLE_RECT} or {@link Prefs#STYLE_CAPSULE}. Clamped to that
+     * range wherever it is read.
      *
-     * <p>Both arrangements read the same keys, but they are not interchangeable:
-     * the rectangular one ignores {@link #valueCentred} (its value has a fixed
-     * place) and reads {@link #arcStroke} as the Wi-Fi arcs' stroke width, which
-     * also decides their vertical position. {@link TrioAppearance} is where those
-     * differences are resolved, so nothing else has to know them.
+     * <p>All three read the same keys, but they are not interchangeable: the
+     * rectangular one ignores {@link #valueCentred} (its value has a fixed place)
+     * and reads {@link #arcStroke} as the Wi-Fi arcs' stroke width, which also
+     * decides their vertical position; the capsule ignores {@link #valueCentred}
+     * too, draws the time inside the glyph - which is what makes it hide the
+     * bar's own clock, see {@link TrioAppearance#hidesStatusClock()} - and reads
+     * {@link #ringStroke} as the outline's thickness. {@link TrioAppearance} is
+     * where those differences are resolved, so nothing else has to know them.
      */
     public int trioStyle;
     /**
@@ -82,15 +86,6 @@ public final class TrioSettings {
      * icon in place the module draws no signal for this to narrow.
      */
     public boolean dataSimOnly;
-    /**
-     * Draws the glyph in a window of its own instead of in the status bar view.
-     *
-     * <p>Stored under the frozen key {@link Prefs#KEY_OVERLAY}. The status bar
-     * window is about 43dp tall and clips what it cannot show; this flag is what
-     * lets the glyph be drawn whole, at the price of hanging below the bar's own
-     * background.
-     */
-    public boolean overlayGlyph;
 
     public boolean roleColors;
     public int criticalOnDark;
@@ -106,6 +101,14 @@ public final class TrioSettings {
     public int valueSize;
     /** Numeric font weight of the value/type text, 100..900. */
     public int valueWeight;
+    /**
+     * Size and weight of the time in the capsule's left-hand slot. Independent of
+     * {@link #valueSize}/{@link #valueWeight}: the two slots hold different
+     * strings and are read differently, so a change made for one must not move the
+     * other. Defaults equal the value's, so nothing changes until it is touched.
+     */
+    public int clockSize;
+    public int clockWeight;
     /**
      * Size and weight of the centred network type ("5G", "5GA"). Independent of
      * {@link #valueSize}/{@link #valueWeight}: the type is a label of its own,
@@ -215,7 +218,6 @@ public final class TrioSettings {
         s.signalMode = Prefs.DEF_SIGNAL_MODE;
         s.stackedSignal = Prefs.DEF_STACKED_SIGNAL;
         s.dataSimOnly = Prefs.DEF_DATA_SIM_ONLY;
-        s.overlayGlyph = Prefs.DEF_OVERLAY;
         s.perfPower = Prefs.DEF_PERF_POWER;
         s.perfTemp = Prefs.DEF_PERF_TEMP;
         s.perfScale = Prefs.DEF_PERF_SCALE;
@@ -235,6 +237,8 @@ public final class TrioSettings {
         s.arcStroke = Prefs.DEF_ARC_STROKE;
         s.valueSize = Prefs.DEF_VALUE_SIZE;
         s.valueWeight = Prefs.DEF_VALUE_WEIGHT;
+        s.clockSize = Prefs.DEF_CLOCK_SIZE;
+        s.clockWeight = Prefs.DEF_CLOCK_WEIGHT;
         s.typeSize = Prefs.DEF_TYPE_SIZE;
         s.outTypeSize = Prefs.DEF_OUT_TYPE_SIZE_DP;
         s.outSignalSize = Prefs.DEF_OUT_SIGNAL_SIZE;
@@ -288,7 +292,6 @@ public final class TrioSettings {
                 Prefs.MIN_SIGNAL_MODE, Prefs.MAX_SIGNAL_MODE);
         s.stackedSignal = p.getBoolean(Prefs.KEY_STACKED_SIGNAL, Prefs.DEF_STACKED_SIGNAL);
         s.dataSimOnly = p.getBoolean(Prefs.KEY_DATA_SIM_ONLY, Prefs.DEF_DATA_SIM_ONLY);
-        s.overlayGlyph = p.getBoolean(Prefs.KEY_OVERLAY, Prefs.DEF_OVERLAY);
         s.perfPower = p.getBoolean(Prefs.KEY_PERF_POWER, Prefs.DEF_PERF_POWER);
         s.perfTemp = p.getBoolean(Prefs.KEY_PERF_TEMP, Prefs.DEF_PERF_TEMP);
         s.perfScale = Prefs.clamp(
@@ -324,6 +327,18 @@ public final class TrioSettings {
         s.valueWeight = Prefs.clamp(
                 p.getInt(Prefs.KEY_VALUE_WEIGHT, Prefs.DEF_VALUE_WEIGHT),
                 Prefs.MIN_VALUE_WEIGHT, Prefs.MAX_VALUE_WEIGHT);
+        // The clock falls back to the value's OWN size and weight, not to the
+        // constants: before these two keys existed the time was drawn at exactly
+        // the value's size, so an install that had already moved that slider to 40
+        // must keep a 40-sized clock rather than snap back to the 36 default. The
+        // constants are the same numbers, but only the fallback makes the upgrade
+        // invisible for a user who had changed the old setting.
+        s.clockSize = Prefs.clamp(
+                p.getInt(Prefs.KEY_CLOCK_SIZE, s.valueSize),
+                Prefs.MIN_CLOCK_SIZE, Prefs.MAX_CLOCK_SIZE);
+        s.clockWeight = Prefs.clamp(
+                p.getInt(Prefs.KEY_CLOCK_WEIGHT, s.valueWeight),
+                Prefs.MIN_CLOCK_WEIGHT, Prefs.MAX_CLOCK_WEIGHT);
         s.typeSize = Prefs.clamp(
                 p.getInt(Prefs.KEY_TYPE_SIZE, Prefs.DEF_TYPE_SIZE),
                 Prefs.MIN_TYPE_SIZE, Prefs.MAX_TYPE_SIZE);
@@ -446,7 +461,6 @@ public final class TrioSettings {
         s.signalMode = signalMode;
         s.stackedSignal = stackedSignal;
         s.dataSimOnly = dataSimOnly;
-        s.overlayGlyph = overlayGlyph;
         s.perfPower = perfPower;
         s.perfTemp = perfTemp;
         s.perfScale = perfScale;
@@ -466,6 +480,8 @@ public final class TrioSettings {
         s.arcStroke = arcStroke;
         s.valueSize = valueSize;
         s.valueWeight = valueWeight;
+        s.clockSize = clockSize;
+        s.clockWeight = clockWeight;
         s.typeSize = typeSize;
         s.outTypeSize = outTypeSize;
         s.outSignalSize = outSignalSize;
@@ -510,7 +526,6 @@ public final class TrioSettings {
             case Prefs.KEY_SIGNAL_MODE: signalMode = src.signalMode; return true;
             case Prefs.KEY_STACKED_SIGNAL: stackedSignal = src.stackedSignal; return true;
             case Prefs.KEY_DATA_SIM_ONLY: dataSimOnly = src.dataSimOnly; return true;
-            case Prefs.KEY_OVERLAY: overlayGlyph = src.overlayGlyph; return true;
             case Prefs.KEY_PERF_POWER: perfPower = src.perfPower; return true;
             case Prefs.KEY_PERF_TEMP: perfTemp = src.perfTemp; return true;
             case Prefs.KEY_PERF_SCALE: perfScale = src.perfScale; return true;
@@ -528,6 +543,8 @@ public final class TrioSettings {
             case Prefs.KEY_ARC_STROKE: arcStroke = src.arcStroke; return true;
             case Prefs.KEY_VALUE_SIZE: valueSize = src.valueSize; return true;
             case Prefs.KEY_VALUE_WEIGHT: valueWeight = src.valueWeight; return true;
+            case Prefs.KEY_CLOCK_SIZE: clockSize = src.clockSize; return true;
+            case Prefs.KEY_CLOCK_WEIGHT: clockWeight = src.clockWeight; return true;
             case Prefs.KEY_TYPE_SIZE: typeSize = src.typeSize; return true;
             case Prefs.KEY_OUT_TYPE_SIZE_DP: outTypeSize = src.outTypeSize; return true;
             case Prefs.KEY_OUT_SIGNAL_SIZE: outSignalSize = src.outSignalSize; return true;
@@ -571,7 +588,6 @@ public final class TrioSettings {
                 Prefs.MIN_SIGNAL_MODE, Prefs.MAX_SIGNAL_MODE);
         s.stackedSignal = bundle.getBoolean(Prefs.KEY_STACKED_SIGNAL, Prefs.DEF_STACKED_SIGNAL);
         s.dataSimOnly = bundle.getBoolean(Prefs.KEY_DATA_SIM_ONLY, Prefs.DEF_DATA_SIM_ONLY);
-        s.overlayGlyph = bundle.getBoolean(Prefs.KEY_OVERLAY, Prefs.DEF_OVERLAY);
         s.perfPower = bundle.getBoolean(Prefs.KEY_PERF_POWER, Prefs.DEF_PERF_POWER);
         s.perfTemp = bundle.getBoolean(Prefs.KEY_PERF_TEMP, Prefs.DEF_PERF_TEMP);
         s.perfScale = Prefs.clamp(
@@ -607,6 +623,15 @@ public final class TrioSettings {
         s.valueWeight = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_VALUE_WEIGHT, Prefs.DEF_VALUE_WEIGHT),
                 Prefs.MIN_VALUE_WEIGHT, Prefs.MAX_VALUE_WEIGHT);
+        // Falls back to the value's own, as in from(SharedPreferences): a bundle
+        // that predates these keys - or a sender that simply omits them - keeps the
+        // shared-size look rather than snapping the time to a constant.
+        s.clockSize = Prefs.clamp(
+                bundle.getInt(Prefs.KEY_CLOCK_SIZE, s.valueSize),
+                Prefs.MIN_CLOCK_SIZE, Prefs.MAX_CLOCK_SIZE);
+        s.clockWeight = Prefs.clamp(
+                bundle.getInt(Prefs.KEY_CLOCK_WEIGHT, s.valueWeight),
+                Prefs.MIN_CLOCK_WEIGHT, Prefs.MAX_CLOCK_WEIGHT);
         s.typeSize = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_TYPE_SIZE, Prefs.DEF_TYPE_SIZE),
                 Prefs.MIN_TYPE_SIZE, Prefs.MAX_TYPE_SIZE);
@@ -678,7 +703,6 @@ public final class TrioSettings {
         b.putInt(Prefs.KEY_SIGNAL_MODE, signalMode);
         b.putBoolean(Prefs.KEY_STACKED_SIGNAL, stackedSignal);
         b.putBoolean(Prefs.KEY_DATA_SIM_ONLY, dataSimOnly);
-        b.putBoolean(Prefs.KEY_OVERLAY, overlayGlyph);
         b.putBoolean(Prefs.KEY_PERF_POWER, perfPower);
         b.putBoolean(Prefs.KEY_PERF_TEMP, perfTemp);
         b.putInt(Prefs.KEY_PERF_SCALE, perfScale);
@@ -698,6 +722,8 @@ public final class TrioSettings {
         b.putInt(Prefs.KEY_ARC_STROKE, arcStroke);
         b.putInt(Prefs.KEY_VALUE_SIZE, valueSize);
         b.putInt(Prefs.KEY_VALUE_WEIGHT, valueWeight);
+        b.putInt(Prefs.KEY_CLOCK_SIZE, clockSize);
+        b.putInt(Prefs.KEY_CLOCK_WEIGHT, clockWeight);
         b.putInt(Prefs.KEY_TYPE_SIZE, typeSize);
         b.putInt(Prefs.KEY_OUT_TYPE_SIZE_DP, outTypeSize);
         b.putInt(Prefs.KEY_OUT_SIGNAL_SIZE, outSignalSize);
@@ -739,16 +765,6 @@ public final class TrioSettings {
                 && signalMode == s.signalMode
                 && stackedSignal == s.stackedSignal
                 && dataSimOnly == s.dataSimOnly
-                // Overlay decides where the glyph is drawn rather than what it
-                // draws, which is why it was easy to leave out - but it is a
-                // stored setting like any other, and leaving it out of equals
-                // is not harmless: the settings screen holds the snapshot in a
-                // mutableStateOf, whose default policy is equality, so a write
-                // that changed only this field compared equal to the previous
-                // snapshot, no recomposition was scheduled, and the switch went
-                // on showing its old state until some other write happened to
-                // recompose the row. issue 25.
-                && overlayGlyph == s.overlayGlyph
                 // The two performance readouts are stored settings like any
                 // other, and the same issue 25 trap applies: the settings screen
                 // holds the snapshot in a mutableStateOf whose default policy is
@@ -781,6 +797,8 @@ public final class TrioSettings {
                 && arcStroke == s.arcStroke
                 && valueSize == s.valueSize
                 && valueWeight == s.valueWeight
+                && clockSize == s.clockSize
+                && clockWeight == s.clockWeight
                 && typeSize == s.typeSize
                 && outTypeSize == s.outTypeSize
                 && outSignalSize == s.outSignalSize

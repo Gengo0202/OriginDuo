@@ -3,7 +3,6 @@ package io.github.yixing233.hyperduo;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.PorterDuff;
 import android.graphics.Typeface;
 import android.os.Handler;
 import android.os.Looper;
@@ -36,10 +35,19 @@ import io.github.libxposed.api.XposedModule;
  * bookkeeping.
  *
  * <h3>Why the trio glyph is drawn from the battery icon view</h3>
- * {@code MiuiBatteryMeterIconView} is already measured 28dp x 20dp
+ * {@code MiuiBatteryMeterIconView} is measured 28dp x 20dp
  * ({@code battery_meter_width} x {@code status_bar_icon_height}) and its native
  * {@code onDraw} clears the canvas itself, so drawing after {@code proceed()}
  * takes the icon over completely without any view-tree surgery.
+ *
+ * <p>That 28dp is the width of <em>MIUI's</em> battery, which is a narrow vertical
+ * shape. The ring and the rectangle fit it well enough - they are roughly square -
+ * but the capsule is wide, and in the stock box its fit is decided by the width and
+ * it comes out short. So {@link #hookBatteryIconView} also answers that view's
+ * {@code onMeasure} with the width the capsule's own aspect ratio needs for the
+ * height the bar offered, and nothing else has to be told: the meter and the
+ * container both add up their child's measured width, so the slot widens and the
+ * bar makes room. The other two arrangements are passed straight through.
  *
  * <h3>Why {@code ignoredSlots} alone leaves a ghost, and what fixes it</h3>
  * {@code ModernStatusBarView.isIconVisible()} is driven by the binding and the anim
@@ -191,9 +199,7 @@ final class TrioHooks {
      * reads the flag rather than walking for the container, because the ask
      * happens in contexts ({@code foldedSlots} during a layout, the draw gate)
      * where no container is at hand - and the flag is global by nature: MIUI
-     * hides the battery of every container at once. The glyph window of
-     * {@link TrioOverlay} reads it for the same reason the draw gate does: a
-     * battery that MIUI is not painting has no row the window may cover.
+     * hides the battery of every container at once.
      */
     static boolean islandHideBattery() {
         return TrioState.sIslandHideBattery;
@@ -208,8 +214,8 @@ final class TrioHooks {
     /**
      * The status bar view itself ({@code MiuiPhoneStatusBarView}), the row the
      * glyph shares with the clock, the notification icons and the system icons.
-     * Kept so the module can tell the bar's own row from the same views the
-     * keyguard and the control centre inflate - see {@link #isStatusBarHost}.
+     * Kept so {@link #invalidateHosts()} can ask that one row to lay out again
+     * instead of the keyguard's and the control centre's copies of it.
      */
     private static volatile View sStatusBarView;
 
@@ -306,6 +312,32 @@ final class TrioHooks {
     /** Hard cap on container headers, including {@code owned} flips. */
     private static volatile int sDiagHeaders;
 
+    /**
+     * The status bar's own clock, once the bar has been inflated.
+     *
+     * <p>Held as a strong reference on purpose, unlike the host and container
+     * maps: there is one status bar and one clock for the life of the process, so
+     * this cannot pin a discarded view - and the visibility has to be re-asserted
+     * on a layout path that must not go looking for the clock every frame.
+     */
+    private static volatile View sStatusClock;
+    /** {@code MiuiClock.setMultiTaskVisibility(int)}, resolved once. */
+    private static volatile Method sClockSetter;
+    /** Whether the clock currently carries the module's hiding. */
+    private static volatile boolean sClockHidden;
+    /** One diagnostic line for the capsule's widened host, so a loop cannot flood. */
+    private static volatile boolean sLoggedCapsuleMeasure;
+    /**
+     * {@code View.setMeasuredDimension}, resolved once.
+     *
+     * <p>Via {@code View.class} rather than the icon class: the method is declared
+     * on View and merely inherited, and {@code Refl.method} uses
+     * {@code getDeclaredMethod}, which does not walk up the hierarchy - asking the
+     * icon class for it would silently return null and the widening would quietly
+     * never happen.
+     */
+    private static volatile Method sSetMeasuredDimension;
+
     private TrioHooks() {
     }
 
@@ -337,10 +369,6 @@ final class TrioHooks {
         hooked += group(module, cl, 12);
         hooked += group(module, cl, 13);
         hooked += group(module, cl, 14);
-        hooked += group(module, cl, 15);
-        hooked += group(module, cl, 16);
-        hooked += group(module, cl, 17);
-        hooked += group(module, cl, 18);
         log(module, "HyperDuo installed, hooks=" + hooked
                 + " enabled=" + TrioConfig.get().enabled);
     }
@@ -460,6 +488,14 @@ final class TrioHooks {
         // every declined island with its real values. Under the new enable the
         // same replay re-declines them, which is the state the hooks want.
         replayBatteryIslandRequests();
+        // Last, because it is the only step that can add ink the user has not
+        // seen yet: switching to the capsule mid-minute would otherwise leave its
+        // left slot empty until the next minute boundary, which reads as the
+        // style being broken rather than as the clock not having ticked.
+        ClockTicker.refreshNow();
+        // The bar's own clock follows the same switch the capsule's does, and both
+        // directions matter: leaving the capsule has to give the time back.
+        applyClockVisibility();
     }
 
     /**
@@ -710,14 +746,10 @@ final class TrioHooks {
                 case 8: return hookMobileTypeVisibility(module, cl);
                 case 9: return hookMeterTint(module, cl);
                 case 10: return hookIslandHide(module, cl);
-                case 11: return hookShadeExpansion(module, cl);
-                case 12: return hookOverviewGesture(module, cl);
-                case 13: return hookOverviewProxy(module, cl);
-                case 14: return hookOverviewProgress(module, cl);
-                case 15: return hookLaunchAnimation(module, cl);
-                case 16: return hookIconTint(module, cl);
-                case 17: return hookKeyguardBar(module, cl);
-                case 18: return hookIconAdded(module, cl);
+                case 11: return hookIconTint(module, cl);
+                case 12: return hookKeyguardBar(module, cl);
+                case 13: return hookIconAdded(module, cl);
+                case 14: return hookStatusClock(module, cl);
                 default: return 0;
             }
         } catch (Throwable t) {
@@ -797,6 +829,11 @@ final class TrioHooks {
             log(module, "MiuiBatteryMeterIconView missing");
             return 0;
         }
+        // Resolved through the class rather than through the instance, because
+        // View.setMeasuredDimension is protected and only a subclass may call it
+        // directly - this hook is an outside writer, so it goes through reflection.
+        sSetMeasuredDimension = Refl.method(View.class, "setMeasuredDimension",
+                int.class, int.class);
         final int a = hook(module, Refl.method(icon, "onDraw", Canvas.class),
                 "hyperduo-draw", new XposedInterface.Hooker() {
                     @Override
@@ -837,58 +874,28 @@ final class TrioHooks {
                                 recolourOutRing(state, ink);
                             }
                             final Canvas canvas = (Canvas) canvasArg;
-                            // Drawing is the one signal that cannot lie about
-                            // whether this host is on screen: a hidden window is
-                            // never drawn, and a bar that comes back - the shade
-                            // over a full-screen app, for instance - starts
-                            // drawing again. TrioOverlay uses the timestamp.
-                            TrioOverlay.noteDrawn(host);
-                            // The bar window is only status_bar_height tall and
-                            // clips everything past it. Growing the row inside it
-                            // was tried and abandoned: MIUI's own measure chain
-                            // re-derives the size of every box on the way up, so
-                            // each level fixed exposed the next one. The glyph is
-                            // drawn in a window of its own instead; all that is
-                            // left here is erasing MIUI's own battery drawing so
-                            // the two cannot show at once.
-                            final TrioOverlay overlay = TrioOverlay.active(host, state);
-                            if (overlay != null) {
-                                overlay.sync();
-                                if (overlay.covering()) {
-                                    // The window is painting the glyph, so this
-                                    // row has to stay blank: painting here as
-                                    // well is what put two glyphs on screen, a
-                                    // few pixels apart.
-                                    canvas.drawColor(0, PorterDuff.Mode.CLEAR);
-                                } else {
-                                    // The window is not painting - the shade is
-                                    // moving, the bar is off screen - so the row
-                                    // draws the glyph itself and the trio stays
-                                    // with the bar instead of blinking out.
-                                    TrioRenderer.draw(canvas, host, state);
-                                }
-                            } else if (TrioOverlay.coveringBar() && isStatusBarHost(host)) {
-                                // Another view on the bar's own row owns the glyph
-                                // window (MIUI inflates more than one battery view
-                                // there). This one has to stay blank: painting the
-                                // glyph here as well is what put two of them on
-                                // screen, a few pixels apart, whenever the bar was
-                                // laid out again - a dark-mode switch, an app with
-                                // its own bar colour, a configuration change.
-                                //
-                                // Gated on a window actually existing: with the
-                                // switch off there is none, and blanking the row
-                                // here is what made the glyph disappear entirely
-                                // when the window route was turned off.
-                                canvas.drawColor(0, PorterDuff.Mode.CLEAR);
-                            } else {
+                            // The glyph is painted by the icon view itself, from
+                            // the drawable this puts into MIUI's own tint slot -
+                            // see GlyphDrawable. Nothing is left of the window
+                            // that used to be opened here: the canvas, its
+                            // bounds and its clip are the platform's again, so
+                            // there is nothing to keep in step with the bar and
+                            // nothing for the platform to read as an overlay.
+                            if (GlyphDrawable.install(host, state)) {
+                                // The frame that took the slot still has MIUI's
+                                // own battery on it - the drawable only starts
+                                // being asked from the next one. Paint the
+                                // glyph here as well, so the two never trade
+                                // places on screen.
                                 TrioRenderer.draw(canvas, host, state);
                             }
                         } else if (self instanceof View) {
-                            // The master switch is off. Any window this host opened
-                            // earlier has to go with it, or the glyph would keep
-                            // floating above a status bar that is back to stock.
-                            TrioOverlay.release((View) self);
+                            // The master switch is off. The slot has to go back,
+                            // or MIUI's own battery would stay hidden behind a
+                            // glyph belonging to a module that is switched off -
+                            // and the slot outlives every redraw, so nothing
+                            // else would ever take it back.
+                            GlyphDrawable.uninstall((View) self);
                         }
                         return result;
                     }
@@ -905,7 +912,74 @@ final class TrioHooks {
                         return result;
                     }
                 });
-        return a + b;
+        // The host is MIUI's own battery icon, and MIUI measures it to
+        // `battery_meter_width` - 28dp, the width of the narrow vertical battery
+        // MIUI draws. The capsule is a wide shape, so inside that box the fit is
+        // decided by the width and the glyph comes out short: measured on the
+        // reference device at 84x46px inside a 60px-tall bar, with fourteen pixels
+        // of the bar's height going unused and the shape reading as a squashed
+        // pill.
+        //
+        // Answering with the width the capsule's own aspect ratio needs for the
+        // height MIUI just chose is the whole fix, and nothing has to be told
+        // about it: MiuiBatteryMeterView.onMeasure does not measure its icon child
+        // at all, it adds up mBatteryDigitalView.getMeasuredWidth(), and
+        // MiuiStatusBatteryContainer.onMeasure adds up the meter's - so widening
+        // this one view widens the battery slot and the bar makes room for it on
+        // its own.
+        //
+        // Only for the capsule. The ring and the rectangle are as tall as they are
+        // wide and are content in the stock box, so they are left exactly as MIUI
+        // measured them - a pass-through, not a re-measure, so nothing about the
+        // other two arrangements can shift.
+        final int c = hook(module, Refl.method(icon, "onMeasure", int.class, int.class),
+                "hyperduo-icon-measure", new XposedInterface.Hooker() {
+                    @Override
+                    public Object intercept(XposedInterface.Chain chain) throws Throwable {
+                        final Object result = chain.proceed();
+                        final Object self = chain.getThisObject();
+                        if (!(self instanceof View)) {
+                            return result;
+                        }
+                        final View view = (View) self;
+                        try {
+                            final TrioAppearance a = TrioConfig.appearance();
+                            if (!a.glyph || !a.capsule) {
+                                return result;
+                            }
+                            // Taken from the height MIUI just settled on rather
+                            // than from the measure spec: that is the height the
+                            // glyph is about to be drawn into, so the request and
+                            // the drawing cannot be computed from different
+                            // numbers, and no spec mode has to be interpreted.
+                            final int height = view.getMeasuredHeight();
+                            final int width = TrioGeometry.capHostWidthPx(height);
+                            final Method setter = sSetMeasuredDimension;
+                            if (width > 0 && width != view.getMeasuredWidth()
+                                    && setter != null) {
+                                // Reflectively, because View.setMeasuredDimension is
+                                // protected: only a subclass may call it on itself,
+                                // and this is an outside writer. It is part of the
+                                // SDK stubs, so it is not a hidden API and no
+                                // restriction applies.
+                                Refl.invokeArgs(setter, view, new Object[] {
+                                        Integer.valueOf(width), Integer.valueOf(height) });
+                                if (debugLog() && !sLoggedCapsuleMeasure) {
+                                    sLoggedCapsuleMeasure = true;
+                                    log(LOG_INFO, "capsule host widened to "
+                                            + width + "x" + height);
+                                }
+                            }
+                        } catch (Throwable t) {
+                            // A throw out of onMeasure takes the whole layout pass
+                            // down, so a failure here leaves MIUI's own measurement
+                            // standing instead of propagating.
+                            log(LOG_WARN, "capsule measure failed: " + t);
+                        }
+                        return result;
+                    }
+                });
+        return a + b + c;
     }
 
     private static int hookBatteryMeterView(XposedModule module, ClassLoader cl) {
@@ -1539,216 +1613,9 @@ final class TrioHooks {
                                     final View host = hostIn(row);
                                     if (host != null) {
                                         host.invalidate();
-                                        TrioOverlay.invalidate(host);
                                     }
                                 }
                             }
-                        }
-                        return result;
-                    }
-                });
-    }
-
-    /**
-     * The one hooker both expansion entry points share: the panel's injector
-     * step and the controller's own setter. Whichever one a given drag path
-     * takes, the window hears about it on the same frame.
-     */
-    private static final XposedInterface.Hooker SHADE_HOOKER = new XposedInterface.Hooker() {
-        @Override
-        public Object intercept(XposedInterface.Chain chain) throws Throwable {
-            final Object result = chain.proceed();
-            final Object height = chain.getArg(0);
-            if (height instanceof Float) {
-                noteShadeInjector(chain.getThisObject());
-                TrioOverlay.onShadeHeight((Float) height);
-            }
-            return result;
-        }
-    };
-
-    /**
-     * Learns when the shade is being pulled down, so the glyph window can leave
-     * the screen on the first frame of the drag instead of after the animation.
-     *
-     * <p>Two entry points are hooked because MIUI's drag path does not go
-     * through the controller's setter: the touch handler calls the injector's
-     * {@code setExpandedHeightInternal} directly, while the animation and the
-     * programmatic paths go through {@code setExpandedHeight}. The height is
-     * zero while the panel is closed, so a value above zero is the earliest
-     * honest signal that the bar is no longer standing still.
-     */
-    private static int hookShadeExpansion(XposedModule module, ClassLoader cl) {
-        int n = 0;
-        final Class<?> injector = Refl.cls(
-                "com.android.systemui.shade.NotificationPanelViewControllerInjector", cl);
-        if (injector != null) {
-            n += hook(module, Refl.method(injector, "setExpandedHeightInternal", float.class),
-                    "hyperduo-shade-internal", SHADE_HOOKER);
-        }
-        final Class<?> panel = Refl.cls(
-                "com.android.systemui.shade.NotificationPanelViewController", cl);
-        if (panel != null) {
-            n += hook(module, Refl.method(panel, "setExpandedHeight", float.class),
-                    "hyperduo-shade-height", SHADE_HOOKER);
-        }
-        if (n == 0) {
-            log(module, "shade expansion hooks missing");
-        }
-        return n;
-    }
-
-    /**
-     * Hears the launcher's overview (recents) gesture. The launcher drives it
-     * over ISystemUiProxy and SystemUI's own proxy class answers on the binder
-     * thread; the method it ends in is the one signal that exists on this
-     * build, so it is used as a pulse: every report pushes the bar's return a
-     * little further out, and the last one lets it come back.
-     */
-    private static int hookOverviewGesture(XposedModule module, ClassLoader cl) {
-        final Class<?> proxy = Refl.cls(
-                "com.android.systemui.recents.LauncherProxyService", cl);
-        if (proxy == null) {
-            log(module, "LauncherProxyService missing");
-            return 0;
-        }
-        final Method done = Refl.method(proxy, "notifyAssistantGestureCompletion",
-                float.class);
-        if (done == null) {
-            log(module, "notifyAssistantGestureCompletion missing");
-            return 0;
-        }
-        return hook(module, done, "hyperduo-overview", new XposedInterface.Hooker() {
-            @Override
-            public Object intercept(XposedInterface.Chain chain) throws Throwable {
-                final Object result = chain.proceed();
-                TrioOverlay.onOverviewPulse();
-                return result;
-            }
-        });
-    }
-
-    /**
-     * The panel behind the expansion callback, remembered so its height can be
-     * read later: a flag set by a callback needs a way to be cleared when the
-     * callback that would clear it never comes.
-     */
-    private static volatile Object sPanel;
-    private static Field sPanelHeight;
-
-    static void noteShadeInjector(Object injector) {
-        if (injector == null || sPanel != null) {
-            return;
-        }
-        try {
-            final Method get = Refl.method(injector.getClass(), "getPanelViewController");
-            final Object panel = (get == null) ? null : get.invoke(injector);
-            if (panel == null) {
-                return;
-            }
-            sPanelHeight = Refl.field(panel.getClass(), "mExpandedHeight");
-            if (sPanelHeight != null) {
-                sPanel = panel;
-            }
-        } catch (Throwable t) {
-            log(sModule, "shade panel unavailable: " + t);
-        }
-    }
-
-    /**
-     * Hears the overview gesture where the launcher actually sends it.
-     *
-     * <p>The gesture arrives as a binder transaction on SystemUI's own overview
-     * proxy, and transaction 4 is the progress report the launcher sends while
-     * the finger is moving. The methods behind it are not always present on a
-     * given build, but the transaction number is the interface itself, so this
-     * is the signal that exists everywhere. Only the transaction number is read
-     * - the parcel is left untouched for the code that has to parse it.
-     */
-    private static int hookOverviewProxy(XposedModule module, ClassLoader cl) {
-        final Class<?> proxy = Refl.cls("com.android.systemui.recents.MiuiOverviewProxy", cl);
-        if (proxy == null) {
-            log(module, "MiuiOverviewProxy missing");
-            return 0;
-        }
-        return hook(module, Refl.method(proxy, "onTransact", int.class,
-                        android.os.Parcel.class, android.os.Parcel.class, int.class),
-                "hyperduo-overview-proxy", new XposedInterface.Hooker() {
-                    @Override
-                    public Object intercept(XposedInterface.Chain chain) throws Throwable {
-                        final Object code = chain.getArg(0);
-                        final Object result = chain.proceed();
-                        if (code instanceof Integer && (Integer) code == 4) {
-                            TrioOverlay.onOverviewPulse();
-                        }
-                        return result;
-                    }
-                });
-    }
-
-    /**
-     * Hears the overview gesture on the proxy the launcher really talks to.
-     *
-     * <p>The gesture does not go through SystemUI's own overview proxy: the
-     * launcher reports its progress over ISystemUiProxy, whose implementation
-     * answers on the binder thread and reads the float out of the parcel in
-     * transaction 13. Only the transaction number is read here - the parcel is
-     * left untouched for the code that has to parse it - which is what makes
-     * this hook safe to sit on a call that runs for every frame of a drag.
-     */
-    private static int hookOverviewProgress(XposedModule module, ClassLoader cl) {
-        final Class<?> proxy = Refl.cls(
-                "com.android.systemui.recents.LauncherProxyService$1", cl);
-        if (proxy == null) {
-            log(module, "LauncherProxyService$1 missing");
-            return 0;
-        }
-        return hook(module, Refl.method(proxy, "onTransact", int.class,
-                        android.os.Parcel.class, android.os.Parcel.class, int.class),
-                "hyperduo-overview-transact", new XposedInterface.Hooker() {
-                    @Override
-                    public Object intercept(XposedInterface.Chain chain) throws Throwable {
-                        final Object code = chain.getArg(0);
-                        final Object result = chain.proceed();
-                        if (code instanceof Integer && (Integer) code == 13) {
-                            TrioOverlay.onOverviewPulse();
-                        }
-                        return result;
-                    }
-                });
-    }
-
-    /**
-     * Hears the moment an app takes the screen.
-     *
-     * <p>The status bar window controller is told when the bar is running an
-     * app's launch animation - the first thing that happens when a full-screen
-     * app like the camera comes forward, and well before the bar's own row
-     * fades out. Taking the window down on that report is what keeps the glyph
-     * from being the last thing on a bar that is on its way out.
-     */
-    private static int hookLaunchAnimation(XposedModule module, ClassLoader cl) {
-        final Class<?> controller = Refl.cls(
-                "com.android.systemui.statusbar.window.StatusBarWindowControllerImpl", cl);
-        final Class<?> state = Refl.cls(
-                "com.android.systemui.statusbar.window.StatusBarWindowControllerImpl$State", cl);
-        if (controller == null || state == null) {
-            log(module, "status bar window controller missing");
-            return 0;
-        }
-        final Field launching = Refl.field(state, "mIsLaunchAnimationRunning");
-        if (launching == null) {
-            log(module, "mIsLaunchAnimationRunning missing");
-            return 0;
-        }
-        return hook(module, Refl.method(controller, "apply", state),
-                "hyperduo-launch-animation", new XposedInterface.Hooker() {
-                    @Override
-                    public Object intercept(XposedInterface.Chain chain) throws Throwable {
-                        final Object result = chain.proceed();
-                        final Object value = launching.get(chain.getArg(0));
-                        if (value instanceof Boolean && (Boolean) value) {
-                            TrioOverlay.onOverviewPulse();
                         }
                         return result;
                     }
@@ -1847,6 +1714,192 @@ final class TrioHooks {
             log(module, "no icon tint hook");
         }
         return n;
+    }
+
+    /**
+     * Hides the status bar's own clock while the capsule is drawing the time.
+     *
+     * <p>Only the capsule needs this, and only because it puts the time inside
+     * the icon: every other arrangement leaves the bar's clock as the single
+     * source of the time, and hiding it there would simply remove the time from
+     * the phone.
+     *
+     * <p><b>Why {@code setMultiTaskVisibility} and not {@code ignoredSlots}.</b>
+     * {@code MiuiClock} is a bare {@code TextView} - it has no {@code getSlot()}
+     * and is not a child of {@code MiuiStatusIconContainer}, so the slot
+     * suppression this module uses for the Wi-Fi and mobile icons cannot reach it.
+     * MIUI's own lever is {@code setMultiTaskVisibility(int)}, and it is the right
+     * one for two reasons: it is public, and it survives the {@code
+     * setPolicyVisibility(0)} that MIUI runs when it re-shows the clock, so the
+     * hiding is not undone by the next policy pass.
+     *
+     * <p><b>Why {@code GONE} and not {@code INVISIBLE}.</b> {@code INVISIBLE} hides
+     * the digits but keeps the view measured, so the bar reserves a clock-sized
+     * space and paints nothing in it - a hole where the time used to be, which
+     * reads as a layout bug rather than as a bar without a clock. {@code GONE} lets
+     * {@code phone_status_bar_left_container} collapse and the bar close the gap.
+     *
+     * <p>The width that {@code GONE} gives up is read in
+     * {@code HoverViewManager.calculateIsInClockRect}, which is why the safer
+     * looking {@code INVISIBLE} was the first choice. It turns out not to matter,
+     * and that was checked against this ROM rather than reasoned about: the method
+     * has exactly two call sites, both inside {@code MiuiStatusBarHoverHelper}, and
+     * that helper is only constructed under {@code MiuiConfigs.IS_PAD}
+     * ({@code MiuiPhoneStatusBarView.java:418}). On a phone {@code setDependence}
+     * takes the other branch and sets {@code mHoverHelper = null} (:472), so the
+     * rectangle is never consulted - and this device reports
+     * {@code ro.build.characteristics=nosdcard}. Even where it is consulted, the
+     * affected paths are hover highlighting and a mouse button release; the finger
+     * gesture that opens the shade is decided in
+     * {@code ControlCenterEventHandlerImpl} from {@code getRawX()} against half the
+     * screen width and never reads this rectangle.
+     *
+     * <p>Setting {@code mMultiTaskVisibility} rather than {@code mPolicyVisibility}
+     * is the other half of surviving MIUI: the policy field is MIUI's own state
+     * machine, written by its {@code hideClock}/{@code showClock} paths, so a value
+     * put there is reverted by the next {@code showClock}. The multi-task field is
+     * referenced nowhere outside {@code MiuiClock}, so nothing races us for it, and
+     * {@code updateClockVisibility} gives it priority over the policy value.
+     *
+     * <p>The other clocks on the phone - the keyguard's, the shade header's, the
+     * control centre's, the always-on display's - are separate instances of a
+     * different view and are deliberately left alone. Hiding the bar's clock must
+     * not blank the time on the lock screen.
+     */
+    private static int hookStatusClock(XposedModule module, ClassLoader cl) {
+        final Class<?> clockClass = Refl.cls("com.android.systemui.statusbar.views.MiuiClock", cl);
+        if (clockClass == null) {
+            log(module, "MiuiClock missing");
+            return 0;
+        }
+        final Method setMultiTaskVisibility =
+                Refl.method(clockClass, "setMultiTaskVisibility", int.class);
+        if (setMultiTaskVisibility == null) {
+            log(module, "MiuiClock.setMultiTaskVisibility missing");
+            return 0;
+        }
+        sClockSetter = setMultiTaskVisibility;
+        final Class<?> barView = Refl.cls(
+                "com.android.systemui.statusbar.phone.MiuiPhoneStatusBarView", cl);
+        if (barView == null) {
+            log(module, "MiuiPhoneStatusBarView missing");
+            return 0;
+        }
+        final Method onFinishInflate = Refl.method(barView, "onFinishInflate");
+        if (onFinishInflate == null) {
+            log(module, "MiuiPhoneStatusBarView.onFinishInflate missing");
+            return 0;
+        }
+        final XposedInterface.Hooker hooker = new XposedInterface.Hooker() {
+            @Override
+            public Object intercept(XposedInterface.Chain chain) throws Throwable {
+                final Object result = chain.proceed();
+                final Object self = chain.getThisObject();
+                if (!(self instanceof View)) {
+                    return result;
+                }
+                final View bar = (View) self;
+                // Posted: the bar's children are inflated after this returns on
+                // some builds, so a clock found here may not be the last one.
+                bar.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        final View clock = findClock(bar, clockClass);
+                        if (clock == null) {
+                            return;
+                        }
+                        if (sStatusClock != clock) {
+                            sStatusClock = clock;
+                            sClockHidden = false;
+                        }
+                        applyClockVisibility();
+                    }
+                });
+                return result;
+            }
+        };
+        return hook(module, onFinishInflate, "hyperduo-status-clock", hooker);
+    }
+
+    /**
+     * The first {@code MiuiClock} at or under {@code bar}, or null.
+     *
+     * <p>A search rather than a field read: the bar keeps its clock in a private
+     * field whose name has changed between builds, and the keyguard's clock lives
+     * under a different root - so walking this one subtree cannot reach it.
+     */
+    private static View findClock(View bar, Class<?> clockClass) {
+        if (clockClass.isInstance(bar)) {
+            return bar;
+        }
+        if (!(bar instanceof ViewGroup)) {
+            return null;
+        }
+        final ViewGroup group = (ViewGroup) bar;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            final View found = findClock(group.getChildAt(i), clockClass);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Applies the clock's visibility for the current appearance.
+     *
+     * <p>Idempotent and cheap, so it can be called from the layout path as well as
+     * from a settings change - which is what it takes, because MIUI re-shows the
+     * clock on its own schedule and every re-show has to be answered.
+     */
+    static void applyClockVisibility() {
+        final View clock = sStatusClock;
+        final Method setter = sClockSetter;
+        if (clock == null || setter == null) {
+            return;
+        }
+        final boolean hide = TrioConfig.appearance().hidesStatusClock();
+        if (hide == sClockHidden) {
+            return;
+        }
+        // GONE, not INVISIBLE. INVISIBLE hides the digits but leaves the view
+        // measured, so the clock's width stays reserved and the bar keeps a
+        // clock-sized hole where nothing is painted - which is a worse result than
+        // either drawing the clock or removing it. GONE lets the left container
+        // collapse and the bar close the gap.
+        //
+        // The reason INVISIBLE looked necessary is that the clock's width is read
+        // in HoverViewManager.calculateIsInClockRect, which decides whether a
+        // pointer in the clock's rectangle counts as being on the clock. Two things
+        // make that harmless here, and both were checked against this ROM rather
+        // than assumed:
+        //
+        //  1. On a phone the rectangle is never consulted. calculateIsInClockRect
+        //     has exactly two call sites, both in MiuiStatusBarHoverHelper, and
+        //     that helper is constructed only under MiuiConfigs.IS_PAD
+        //     (MiuiPhoneStatusBarView.java:418); on a phone setDependence takes
+        //     the other branch and sets mHoverHelper = null (:472). This device
+        //     reports ro.build.characteristics=nosdcard, so IS_PAD is false.
+        //  2. Even on a tablet, the affected paths are hover highlighting and a
+        //     mouse's ACTION_BUTTON_RELEASE. The finger gesture that opens the
+        //     shade is decided in ControlCenterEventHandlerImpl from
+        //     motionEvent.getRawX() against half the screen width, and never reads
+        //     this rectangle at all.
+        //
+        // MiuiClock's own multi-task parameter, rather than setPolicyVisibility:
+        // mPolicyVisibility is MIUI's own state machine, read and written by its
+        // hideClock/showClock paths, so anything written there is reverted by the
+        // next showClock. mMultiTaskVisibility is referenced nowhere outside
+        // MiuiClock itself, so nothing races us for it - and updateClockVisibility
+        // gives it priority over the policy value, which is what makes the hiding
+        // survive MIUI's own re-show.
+        final int goneReleasingTheSpace = 8;
+        try {
+            setter.invoke(clock, Integer.valueOf(hide ? goneReleasingTheSpace : 0));
+            sClockHidden = hide;
+        } catch (Throwable t) {
+            log(sModule, "clock visibility failed: " + t);
+        }
     }
 
     /**
@@ -2748,48 +2801,6 @@ final class TrioHooks {
         return null;
     }
 
-    /**
-     * True when {@code host} is the battery view of the status bar's own icon
-     * row: the only container a glyph window may be opened for.
-     *
-     * <p>{@code system_icons.xml} is included by the status bar, the keyguard,
-     * the control centre and both QS headers, so several battery views exist at
-     * once and every one of them gets an {@code onDraw}. Only the status bar's
-     * container is the one this module folds, so only its host may be painted
-     * outside the bar - a second window for any of the others would put a glyph
-     * on screen that the bar's own layout knows nothing about.
-     */
-    static boolean isStatusBarHost(View host) {
-        if (host == null) {
-            return false;
-        }
-        // The row this module owns is the one inside MiuiPhoneStatusBarView, and it
-        // is the only row that may have a window of its own. Everything else that
-        // carries a battery view - the keyguard, the control centre, the shade's own
-        // copy of the bar at the top of the panel - draws the glyph in its own views
-        // instead, which is the path that was always there and needs no window. That
-        // is also why the window is only ever open while the bar is standing still:
-        // pull the panel down and the bar's row stops being the one on screen, the
-        // window goes with it, and the panel's copy takes over by drawing itself.
-        //
-        // Matched by walking the parents rather than by comparing root views or
-        // by asking sStatusIconContainer: mStatusBarStatusIcons can point at a
-        // container in another window entirely (it came back with a different root
-        // on consecutive boots), which is exactly how the first window attempt
-        // ended up refusing every host on the bar it was meant for.
-        for (ViewParent p = host.getParent(); p != null;
-             p = (p instanceof View) ? ((View) p).getParent() : null) {
-            final String name = p.getClass().getSimpleName();
-            if (name.contains("Keyguard")) {
-                return false;
-            }
-            if (name.contains("MiuiPhoneStatusBarView")) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /** The nearest {@code MiuiStatusIconContainer} ancestor of {@code host}, or null. */
     private static Object iconContainerOf(View host) {
         final Class<?> cls = sIconContainerClass;
@@ -2821,49 +2832,6 @@ final class TrioHooks {
         }
     }
 
-    /** True while the bar's window is known to be covered by an app. */
-    private static volatile boolean sBarCovered;
-
-    /**
-     * Where the watcher leaves its answer: 1 while the bar is covered, 0 while
-     * it is not.
-     *
-     * <p>The watcher is a root script (service.d) because nothing inside
-     * SystemUI can answer the question: a covered window still reports itself
-     * visible and opaque, the module is not allowed to read the task list, and
-     * the window manager - which does know - will not say without root. The
-     * script watches app launches, asks it there, and leaves the answer in a
-     * system property, which needs no file permissions to read. The script
-     * itself is not shipped with the module and lives in the author's device
-     * setup; without it this property simply stays "0" and the insets/visible-
-     * rect tests in {@link TrioOverlay} carry the full-screen detection alone.
-     */
-    private static final String COVER_PROPERTY = "hyperduo.covered";
-
-    /** Reads the watcher's answer; the last known one when there is no watcher. */
-    static boolean barCovered() {
-        try {
-            final Class<?> properties = Class.forName("android.os.SystemProperties");
-            final Object value = properties
-                    .getMethod("get", String.class, String.class)
-                    .invoke(null, COVER_PROPERTY, "0");
-            sBarCovered = "1".equals(value);
-        } catch (Throwable ignored) {
-            // No watcher, or a platform that will not answer: keep the last word.
-        }
-        return sBarCovered;
-    }
-
-    /** The status bar's icon container, or null before the capture hook has run. */
-    static Object statusIconContainer() {
-        return sStatusIconContainer;
-    }
-
-    /** The status bar view itself, or null before the capture hook has run. */
-    static View statusBarView() {
-        return sStatusBarView;
-    }
-
     private static void unregisterHost(View host) {
         synchronized (HOSTS) {
             for (int i = HOSTS.size() - 1; i >= 0; i--) {
@@ -2872,17 +2840,14 @@ final class TrioHooks {
                 }
             }
         }
-        // The glyph window belongs to the host, not to the view tree: it has to
-        // go when the host does, or it would outlive the icon it draws.
-        TrioOverlay.release(host);
     }
 
     /** Repaints every trio host. Signal updates arrive off the UI thread. */
     static void invalidateHosts() {
-        // The bar itself is asked to lay out again as well: the host that owns
-        // the glyph window can have left the tree since the last pass, and a
-        // host that never draws again would never take the window over - the
-        // row would stay blank with the window gone.
+        // The bar itself is asked to lay out again as well: the host can have
+        // left the tree since the last pass, and MIUI re-derives the width it
+        // gives the row, so the readings have to be measured against the new
+        // one rather than the one they were placed in.
         final View bar = sStatusBarView;
         if (bar != null) {
             bar.post(new Runnable() {
@@ -3812,11 +3777,12 @@ final class TrioHooks {
         if (lines < 2 || host == null) {
             return base * factor;
         }
-        final float fit = TrioRenderer.inkScale(host.getWidth(), host.getHeight(), a.rect);
+        final float fit = TrioRenderer.inkScale(host.getWidth(), host.getHeight(), a.style);
         if (fit <= 0f) {
             return base * factor;
         }
-        final float inkH = a.rect ? TrioGeometry.RECT_INK_H : TrioGeometry.INK_H;
+        final float inkH = a.rect ? TrioGeometry.RECT_INK_H
+                : (a.capsule ? TrioGeometry.CAP_INK_H : TrioGeometry.INK_H);
         final float icon = inkH * fit * a.glyphFit();
         final float lineHeight = perfLineHeight(base, a.perfTypeWeight());
         if (lineHeight <= 0f) {

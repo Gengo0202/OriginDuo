@@ -34,6 +34,7 @@ internal enum class TrioSettingsPart(val part: TrioZones.Part, val labelRes: Int
     Bolt(TrioZones.Part.BOLT, R.string.show_bolt_title),
     Type(TrioZones.Part.TYPE, R.string.show_mobile_type_title),
     Dual(TrioZones.Part.DUAL, R.string.dual_sim_title),
+    Clock(TrioZones.Part.CLOCK, R.string.drawing_occupant_clock),
     ;
 
     companion object {
@@ -113,6 +114,31 @@ internal fun geometrySliders(): List<SliderSpec> {
     val mobile = TrioZones.Part.MOBILE
     val type = TrioZones.Part.TYPE
     return listOf(
+        SliderSpec(
+            group = GeometryGroup.Text,
+            part = TrioZones.Part.CLOCK,
+            min = Prefs.MIN_CLOCK_SIZE,
+            max = Prefs.MAX_CLOCK_SIZE,
+            read = { it.clockSize },
+            write = { r, v -> r.setClockSize(v) },
+            titleRes = { R.string.clock_size_title },
+            summaryRes = { R.string.clock_size_summary },
+            enabled = { it.glyph && it.capsule },
+            hints = { listOf(it.glyph to R.string.master_title, it.capsule to R.string.trio_style_capsule) },
+        ),
+        SliderSpec(
+            group = GeometryGroup.Text,
+            part = TrioZones.Part.CLOCK,
+            min = Prefs.MIN_CLOCK_WEIGHT,
+            max = Prefs.MAX_CLOCK_WEIGHT,
+            step = WEIGHT_STEP,
+            read = { it.clockWeight },
+            write = { r, v -> r.setClockWeight(v) },
+            titleRes = { R.string.clock_weight_title },
+            summaryRes = { R.string.clock_weight_summary },
+            enabled = { it.glyph && it.capsule },
+            hints = { listOf(it.glyph to R.string.master_title, it.capsule to R.string.trio_style_capsule) },
+        ),
         SliderSpec(
             group = GeometryGroup.Scale,
             part = null,

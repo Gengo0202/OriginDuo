@@ -27,10 +27,29 @@ package io.github.yixing233.hyperduo;
  */
 public final class TrioAppearance {
 
-    /** {@link Prefs#STYLE_RING} or {@link Prefs#STYLE_RECT}. */
+    /** {@link Prefs#STYLE_RING}, {@link Prefs#STYLE_RECT} or {@link Prefs#STYLE_CAPSULE}. */
     public final int style;
     /** True when {@link #style} is the rectangular arrangement. */
     public final boolean rect;
+    /**
+     * True when {@link #style} is the capsule arrangement.
+     *
+     * <p>Its own flag rather than a third case at each use: the two existing
+     * arrangements are near enough siblings that one boolean covered both, and
+     * every place asking about one of them also means "not the other". The
+     * capsule is a different shape with a different meaning - its outline is the
+     * gauge - so only the tests that really care are written against it.
+     */
+    public final boolean capsule;
+    /**
+     * True when {@link #style} is the ring.
+     *
+     * <p>Stated explicitly rather than left as {@code !rect}: that expression was
+     * correct only while there were two arrangements, and the capsule makes it
+     * quietly wrong. Every row and rule that says "the ring" now has a name for
+     * it.
+     */
+    public final boolean ring;
     /** The master switch. False hands every slot back to MIUI. */
     public final boolean glyph;
     /** The Wi-Fi arcs are wanted; ink also needs a signal - see {@link #wifiInk}. */
@@ -129,6 +148,9 @@ public final class TrioAppearance {
     public final int trackAlpha;
     public final int valueSize;
     public final int valueWeight;
+    /** Size and weight of the capsule's clock, which the value's no longer drive. */
+    public final int clockSize;
+    public final int clockWeight;
     public final int typeSize;
     public final int outTypeSize;
     public final int outSignalSize;
@@ -153,6 +175,8 @@ public final class TrioAppearance {
     private TrioAppearance(TrioSettings c) {
         style = c.trioStyle;
         rect = c.trioStyle == Prefs.STYLE_RECT;
+        capsule = c.trioStyle == Prefs.STYLE_CAPSULE;
+        ring = c.trioStyle == Prefs.STYLE_RING;
         glyph = c.enabled;
         wifi = c.showWifi;
         mobile = c.showMobile;
@@ -164,7 +188,7 @@ public final class TrioAppearance {
         dataSimOnly = c.dataSimOnly;
         value = c.showValue;
         boltWanted = c.showBolt;
-        centreValue = c.valueCentred && !rect;
+        centreValue = c.valueCentred && ring;
         typeMode = c.mobileTypeMode;
         typeInRing = c.mobileTypeMode == Prefs.MOBILE_TYPE_IN_RING;
         typeOutOfRing = c.mobileTypeMode == Prefs.MOBILE_TYPE_OUT_RING;
@@ -188,6 +212,8 @@ public final class TrioAppearance {
         trackAlpha = c.trackAlpha;
         valueSize = c.valueSize;
         valueWeight = c.valueWeight;
+        clockSize = c.clockSize;
+        clockWeight = c.clockWeight;
         typeSize = c.typeSize;
         outTypeSize = c.outTypeSize;
         outSignalSize = c.outSignalSize;
@@ -382,6 +408,12 @@ public final class TrioAppearance {
         return new Rect(this, level, charging, wifiLevel, mobileType, sims);
     }
 
+    /** The capsule arrangement's slot assignment for one frame. */
+    public Capsule capsule(int level, boolean charging, int wifiLevel, String mobileType,
+                           int sims) {
+        return new Capsule(this, level, charging, wifiLevel, mobileType, sims);
+    }
+
     /**
      * Where each piece goes in the ring arrangement.
      *
@@ -508,6 +540,79 @@ public final class TrioAppearance {
             value = a.value && level >= 0;
             // Same plug-not-bolt rule as the ring: a charger on screen means one
             // reading, and the bar's colour already carries it.
+            dual = a.dualSimRows(wifi, charging, sims);
+        }
+    }
+
+    /**
+     * Whether the bar's own clock has to step aside for this appearance.
+     *
+     * <p>True only for the capsule, and only while the module is drawing: the
+     * capsule is the one arrangement that puts the time inside the icon, so
+     * leaving the bar's clock visible would show the time twice. Turning the
+     * module off has to bring it back, which is why this follows the master
+     * switch and not just the style.
+     *
+     * <p>Stated as a rule rather than checked at the two call sites, so the
+     * renderer drawing the time and the hook hiding the bar's copy cannot
+     * disagree - the failure being either a duplicated clock or none at all.
+     */
+    public boolean hidesStatusClock() {
+        return glyph && capsule;
+    }
+
+    /**
+     * Where each piece goes in the capsule arrangement.
+     *
+     * <p>The capsule has two interior slots rather than one, and they do not
+     * compete: the time always takes the left, and the right holds whichever of
+     * the four readings wins the order below. That is why this arrangement needs
+     * no settings of its own beyond being chosen - every question it asks is one
+     * the other two already ask.
+     *
+     * <p>The order is <b>bolt, then arcs, then percentage, then type</b>. The only
+     * place it differs from the ring is the middle pair: the ring lets the type
+     * label take the centre from the percentage, because the ring's centre is the
+     * one place either can go and the label is the more specific reading. Here the
+     * percentage outranks it, because this arrangement exists to show the time
+     * <em>and</em> a level side by side - that is the whole shape of the reference
+     * - and a two-slot strip that showed "5G" where the level belongs would be
+     * answering a different question. The type is still reachable: turning the
+     * percentage switch off gives it the slot, so the setting does not become dead
+     * in this style.
+     *
+     * <p>No {@code valueCentred}: there is no ring centre or notch here, so the
+     * percentage has one place to be.
+     *
+     * <p>Immutable.
+     */
+    public static final class Capsule {
+        /** The right-hand slot carries the charging bolt. */
+        public final boolean bolt;
+        /** The right-hand slot carries the Wi-Fi arcs. */
+        public final boolean wifi;
+        /** The right-hand slot carries the battery percentage. */
+        public final boolean value;
+        /** The right-hand slot carries the network type. */
+        public final boolean type;
+        /** The two dot rows are drawn (the mobile switch is on). */
+        public final boolean dots;
+        /** The rows carry one SIM each - SIM 1 on top, SIM 2 below. */
+        public final boolean dual;
+
+        private Capsule(TrioAppearance a, int level, boolean charging, int wifiLevel,
+                        String mobileType, int sims) {
+            dots = a.signalDots();
+            bolt = charging && a.drawsBolt();
+            // The bolt and the arcs share the right slot exactly as they share the
+            // ring's notch: a charger on screen means one reading.
+            wifi = !bolt && a.wifiInk(wifiLevel);
+            // The percentage before the type, which inverts the ring's centre
+            // order - see the class note above for why.
+            final boolean valueWanted = a.value && level >= 0;
+            value = !bolt && !wifi && valueWanted;
+            type = !bolt && !wifi && !value
+                    && a.typeInRing && mobileType != null && !mobileType.isEmpty();
             dual = a.dualSimRows(wifi, charging, sims);
         }
     }

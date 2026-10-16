@@ -20,6 +20,12 @@
     <string name="drawing_title">点按图标上要改的部位</string>
     <string name="drawing_summary">点一个部位，从列表里挑一个组件换上去；长按直接改它的大小与颜色。</string>
     <string name="drawing_zone_change">更换…</string>
+    <string name="drawing_zone_edit">调整…</string>
+    <string name="drawing_occupant_clock">时间</string>
+    <string name="drawing_hint_clock">左侧时间</string>
+    <string name="drawing_hint_reading">右侧读数</string>
+    <string name="drawing_hint_signal">边界信号</string>
+    <string name="drawing_clock_fixed">时间为胶囊固定内容，可调整字号与字重。</string>
     <string name="drawing_pick_title">%1$s：现在是%2$s</string>
     <string name="drawing_pick_none_summary">清除这一处的可选组件；圆环和电量条保留。</string>
     <string name="drawing_feedback_charging">%1$s已设在%2$s；充电时闪电优先显示。切换到“正常”预览查看。</string>
@@ -54,12 +60,10 @@
     <string name="master_summary">总开关，关闭后恢复系统原本的电池与信号图标。</string>
 
     <string name="trio_style_title">三合一样式</string>
-    <string name="trio_style_summary">圆环是默认样式；矩形用两列信号点夹住中间内容。</string>
+    <string name="trio_style_summary">圆环是默认样式；矩形用两列信号点夹住中间内容；胶囊用轮廓本身表示电量。</string>
     <string name="trio_style_ring">圆环</string>
     <string name="trio_style_rect">矩形</string>
-
-    <string name="overlay_title">独立窗口绘制</string>
-    <string name="overlay_summary">画在独立窗口里，不受状态栏高度（约 43dp）限制。</string>
+    <string name="trio_style_capsule">胶囊</string>
 
     <string name="show_wifi_title">显示 Wi-Fi 弧</string>
     <string name="show_wifi_summary">最外层绘制 Wi-Fi 弧，弧数跟随信号强度。</string>
@@ -150,6 +154,12 @@
 
     <string name="value_weight_title">数字字重</string>
     <string name="value_weight_summary">电量数字的笔画粗细，100 最细、900 最粗。</string>
+
+    <string name="clock_size_title">时钟字号</string>
+    <string name="clock_size_summary">胶囊内左侧时间文字的大小，与右侧电量数字各自独立。</string>
+
+    <string name="clock_weight_title">时钟字重</string>
+    <string name="clock_weight_summary">时间文字的笔画粗细，100 最细、900 最粗。</string>
 
     <string name="type_size_title">网络类型字号</string>
     <string name="type_size_summary">圆环中间 3G/4G/5G 等文字的大小。</string>

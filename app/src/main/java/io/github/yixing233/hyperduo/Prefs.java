@@ -54,33 +54,6 @@ public final class Prefs {
     // ------------------------------------------------------------------ keys
     public static final String KEY_ENABLED = "enabled";
     /**
-     * Draws the glyph in a window of its own instead of inside the status bar
-     * view - see {@code TrioOverlay}.
-     *
-     * <p>The status bar window is only {@code status_bar_height} tall (121px,
-     * about 43dp, on this device) and clips everything past that rectangle, so a
-     * glyph that wants more height than the bar has can never be drawn whole in
-     * the bar, whatever the view tree does.
-     *
-     * <p>On by default, and the only route that draws the glyph whole: growing
-     * the status bar's own row to make room was tried and abandoned - MIUI's
-     * measure chain re-derives the size of every box on the way up, so each level
-     * fixed exposed the next one, and the window's own height was taken back by
-     * MIUI's controller on its own schedule. The cost of this route is placement:
-     * the screen's top edge is hard, so a glyph taller than the bar sits a few dp
-     * below the icons beside it instead of on their centre line.
-     */
-    /**
-     * Stored under a name that did not exist while this route was the fallback.
-     *
-     * <p>The earlier default (off) was written into the framework's remote
-     * preferences by the settings app on first open, and a stored value wins over
-     * any new default - an install that has it would keep the window route off no
-     * matter what {@link #DEF_OVERLAY} says. The framework does no type conversion
-     * and never forgets a key, so the new route gets a key with no history.
-     */
-    public static final String KEY_OVERLAY = "glyph_window";
-    /**
      * Overall size of the trio glyph, as a percentage of the size the host box
      * already implies.
      *
@@ -90,10 +63,7 @@ public final class Prefs {
      * on the test device) and the glyph is fitted inside it. Asking for more than
      * the box holds cannot make the box grow, so the only honest thing a
      * percentage above 100 could do is draw past the view's bounds, and whether
-     * that is clipped is MIUI's decision rather than this module's. The window
-     * route ({@link #KEY_OVERLAY}) draws whole glyphs of any height, but it is a
-     * separate switch with its own cost, and silently depending on it would make
-     * this slider behave differently for users who never turned it on.
+     * that is clipped is MIUI's decision rather than this module's.
      *
      * <p>A percentage rather than a dp: the drawing already scales to whatever
      * box it is handed, so the setting that means anything is "how much of that
@@ -285,6 +255,23 @@ public final class Prefs {
     public static final String KEY_ARC_STROKE = "arc_stroke";
     public static final String KEY_VALUE_SIZE = "value_size";
     public static final String KEY_VALUE_WEIGHT = "value_weight";
+    /**
+     * Font size of the time, in the capsule's left-hand slot.
+     *
+     * <p>Its own key rather than a share of {@link #KEY_VALUE_SIZE}: the two
+     * readings sit in two slots that are drawn from the same width but hold
+     * different strings - "19:41" against "100" - and the time is the one the user
+     * looks at while the percentage is the one they check. Sharing a size means a
+     * change made for either moves both, and the pair cannot be balanced.
+     *
+     * <p>A brand-new key name and never a reuse: the framework does no type
+     * conversion, so every key has exactly one type for the module's lifetime.
+     * Nothing writes it until the user moves its own slider, so an install that
+     * predates it keeps the look it had - the default below reproduces it.
+     */
+    public static final String KEY_CLOCK_SIZE = "clock_size";
+    /** Font weight of the time, on the same reasoning as {@link #KEY_CLOCK_SIZE}. */
+    public static final String KEY_CLOCK_WEIGHT = "clock_weight";
     /** Font size of the network type drawn inside the ring. */
     public static final String KEY_TYPE_SIZE = "type_size";
     /**
@@ -419,7 +406,6 @@ public final class Prefs {
 
     // -------------------------------------------------------------- defaults
     public static final boolean DEF_ENABLED = true;
-    public static final boolean DEF_OVERLAY = true;
     public static final boolean DEF_SHOW_WIFI = true;
     public static final boolean DEF_SHOW_MOBILE = true;
     public static final boolean DEF_SHOW_VALUE = true;
@@ -462,10 +448,22 @@ public final class Prefs {
      */
     public static final int STYLE_RECT = 1;
     /**
+     * The capsule arrangement: a wide stadium outline whose stroke is the battery
+     * gauge, broken at the top and bottom centre by two four-dot rows, with the
+     * percentage and the network state side by side inside.
+     *
+     * <p>The difference from the other two is what the outline <em>means</em>. The
+     * ring draws an arc whose lit fraction is the level; here the level is the
+     * fraction of the outline's own length that is drawn in the role colour, and
+     * the rest is drawn as the track - so the shape fills up rather than
+     * containing a gauge.
+     */
+    public static final int STYLE_CAPSULE = 2;
+    /**
      * The ring, for every install that has never chosen.
      *
      * <p>Only the styles themselves are honoured: the settings screen offers no
-     * third entry, so an unrecognised stored value degrades to the ring rather
+     * further entry, so an unrecognised stored value degrades to the ring rather
      * than to a blank glyph.
      */
     public static final int DEF_TRIO_STYLE = STYLE_RING;
@@ -545,6 +543,14 @@ public final class Prefs {
      */
     public static final int DEF_VALUE_WEIGHT = 700;
     /**
+     * Font size of the time. Set to {@link #DEF_VALUE_SIZE} so the default look is
+     * exactly what it was when the two readings shared a size - an install that
+     * never opens the new slider sees no change at all.
+     */
+    public static final int DEF_CLOCK_SIZE = DEF_VALUE_SIZE;
+    /** Font weight of the time, matching {@link #DEF_VALUE_WEIGHT} for the same reason. */
+    public static final int DEF_CLOCK_WEIGHT = DEF_VALUE_WEIGHT;
+    /**
      * Font size of the centred network type. Deliberately an absolute size rather
      * than a ratio of {@link #DEF_VALUE_SIZE}: the type is a standalone label the
      * user tunes on its own, and 32 is what the old 0.9 x 36 ratio produced, so
@@ -612,6 +618,11 @@ public final class Prefs {
     public static final int MAX_VALUE_SIZE = 44;
     public static final int MIN_VALUE_WEIGHT = 100;
     public static final int MAX_VALUE_WEIGHT = 900;
+    /** The time's own size span. Wider at the top than the value's: "19:41" is the longer string and the left slot is the one with room to spare. */
+    public static final int MIN_CLOCK_SIZE = 16;
+    public static final int MAX_CLOCK_SIZE = 44;
+    public static final int MIN_CLOCK_WEIGHT = 100;
+    public static final int MAX_CLOCK_WEIGHT = 900;
     public static final int MIN_TYPE_SIZE = 16;
     public static final int MAX_TYPE_SIZE = 44;
     public static final int MIN_OUT_TYPE_SIZE = 16;
@@ -723,7 +734,7 @@ public final class Prefs {
     public static final int MAX_MOBILE_TYPE_MODE = MOBILE_TYPE_OUT_RING;
 
     public static final int MIN_TRIO_STYLE = STYLE_RING;
-    public static final int MAX_TRIO_STYLE = STYLE_RECT;
+    public static final int MAX_TRIO_STYLE = STYLE_CAPSULE;
 
     public static final int MIN_SIGNAL_MODE = SIGNAL_IN_RING;
     public static final int MAX_SIGNAL_MODE = SIGNAL_OUT_RING;
