@@ -35,10 +35,19 @@ import io.github.libxposed.api.XposedModule;
  * bookkeeping.
  *
  * <h3>Why the trio glyph is drawn from the battery icon view</h3>
- * {@code MiuiBatteryMeterIconView} is already measured 28dp x 20dp
+ * {@code MiuiBatteryMeterIconView} is measured 28dp x 20dp
  * ({@code battery_meter_width} x {@code status_bar_icon_height}) and its native
  * {@code onDraw} clears the canvas itself, so drawing after {@code proceed()}
  * takes the icon over completely without any view-tree surgery.
+ *
+ * <p>That 28dp is the width of <em>MIUI's</em> battery, which is a narrow vertical
+ * shape. The ring and the rectangle fit it well enough - they are roughly square -
+ * but the capsule is wide, and in the stock box its fit is decided by the width and
+ * it comes out short. So {@link #hookBatteryIconView} also answers that view's
+ * {@code onMeasure} with the width the capsule's own aspect ratio needs for the
+ * height the bar offered, and nothing else has to be told: the meter and the
+ * container both add up their child's measured width, so the slot widens and the
+ * bar makes room. The other two arrangements are passed straight through.
  *
  * <h3>Why {@code ignoredSlots} alone leaves a ghost, and what fixes it</h3>
  * {@code ModernStatusBarView.isIconVisible()} is driven by the binding and the anim
@@ -316,6 +325,18 @@ final class TrioHooks {
     private static volatile Method sClockSetter;
     /** Whether the clock currently carries the module's hiding. */
     private static volatile boolean sClockHidden;
+    /** One diagnostic line for the capsule's widened host, so a loop cannot flood. */
+    private static volatile boolean sLoggedCapsuleMeasure;
+    /**
+     * {@code View.setMeasuredDimension}, resolved once.
+     *
+     * <p>Via {@code View.class} rather than the icon class: the method is declared
+     * on View and merely inherited, and {@code Refl.method} uses
+     * {@code getDeclaredMethod}, which does not walk up the hierarchy - asking the
+     * icon class for it would silently return null and the widening would quietly
+     * never happen.
+     */
+    private static volatile Method sSetMeasuredDimension;
 
     private TrioHooks() {
     }
@@ -808,6 +829,11 @@ final class TrioHooks {
             log(module, "MiuiBatteryMeterIconView missing");
             return 0;
         }
+        // Resolved through the class rather than through the instance, because
+        // View.setMeasuredDimension is protected and only a subclass may call it
+        // directly - this hook is an outside writer, so it goes through reflection.
+        sSetMeasuredDimension = Refl.method(View.class, "setMeasuredDimension",
+                int.class, int.class);
         final int a = hook(module, Refl.method(icon, "onDraw", Canvas.class),
                 "hyperduo-draw", new XposedInterface.Hooker() {
                     @Override
@@ -886,7 +912,74 @@ final class TrioHooks {
                         return result;
                     }
                 });
-        return a + b;
+        // The host is MIUI's own battery icon, and MIUI measures it to
+        // `battery_meter_width` - 28dp, the width of the narrow vertical battery
+        // MIUI draws. The capsule is a wide shape, so inside that box the fit is
+        // decided by the width and the glyph comes out short: measured on the
+        // reference device at 84x46px inside a 60px-tall bar, with fourteen pixels
+        // of the bar's height going unused and the shape reading as a squashed
+        // pill.
+        //
+        // Answering with the width the capsule's own aspect ratio needs for the
+        // height MIUI just chose is the whole fix, and nothing has to be told
+        // about it: MiuiBatteryMeterView.onMeasure does not measure its icon child
+        // at all, it adds up mBatteryDigitalView.getMeasuredWidth(), and
+        // MiuiStatusBatteryContainer.onMeasure adds up the meter's - so widening
+        // this one view widens the battery slot and the bar makes room for it on
+        // its own.
+        //
+        // Only for the capsule. The ring and the rectangle are as tall as they are
+        // wide and are content in the stock box, so they are left exactly as MIUI
+        // measured them - a pass-through, not a re-measure, so nothing about the
+        // other two arrangements can shift.
+        final int c = hook(module, Refl.method(icon, "onMeasure", int.class, int.class),
+                "hyperduo-icon-measure", new XposedInterface.Hooker() {
+                    @Override
+                    public Object intercept(XposedInterface.Chain chain) throws Throwable {
+                        final Object result = chain.proceed();
+                        final Object self = chain.getThisObject();
+                        if (!(self instanceof View)) {
+                            return result;
+                        }
+                        final View view = (View) self;
+                        try {
+                            final TrioAppearance a = TrioConfig.appearance();
+                            if (!a.glyph || !a.capsule) {
+                                return result;
+                            }
+                            // Taken from the height MIUI just settled on rather
+                            // than from the measure spec: that is the height the
+                            // glyph is about to be drawn into, so the request and
+                            // the drawing cannot be computed from different
+                            // numbers, and no spec mode has to be interpreted.
+                            final int height = view.getMeasuredHeight();
+                            final int width = TrioGeometry.capHostWidthPx(height);
+                            final Method setter = sSetMeasuredDimension;
+                            if (width > 0 && width != view.getMeasuredWidth()
+                                    && setter != null) {
+                                // Reflectively, because View.setMeasuredDimension is
+                                // protected: only a subclass may call it on itself,
+                                // and this is an outside writer. It is part of the
+                                // SDK stubs, so it is not a hidden API and no
+                                // restriction applies.
+                                Refl.invokeArgs(setter, view, new Object[] {
+                                        Integer.valueOf(width), Integer.valueOf(height) });
+                                if (debugLog() && !sLoggedCapsuleMeasure) {
+                                    sLoggedCapsuleMeasure = true;
+                                    log(LOG_INFO, "capsule host widened to "
+                                            + width + "x" + height);
+                                }
+                            }
+                        } catch (Throwable t) {
+                            // A throw out of onMeasure takes the whole layout pass
+                            // down, so a failure here leaves MIUI's own measurement
+                            // standing instead of propagating.
+                            log(LOG_WARN, "capsule measure failed: " + t);
+                        }
+                        return result;
+                    }
+                });
+        return a + b + c;
     }
 
     private static int hookBatteryMeterView(XposedModule module, ClassLoader cl) {
@@ -1628,14 +1721,33 @@ final class TrioHooks {
      * setPolicyVisibility(0)} that MIUI runs when it re-shows the clock, so the
      * hiding is not undone by the next policy pass.
      *
-     * <p><b>Why {@code INVISIBLE} and not {@code GONE}.</b> {@code GONE} measures
-     * the clock to zero width, and MIUI reads that width in
-     * {@code HoverViewManager.calculateIsInClockRect} to decide whether a tap on
-     * the bar's left side opens the notification shade. A zero-width clock makes
-     * that rectangle degenerate - a tap where the clock used to be stops opening
-     * the shade, which is a gesture loss far outside this module's business.
-     * {@code INVISIBLE} keeps the view measured and simply does not paint it; it
-     * is also what MIUI itself passes here.
+     * <p><b>Why {@code GONE} and not {@code INVISIBLE}.</b> {@code INVISIBLE} hides
+     * the digits but keeps the view measured, so the bar reserves a clock-sized
+     * space and paints nothing in it - a hole where the time used to be, which
+     * reads as a layout bug rather than as a bar without a clock. {@code GONE} lets
+     * {@code phone_status_bar_left_container} collapse and the bar close the gap.
+     *
+     * <p>The width that {@code GONE} gives up is read in
+     * {@code HoverViewManager.calculateIsInClockRect}, which is why the safer
+     * looking {@code INVISIBLE} was the first choice. It turns out not to matter,
+     * and that was checked against this ROM rather than reasoned about: the method
+     * has exactly two call sites, both inside {@code MiuiStatusBarHoverHelper}, and
+     * that helper is only constructed under {@code MiuiConfigs.IS_PAD}
+     * ({@code MiuiPhoneStatusBarView.java:418}). On a phone {@code setDependence}
+     * takes the other branch and sets {@code mHoverHelper = null} (:472), so the
+     * rectangle is never consulted - and this device reports
+     * {@code ro.build.characteristics=nosdcard}. Even where it is consulted, the
+     * affected paths are hover highlighting and a mouse button release; the finger
+     * gesture that opens the shade is decided in
+     * {@code ControlCenterEventHandlerImpl} from {@code getRawX()} against half the
+     * screen width and never reads this rectangle.
+     *
+     * <p>Setting {@code mMultiTaskVisibility} rather than {@code mPolicyVisibility}
+     * is the other half of surviving MIUI: the policy field is MIUI's own state
+     * machine, written by its {@code hideClock}/{@code showClock} paths, so a value
+     * put there is reverted by the next {@code showClock}. The multi-task field is
+     * referenced nowhere outside {@code MiuiClock}, so nothing races us for it, and
+     * {@code updateClockVisibility} gives it priority over the policy value.
      *
      * <p>The other clocks on the phone - the keyguard's, the shade header's, the
      * control centre's, the always-on display's - are separate instances of a
@@ -1738,14 +1850,41 @@ final class TrioHooks {
         if (hide == sClockHidden) {
             return;
         }
-        // MiuiClock's own multi-task visibility parameter. It shares View's
-        // numbering, but naming our intent - "paint nothing, measure as usual" -
-        // is what keeps the next reader from "simplifying" it to GONE, which
-        // would zero the clock's width and break the tap-left-for-shade gesture.
-        final int invisibleKeepMeasuring = 4;
+        // GONE, not INVISIBLE. INVISIBLE hides the digits but leaves the view
+        // measured, so the clock's width stays reserved and the bar keeps a
+        // clock-sized hole where nothing is painted - which is a worse result than
+        // either drawing the clock or removing it. GONE lets the left container
+        // collapse and the bar close the gap.
+        //
+        // The reason INVISIBLE looked necessary is that the clock's width is read
+        // in HoverViewManager.calculateIsInClockRect, which decides whether a
+        // pointer in the clock's rectangle counts as being on the clock. Two things
+        // make that harmless here, and both were checked against this ROM rather
+        // than assumed:
+        //
+        //  1. On a phone the rectangle is never consulted. calculateIsInClockRect
+        //     has exactly two call sites, both in MiuiStatusBarHoverHelper, and
+        //     that helper is constructed only under MiuiConfigs.IS_PAD
+        //     (MiuiPhoneStatusBarView.java:418); on a phone setDependence takes
+        //     the other branch and sets mHoverHelper = null (:472). This device
+        //     reports ro.build.characteristics=nosdcard, so IS_PAD is false.
+        //  2. Even on a tablet, the affected paths are hover highlighting and a
+        //     mouse's ACTION_BUTTON_RELEASE. The finger gesture that opens the
+        //     shade is decided in ControlCenterEventHandlerImpl from
+        //     motionEvent.getRawX() against half the screen width, and never reads
+        //     this rectangle at all.
+        //
+        // MiuiClock's own multi-task parameter, rather than setPolicyVisibility:
+        // mPolicyVisibility is MIUI's own state machine, read and written by its
+        // hideClock/showClock paths, so anything written there is reverted by the
+        // next showClock. mMultiTaskVisibility is referenced nowhere outside
+        // MiuiClock itself, so nothing races us for it - and updateClockVisibility
+        // gives it priority over the policy value, which is what makes the hiding
+        // survive MIUI's own re-show.
+        final int goneReleasingTheSpace = 8;
         try {
             Refl.invokeArgs(setter, clock,
-                    new Object[] { Integer.valueOf(hide ? invisibleKeepMeasuring : 0) });
+                    new Object[] { Integer.valueOf(hide ? goneReleasingTheSpace : 0) });
             sClockHidden = hide;
         } catch (Throwable t) {
             log(sModule, "clock visibility failed: " + t);

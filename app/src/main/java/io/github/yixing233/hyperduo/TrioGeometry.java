@@ -532,30 +532,41 @@ final class TrioGeometry {
     // The shape is quoted against the reference the design was drawn from: a
     // capsule 2.34 times as wide as it is tall, a stroke 12.6% of that height,
     // dots as thick as the stroke with a pitch of 18.5%, and text 26.5% of the
-    // height. Those ratios cannot all be kept at the real size, and the reason is
-    // arithmetic rather than taste - see the note on CAP_BOTTOM.
+    // height. All four of those are kept, and the reason they can be is the host
+    // width - see CAP_RIGHT.
 
     /** Outer bounds of the capsule outline, in design units. */
     static final float CAP_LEFT = 1.0f;
-    static final float CAP_RIGHT = 119.0f;
+    /**
+     * Right edge of the outline.
+     *
+     * <p>Set so the shape is the reference's own 2.34:1 - the width the design was
+     * drawn at. It is a free parameter rather than a derived one because the host
+     * is no longer a fixed box: {@code MiuiBatteryMeterIconView.onMeasure} used to
+     * pin the glyph's width to MIUI's 28dp battery, which left the fit decided by
+     * the width and forced the shape down to 2:1 (84x46px in a 60px-tall bar, with
+     * a third of the bar's height unused). The module now answers that measurement
+     * with the width this aspect ratio asks for, so the proportions are the
+     * designer's again rather than the stock icon's.
+     *
+     * <p>The height is untouched by that: {@link #CAP_BOTTOM} is what the bar
+     * offers, and only the width grows to meet it.
+     */
+    static final float CAP_RIGHT = 139.0f;
     static final float CAP_TOP = 1.0f;
     /**
      * Bottom edge of the outline.
      *
-     * <p>The height is the one number the reference's proportions have to give
-     * way on, and this is why. The host is 28dp x 20dp - 84px by 60px at density
-     * 3 - so the glyph is fitted by its width, and the capsule's on-screen height
-     * is {@code 84 / aspect}. At the reference's 2.34 that is 36px, and text at
-     * the reference's 26.5% of it would be 9.5px: smaller than anything else in
-     * the status bar, in a style whose whole point is that the time is readable.
+     * <p>Quoted against the height the status bar offers its icons -
+     * {@code status_bar_icon_height}, 20dp, 60px at density 3 - less the two
+     * units of the design space that keep the ink off the host's edge. The
+     * reference's 26.5% text rule then lands at 15.6 units of cap height, which
+     * is what the stock battery percentage is drawn at, so the readings are the
+     * size they would be anywhere else on the bar.
      *
-     * <p>There is a second, harder floor. The ends are half-circles of
-     * {@code height / 2}, so the flat run between them is {@code width - height};
-     * four separated dots as thick as the stroke need 0.58 of the height. Below
-     * an aspect of about 1.6 the dots would have to overlap. Taking 59 units of
-     * height against 118 of width - an aspect of 2.0 - keeps the dots clear with
-     * room to spare and puts the text at 11px, which is what the stock battery
-     * percentage is drawn at.
+     * <p>Deliberately the number that does <em>not</em> move when the shape gets
+     * wider: the bar's height is fixed, and the capsule grows sideways into it
+     * rather than up. See {@link #CAP_RIGHT}.
      */
     static final float CAP_BOTTOM = 60.0f;
 
@@ -840,6 +851,45 @@ final class TrioGeometry {
             (CAP_RIGHT + Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f) - CAP_INK_X;
     static final float CAP_INK_H =
             (CAP_BOTTOM + Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f) - CAP_INK_Y;
+
+    /**
+     * The width the capsule's host view has to ask the status bar for, so that the
+     * shape can be as tall as the bar allows.
+     *
+     * <p><b>Why this method exists at all.</b> The host is not a square like the
+     * other two arrangements' - it is MIUI's battery icon, and
+     * {@code MiuiBatteryMeterIconView.onMeasure} pins its width to
+     * {@code R.dimen.battery_meter_width}, which is 28dp. That number is a
+     * property of the <em>stock</em> battery glyph, which is a narrow vertical
+     * battery; the capsule is a wide shape, so being handed a tall narrow box
+     * means the fit is decided by the width and the shape ends up short. On the
+     * reference device that is 84x46px in a 60px-tall bar - fourteen pixels of
+     * the bar's height go unused, and the glyph looks like a squashed pill.
+     *
+     * <p>The fix is to answer {@code onMeasure} with the width this aspect ratio
+     * actually needs for the height being offered, rather than the stock width.
+     * Nothing has to be told about it: {@code MiuiBatteryMeterView.onMeasure} does
+     * not measure its icon child at all, it just adds up
+     * {@code mBatteryDigitalView.getMeasuredWidth()}, and
+     * {@code MiuiStatusBatteryContainer.onMeasure} adds up the meter's - so
+     * widening this one view widens the battery slot and the status bar makes room
+     * for it on its own.
+     *
+     * <p>Deliberately <em>not</em> scaled by {@code glyphFit}: that multiplier is
+     * already applied to the drawing scale, and folding it in here as well would
+     * apply it twice - the ink would shrink by the square of the setting. The
+     * consequence is that the host keeps its full width when the user shrinks the
+     * glyph, which is what the ring arrangement already does with its square host.
+     *
+     * @param heightPx the height the bar is offering, in pixels
+     * @return the width to measure at, or 0 when there is no height to work from
+     */
+    static int capHostWidthPx(int heightPx) {
+        if (heightPx <= 0) {
+            return 0;
+        }
+        return Math.round(heightPx * (CAP_INK_W / CAP_INK_H));
+    }
 
     // ------------------------------------------------------------------ colours
     static final int CRITICAL = 0xFFFF3B30;

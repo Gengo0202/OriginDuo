@@ -4,9 +4,18 @@
 # What this covers that the other suites cannot: every one of them renders the
 # glyph into a square host, where a shape that overflows vertically is invisible
 # because the ink box is fitted by whichever axis binds. The capsule's real host
-# is 28dp x 20dp - wider than it is tall - so it is fitted by WIDTH, and anything
-# taller than the outline runs off the top and bottom of the host. That failure
-# mode only appears at the real aspect ratio, which is what this renders at.
+# is wider than it is tall, so it is fitted by WIDTH, and anything taller than the
+# outline runs off the top and bottom of the host. That failure mode only appears
+# at the real aspect ratio, which is what this renders at.
+#
+# The host is produced by the module rather than by MIUI: the bar measures the
+# battery icon to 28dp (the width of MIUI's own narrow battery), and
+# TrioGeometry.capHostWidthPx answers with the width the capsule's aspect ratio
+# needs for the height on offer. Both sizes are rendered here, because the stock
+# one is what a regression would fall back to and the widened one is what ships.
+#
+# ASCII only on purpose: PowerShell 5.1 reads BOM-less files as ANSI, so a script
+# without a BOM must not contain non-ASCII bytes.
 #
 # Usage:  powershell -File tests\capsule.ps1
 
@@ -27,16 +36,50 @@ $geom = [System.IO.File]::ReadAllText($geomPath)
 $prefs = [System.IO.File]::ReadAllText($prefsPath)
 $renderer = [System.IO.File]::ReadAllText($rendererPath)
 $settings = [System.IO.File]::ReadAllText($settingsPath)
+$hooks = [System.IO.File]::ReadAllText((Join-Path $trio 'TrioHooks.java'))
 
 # --- source contract pins ------------------------------------------------------
 # The statements the pixel test below cannot see, because they are about numbers
 # agreeing rather than about ink appearing.
 
+# The host is MEASURED to the capsule's aspect ratio, not left at MIUI's stock
+# 28dp. This is the one thing that decides whether the glyph is a wide capsule or
+# a squashed pill, and no pixel test in a square host can see it: the ink box is
+# fitted by whichever axis binds, so a too-narrow host just draws a smaller
+# capsule and every "it fits" assertion still holds. The device is where it shows
+# - 84x46px inside a 60px-tall bar - which is why the pin is here.
+if (![regex]::IsMatch($hooks,
+        'Refl\.method\(icon, "onMeasure", int\.class, int\.class\)')) {
+    throw 'the capsule no longer hooks the icon view''s onMeasure'
+}
+if (![regex]::IsMatch($hooks, 'TrioGeometry\.capHostWidthPx\(height\)')) {
+    throw 'the icon view no longer asks the capsule for its host width'
+}
+# Only the capsule may be re-measured. A pass-through for the other two keeps
+# MIUI's own measurement standing, so this cannot move the ring or the rectangle.
+if (![regex]::IsMatch($hooks,
+        'if \(!a\.glyph \|\| !a\.capsule\) \{\s*\r?\n\s*return result;')) {
+    throw 'the icon re-measure is no longer gated on the capsule alone'
+}
+# Resolved on View, not on the icon class: Refl.method uses getDeclaredMethod,
+# which does not walk up the hierarchy, so asking the subclass returns null and
+# the widening silently never happens.
+if (![regex]::IsMatch($hooks,
+        'Refl\.method\(View\.class, "setMeasuredDimension",\s*\r?\n\s*int\.class, int\.class\)')) {
+    throw 'setMeasuredDimension is no longer resolved on View itself'
+}
+# The width must NOT be scaled by the overall-size setting: that multiplier is
+# already applied to the drawing scale, so folding it in here as well would shrink
+# the ink by the square of the setting.
+if ([regex]::IsMatch($hooks, 'capHostWidthPx[\s\S]{0,500}glyphFit')) {
+    throw 'the host width is scaled by the overall-size setting as well as the drawing'
+}
+
 # The dot rows are drawn on the outline's own path, not on the stroke's inner
 # edge. The stroke straddles its path, so CAP_TOP IS the line's centre; adding
 # half a stroke - the obvious-looking thing - hangs the dots below the line they
-# are meant to be set into, which at 84x60 reads as beads under the outline
-# rather than as dots interrupting it.
+# are meant to be set into, which reads as beads under the outline rather than as
+# dots interrupting it.
 if (![regex]::IsMatch($geom,
         'static float capDotTopY\(\) \{\s*\r?\n\s*return CAP_TOP;')) {
     throw 'the top dot row no longer sits on the outline''s own centreline'
@@ -107,13 +150,14 @@ import android.graphics.Canvas;
 import java.awt.image.BufferedImage;
 
 /**
- * Renders the real capsule at its real host size and inspects the pixels.
+ * Renders the real capsule at both host sizes and inspects the pixels.
  *
- * <p>The host is 28dp x 20dp, which is 84x60 at density 3 - the measurement the
- * whole arrangement is designed against, and the size the device reported.
+ * <p>The stock host is MIUI's battery icon, 28dp x 20dp - 84x60 at density 3. The
+ * widened one is what the module asks for instead, and is what the device shows.
  */
 final class CapsuleTest {
 
+    /** MIUI's own battery icon slot, 28dp x 20dp at density 3. */
     private static final int HOST_W = 84;
     private static final int HOST_H = 60;
 
@@ -135,9 +179,9 @@ final class CapsuleTest {
         TrioState.sClockText = "19:41";
 
         // ---- the outline itself is the gauge ---------------------------------
-        // Charging is where the role colour is unambiguous green, so the growth
-        // is measured there. The track is constant underneath and the fill goes
-        // over it, so the coloured length has to rise with the level.
+        // Charging is where the role colour is unambiguous green, so the growth is
+        // measured there. The track is constant underneath and the fill goes over
+        // it, so the coloured length has to rise with the level.
         final Stats c10 = stats(render(cfg, 10, true, 0, new int[] { 4, 4 }, ""));
         final Stats c50 = stats(render(cfg, 50, true, 0, new int[] { 4, 4 }, ""));
         final Stats c90 = stats(render(cfg, 90, true, 0, new int[] { 4, 4 }, ""));
@@ -148,22 +192,21 @@ final class CapsuleTest {
         // ---- green is the REMAINING charge -----------------------------------
         // The written spec: green is what is left, grey is the whole 100% track.
         // So the outline is drawn grey in full and the green part is the level
-        // itself - a full battery is almost all green, a nearly flat one almost
-        // all grey. Asserted on the pixels because it is exactly the inversion a
-        // later "cleanup" would silently undo, and a comment cannot catch it.
+        // itself - a full battery is almost all green, a nearly flat one almost all
+        // grey. Asserted on the pixels because it is exactly the inversion a later
+        // "cleanup" would silently undo, and a comment cannot catch it.
         final Stats charged = stats(render(cfg, 100, true, 0, new int[] { 4, 4 }, ""));
         final Stats flat = stats(render(cfg, 1, true, 0, new int[] { 4, 4 }, ""));
         ok("a full battery fills more of the outline than a flat one",
                 charged.coloured > flat.coloured);
         ok("both still show the track they are measured against",
                 charged.track > 0 && flat.track > 0);
-        // The two together are the whole outline, so the coloured part has to be
-        // strictly less than the total: a fill that ran the entire outline would
-        // leave no track to run down, which is the shape being a gauge rather
-        // than a decoration. Measured against the ink, not against itself.
+        // The fill never covers the whole outline: a fill that ran all of it would
+        // leave no track to run down, which is the shape being a gauge rather than
+        // a decoration. Measured against the ink, not against itself.
         ok("the fill never covers the entire outline",
                 charged.coloured < charged.ink - charged.coloured);
-        // And it is monotone across the whole range, not just at the two ends.
+        // And it is monotone across the range, not just at the two ends.
         final Stats c25 = stats(render(cfg, 25, true, 0, new int[] { 4, 4 }, ""));
         final Stats c75 = stats(render(cfg, 75, true, 0, new int[] { 4, 4 }, ""));
         ok("the fill is monotone across the range",
@@ -171,10 +214,6 @@ final class CapsuleTest {
                         && c50.coloured < c75.coloured && c75.coloured < charged.coloured);
 
         // ---- it fits the host -------------------------------------------------
-        // The failure this catches: a reading sized by the width the slot allows
-        // but not by the height the dot rows leave. At 84x60 the capsule is only
-        // ~44px tall, so a width-only fit sends the digits and the arcs past the
-        // host's top and bottom, where the platform clips them.
         final BufferedImage[] cases = {
                 render(cfg, 100, false, 3, new int[] { 4, 4 }, ""),
                 render(cfg, 73, false, 3, new int[] { 4, 3 }, ""),
@@ -189,78 +228,170 @@ final class CapsuleTest {
             ok("case " + i + " keeps the whole reading inside the host",
                     s.height() <= HOST_H);
         }
-        // The capsule fills the width it is given, which is what "fitted by
-        // width" means - and what makes the vertical extent the real constraint.
-        ok("the outline spans the host's width", stats(cases[0]).width() >= HOST_W - 1);
+
+        // ---- the widened host, which is the size it really gets --------------
+        // The bar measures the icon to 28dp, and the module answers with the width
+        // the capsule's aspect ratio needs for the height it was offered.
+        //
+        // Rendered here rather than left to the device because the difference is
+        // visible and quantifiable: at the stock width the glyph is 46px tall in a
+        // 60px bar, and the whole point of the re-measure is that it stops being.
+        final int wideW = TrioGeometry.capHostWidthPx(HOST_H);
+        ok("the requested host is wider than the stock icon slot", wideW > HOST_W);
+        final BufferedImage wide = renderAt(cfg, wideW, HOST_H, 73, false, 3,
+                new int[] { 4, 3 }, "");
+        final Stats w = stats(wide);
+        ok("the widened host paints nothing outside itself",
+                w.minX >= 0 && w.minY >= 0 && w.maxX <= wideW - 1 && w.maxY <= HOST_H - 1);
+        // The host is now exactly the ink box's aspect, so BOTH axes bind at once
+        // and the glyph fills the bar's full height. That is the assertion the
+        // stock-width host cannot make: there the height is left over.
+        ok("and the glyph uses the host's full height", w.height() >= HOST_H - 2);
+        ok("while still spanning its width", w.width() >= wideW - 2);
+        // Growing the host must not change the shape's proportions: the capsule is
+        // the same design either way, just drawn larger.
+        final Stats stock = stats(cases[1]);
+        close("the aspect is the same at both host sizes",
+                w.width() / (double) w.height(),
+                stock.width() / (double) stock.height(), 0.12);
 
         // ---- the outline is broken where the dots interrupt it ---------------
-        // With the mobile switch on, the outline has a gap at 12 and 6 o'clock;
-        // with it off the outline is closed. Sampling the top-centre column just
-        // above the centreline - where the gap is, and where the dots are not -
-        // tells the two apart: closed puts stroke ink there, broken leaves it
-        // empty for the dots.
-        final BufferedImage broken = render(cfg, 50, false, 0, new int[] { 4, 4 }, "");
-        final Stats brokenTop = topCentreInk(broken);
+        // With the mobile switch on, the outline has a gap at 12 and 6 o'clock and
+        // the four dots are drawn in it; with it off, one continuous stroke runs the
+        // whole way.
+        //
+        // Measured only across the FLAT RUN between the end caps, not the whole
+        // host: the caps curve away below the top edge, so even a closed outline
+        // lights far fewer than all the columns on that row, and an assertion
+        // written against the full width fails on a perfectly correct drawing.
+        //
+        // The row and the run both come from the geometry rather than from literal
+        // pixels, because they move with the aspect ratio.
+        final int hostW = TrioGeometry.capHostWidthPx(HOST_H);
+        final float scale = HOST_H / TrioGeometry.CAP_INK_H;
+        final float tx = (hostW - TrioGeometry.CAP_INK_W * scale) / 2f
+                - TrioGeometry.CAP_INK_X * scale;
+        final float ty = (HOST_H - TrioGeometry.CAP_INK_H * scale) / 2f
+                - TrioGeometry.CAP_INK_Y * scale;
+        final int rowY = Math.round(ty + TrioGeometry.CAP_TOP * scale);
+        final int runFrom = (int) Math.ceil(tx + TrioGeometry.capFlatLeft() * scale) + 2;
+        final int runTo = (int) Math.floor(tx + TrioGeometry.capFlatRight() * scale) - 2;
+        final int runWidth = runTo - runFrom + 1;
+        ok("the sampled run is a sensible width", runWidth > hostW / 3);
+
+        // Both renders at the same host and the same reading, differing only in the
+        // mobile switch - that is the whole variable under test.
+        final BufferedImage broken = renderAt(cfg, hostW, HOST_H, 50, false, 0,
+                new int[] { 4, 4 }, "");
         cfg.showMobile = false;
-        final BufferedImage closed = render(cfg, 50, false, 0, new int[] { 4, 4 }, "");
-        final Stats closedTop = topCentreInk(closed);
+        final BufferedImage closed = renderAt(cfg, hostW, HOST_H, 50, false, 0,
+                new int[] { 4, 4 }, "");
         cfg.showMobile = true;
-        ok("the closed outline crosses the top centre", closedTop.ink > 0);
-        ok("and the broken one leaves that gap to the dots", brokenTop.ink == 0);
+        final int closedLit = litColumns(closed, rowY, runFrom, runTo);
+        final int brokenLit = litColumns(broken, rowY, runFrom, runTo);
+        // The closed outline is a continuous stroke, so every column of the run
+        // carries ink. This is what would catch the cut being applied when it should
+        // not be - the outline silently opening under a style that draws no rows.
+        ok("the closed outline runs unbroken along its top edge", closedLit == runWidth);
+
+        // With the rows on, the gap is where the closed row had stroke and the open
+        // one has none. Counted per column rather than as a ratio of the run, because
+        // the dots deliberately fill most of the gap: the reference leaves only a
+        // narrow break between each dot and the line, so "mostly gap" is not true of
+        // a correct drawing and an assertion written that way fails on one.
+        int gapColumns = 0;
+        for (int x = runFrom; x <= runTo; x++) {
+            if (hasInk(closed, x, rowY) && !hasInk(broken, x, rowY)) {
+                gapColumns++;
+            }
+        }
+        ok("the rows cut the outline open", gapColumns > 0);
+        ok("and the cut is a break, not the whole run", gapColumns < runWidth / 3);
+        // The dots ride in that break, so the open row is still lit - an outline
+        // that simply vanished would be near zero.
+        ok("while the dots themselves carry ink", brokenLit > 0);
+        ok("and the broken row is dimmer than the closed one", brokenLit < closedLit);
 
         // ---- the right-hand slot is arbitrated, not stacked -------------------
-        // A charger takes the slot from the arcs and from the percentage, exactly
-        // as it takes the ring's notch - so the Wi-Fi level must not change what
-        // a charging frame looks like.
+        // A charger takes the slot from the arcs and from the percentage, exactly as
+        // it takes the ring's notch - so the Wi-Fi level must not change what a
+        // charging frame looks like.
         ok("the charging bolt does not depend on the Wi-Fi level",
                 same(render(cfg, 50, true, 3, new int[] { 4, 4 }, ""),
                      render(cfg, 50, true, 0, new int[] { 4, 4 }, "")));
 
         System.out.println("PASS: " + checks
-                + " cases over the capsule arrangement at 84x60");
+                + " cases over the capsule arrangement at both host sizes");
     }
 
-    /** Paints the capsule into a panel-coloured bitmap at the real host size. */
+    /** Paints the capsule into a panel-coloured bitmap at MIUI's stock host size. */
     private static BufferedImage render(TrioSettings cfg, int level, boolean charging,
                                         int wifi, int[] slots, String type) {
-        final BufferedImage img =
-                new BufferedImage(HOST_W, HOST_H, BufferedImage.TYPE_INT_ARGB);
+        return renderAt(cfg, HOST_W, HOST_H, level, charging, wifi, slots, type);
+    }
+
+    /** The same, at an arbitrary host size - used for the widened measurement. */
+    private static BufferedImage renderAt(TrioSettings cfg, int w, int h, int level,
+                                          boolean charging, int wifi, int[] slots,
+                                          String type) {
+        final BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
         final java.awt.Graphics2D g = img.createGraphics();
         g.setColor(new java.awt.Color(BG_R, BG_G, BG_B));
-        g.fillRect(0, 0, HOST_W, HOST_H);
+        g.fillRect(0, 0, w, h);
         final Canvas canvas = new Canvas(g);
-        TrioRenderer.drawInto(canvas, HOST_W, HOST_H, level, charging, false, false,
+        TrioRenderer.drawInto(canvas, w, h, level, charging, false, false,
                 level <= 15, wifi, level, slots, type, 0xFFFFFFFF, cfg, false);
         g.dispose();
         return img;
     }
 
-    /** The ink summary of a whole render. */
+    /**
+     * The ink summary of a whole render.
+     *
+     * <p>Over the image's own dimensions, not {@link #HOST_W}/{@link #HOST_H}: the
+     * widened host is a different size, and measuring it inside the stock bounds
+     * would silently ignore everything past column 83 - which is where most of the
+     * widened glyph is, and would make both the "nothing outside the host" and the
+     * "spans its width" assertions vacuous rather than wrong.
+     */
     private static Stats stats(BufferedImage img) {
-        return measure(img, 0, 0, HOST_W, HOST_H);
+        return measure(img, 0, 0, img.getWidth(), img.getHeight());
+    }
+
+    /** Whether one pixel carries ink. */
+    private static boolean hasInk(BufferedImage img, int x, int y) {
+        final int argb = img.getRGB(x, y);
+        final int r = (argb >> 16) & 0xFF;
+        final int g = (argb >> 8) & 0xFF;
+        final int b = argb & 0xFF;
+        return Math.abs(r - BG_R) + Math.abs(g - BG_G) + Math.abs(b - BG_B) >= 24;
     }
 
     /**
-     * The ink on the top-centre column, sampled in a band just above the
-     * outline's centreline.
+     * How many columns in {@code x0..x1} along row {@code y} carry ink.
      *
-     * <p>The band deliberately excludes the centreline itself, where the dot row
-     * sits: this is asking about the stroke, and the dots would answer yes for
-     * both the broken and the closed outline.
+     * <p>Counting columns rather than sampling the centre column matters because the
+     * centre is a dot when the rows are on and stroke when they are off - it is
+     * painted either way, so a single-column probe would distinguish nothing.
      */
-    private static Stats topCentreInk(BufferedImage img) {
-        final int cx = HOST_W / 2;
-        return measure(img, cx - 1, 12, cx + 2, 18);
+    private static int litColumns(BufferedImage img, int y, int x0, int x1) {
+        int lit = 0;
+        for (int x = Math.max(0, x0); x <= Math.min(img.getWidth() - 1, x1); x++) {
+            if (hasInk(img, x, y)) {
+                lit++;
+            }
+        }
+        return lit;
     }
 
     /**
      * Counts ink, the coloured part of it, the track, and the ink's bounds.
      *
-     * <p>Brightness, not hue, separates the two passes: the track is the same
-     * colour as the fill at {@code trackAlpha}, which on this dark panel lands as
-     * a dim grey, while the fill is drawn at full opacity. Counting by hue would
-     * miss every role colour that is not green - white for a normal battery, red
-     * below critical, yellow in power saving.
+     * <p>Brightness, not hue, separates the two passes: the track is the same colour
+     * as the fill at {@code trackAlpha}, which on this dark panel lands as a dim
+     * grey, while the fill is drawn at full opacity. Counting by hue would miss
+     * every role colour that is not green - white for a normal battery, red below
+     * critical, yellow in power saving.
      */
     private static Stats measure(BufferedImage img, int x0, int y0, int x1, int y1) {
         final Stats s = new Stats();
@@ -320,6 +451,14 @@ final class CapsuleTest {
         checks++;
         if (!held) {
             throw new AssertionError(what);
+        }
+    }
+
+    private static void close(String what, double got, double want, double tol) {
+        checks++;
+        if (Math.abs(got - want) > tol) {
+            throw new AssertionError(what + ": got <" + got + "> want <" + want
+                    + "> within <" + tol + ">");
         }
     }
 }
