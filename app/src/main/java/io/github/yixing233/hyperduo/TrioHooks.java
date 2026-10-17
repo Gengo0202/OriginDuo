@@ -448,6 +448,16 @@ final class TrioHooks {
         // both re-applies their style and re-runs their text refresh, and the
         // weak list must not be emptied out from under the second step.
         final List<View> meters = liveMeters();
+        // The font is read here rather than left to the first draw that notices the
+        // path changed. This runs on the settings-change path, off the render
+        // thread's draw, and it is the one moment the file is known to be new. The
+        // draw-time call in the renderer stays as a safety net for an appearance
+        // that arrives by a route this callback does not cover; it finds the work
+        // already done and returns.
+        TrioRenderer.setFont(a.fontPath);
+        if (TrioRenderer.fontFailed()) {
+            log(LOG_WARN, "font could not be loaded: " + a.fontPath);
+        }
         if (debugLog()) {
             log(LOG_INFO, "config changed, hosts=" + hosts.size()
                     + " enabled=" + enabled
@@ -607,8 +617,20 @@ final class TrioHooks {
                 public void run() {
                     final TrioAppearance a = TrioConfig.appearance();
                     final Object charging = Refl.get(sChargingViewField, meter);
+                    // The PR's repair, kept under main's predicate. Both sides ask
+                    // hidesNativeBolt(); the difference is only how the hand-back is
+                    // performed - a bare showIfHidden leaves the bolt dark whenever MIUI
+                    // has not happened to re-run its own style pass, because
+                    // updateChargeAndText only reveals the charging view while
+                    // mBatteryStyle is 1 or 2 and the module forces it to 0.
                     if (!a.hidesNativeBolt()) {
+                        Refl.set(sBatteryStyleField, meter, Integer.valueOf(BOLT_STYLE));
                         showIfHidden(charging);
+                        // Asking for the bolt is what performs MIUI's view swap: the
+                        // style-1 branch hides mBatteryIconView - the view the trio is
+                        // painted on - and shows the hollow outline. Put the pair back.
+                        showIfHidden(Refl.get(sBatteryIconViewField, meter));
+                        hide(Refl.get(sHollowBatteryIconViewField, meter));
                     } else {
                         hide(charging);
                     }
@@ -1047,6 +1069,22 @@ final class TrioHooks {
         sHollowBatteryIconViewField = Refl.field(meter, "mHollowBatteryIconView");
         final Method styleChanged = Refl.method(meter, "onBatteryStyleChanged", int.class);
         sStyleChangedField = styleChanged;
+        // Runs after the meter's own layout, which is the pass that both decides
+        // the host's frame and performs the bolt-style view swap. Resolved with
+        // methodDeep because onLayout is inherited from LinearLayout, and
+        // getDeclaredMethod would miss it - which is how this repair silently
+        // failed to install once already.
+        final Method meterLayout = Refl.methodDeep(meter, "onLayout",
+                boolean.class, int.class, int.class, int.class, int.class);
+        final int layoutHook = hook(module, meterLayout,
+                "hyperduo-meter-layout", new XposedInterface.Hooker() {
+                    @Override
+                    public Object intercept(XposedInterface.Chain chain) throws Throwable {
+                        final Object result = chain.proceed();
+                        keepHostFrame(chain.getThisObject());
+                        return result;
+                    }
+                });
         final int a = hook(module, styleChanged,
                 "hyperduo-style", new XposedInterface.Hooker() {
                     @Override
@@ -1132,26 +1170,26 @@ final class TrioHooks {
                         return result;
                     }
                 });
-        return a + b;
+        return layoutHook + a + b;
     }
 
     /**
-     * Gives MIUI's own charging bolt back to the meter it belongs to.
+     * Gives MIUI's own charging bolt back to the meter it belongs to, and undoes
+     * the view swap that asking for it performs.
      *
-     * <p>Written as a field assignment instead of a
-     * {@code onBatteryStyleChanged(BOLT_STYLE)} call on purpose: that method's
-     * style-1 branch hides {@code mBatteryIconView}, which is exactly the view
-     * the trio glyph is drawn on, so going through it would trade the native bolt
-     * for the glyph. Nothing else in the firmware assigns {@code mBatteryStyle}
-     * - only the constructor and that method - so the value survives, and the
-     * three readers that matter all act on it: {@code onMeasure} measures the
-     * bolt, {@code onLayout} puts it right after the battery, and
-     * {@code updateChargeAndText} shows it when the battery is charging.
+     * <p>The bolt cannot be handed back by visibility alone. In the firmware's
+     * own {@code updateChargeAndText}, the charging view is only revealed while
+     * {@code mBatteryStyle} is 1 or 2 - both constants are tested there - so a
+     * field left at the module's forced 0 keeps MIUI's bolt hidden. The field
+     * write below is therefore what actually gives the bolt back.
      *
-     * <p>The two battery views are restored to their style-1 look first, to undo
-     * MIUI's own swap: the glyph host stays visible and the hollow outline stays
-     * gone. Then MIUI is asked to redo its charge text, so the bolt's visibility
-     * comes from the battery state rather than from us.
+     * <p>That same value is what {@code onBatteryStyleChanged} keys its view swap
+     * on: at style 1 it hides {@code mBatteryIconView} - the view the trio glyph
+     * is painted on - and shows the hollow outline instead. The style hook avoids
+     * that by forcing its own {@code proceed(0)} and writing the field only after
+     * the call returns, but the two callbacks run in an order MIUI picks, so the
+     * host is re-asserted here as well, and again after every layout pass by
+     * {@link #keepHostFrame}. Neither point alone is enough.
      */
     private static void handBackBolt(Object meter) {
         Refl.set(sBatteryStyleField, meter, Integer.valueOf(BOLT_STYLE));
@@ -1159,6 +1197,68 @@ final class TrioHooks {
         hide(Refl.get(sHollowBatteryIconViewField, meter));
         Refl.invoke(sUpdateChargeAndTextField, meter);
     }
+
+    /**
+     * Keeps the glyph host visible and laid out at a real size.
+     *
+     * <p>The glyph lives on {@code mBatteryIconView}, and MIUI hides that view -
+     * and gives it a zero frame - whenever the meter runs in its bolt style,
+     * because in that style the hollow outline is the battery and the normal
+     * icon is the spare. A VISIBLE view at 0x0 is skipped by the draw pass
+     * outright, so the trio disappears with nothing looking wrong in the view
+     * tree: on device the host still reported VISIBLE at the size it had, while
+     * the row was blank.
+     *
+     * <p>Run after the meter's own layout, which is the pass that decides the
+     * frame, so the correction is the last word rather than something the very
+     * next pass overwrites. Only containers the module actually draws in are
+     * touched, and only while the module is on.
+     */
+    private static void keepHostFrame(Object meter) {
+        if (!(meter instanceof View) || !TrioConfig.get().enabled
+                || !TrioConfig.appearance().glyph) {
+            return;
+        }
+        try {
+            final Object iconV = Refl.get(sBatteryIconViewField, meter);
+            if (!(iconV instanceof View)) {
+                return;
+            }
+            final View icon = (View) iconV;
+            if (icon.getVisibility() != View.VISIBLE) {
+                icon.setVisibility(View.VISIBLE);
+            }
+            // A hidden wrapper is enough to keep the glyph off screen no matter
+            // how healthy the host looks, and MIUI hides exactly that wrapper in
+            // the swap above, so the chain is repaired as well - never past the
+            // meter, which is MIUI's own view.
+            for (ViewParent p = icon.getParent(); p != null && p != meter;
+                 p = (p instanceof View) ? ((View) p).getParent() : null) {
+                if (!(p instanceof View)) {
+                    break;
+                }
+                final View wrapper = (View) p;
+                if (wrapper.getVisibility() != View.VISIBLE) {
+                    wrapper.setVisibility(View.VISIBLE);
+                }
+            }
+            if (icon.getWidth() > 0 && icon.getHeight() > 0) {
+                HOST_FRAME.put(icon, new int[]{
+                        icon.getLeft(), icon.getTop(), icon.getWidth(), icon.getHeight()});
+                return;
+            }
+            final int[] good = HOST_FRAME.get(icon);
+            if (good != null) {
+                icon.layout(good[0], good[1], good[0] + good[2], good[1] + good[3]);
+            }
+        } catch (Throwable ignored) {
+            // A stale frame is worse than none: leave MIUI's alone.
+        }
+    }
+
+    /** Last good rect per glyph host, so a collapsed layout can be repaired. */
+    private static final Map<View, int[]> HOST_FRAME =
+            Collections.synchronizedMap(new WeakHashMap<View, int[]>());
 
     /** Records a meter view so a later settings change can re-apply its style. */
     private static void rememberMeter(View meter) {
@@ -3140,6 +3240,13 @@ final class TrioHooks {
          * would skip the rebuild and the slider would appear inert.
          */
         int suffixScale = -1;
+        /**
+         * Weight the current typeface was built at, and the font generation it was
+         * built from. Paired so that a font swap re-dresses the label even when the
+         * weight is unchanged - see {@link TrioRenderer#fontGeneration()}.
+         */
+        int appliedWeight = -1;
+        int fontGeneration = -1;
 
         OutTypeLabel(Context context) {
             super(context);
@@ -3241,7 +3348,11 @@ final class TrioHooks {
         if (label.getVisibility() != View.VISIBLE
                 || !text.contentEquals(label.getText())
                 || label.suffixScale != TrioConfig.appearance().typeSuffixScale
-                || label.getTextSize() != outTypeSizePx(container)) {
+                || label.getTextSize() != outTypeSizePx(container)
+                // A new font moves none of the three values above, so without this
+                // term the pass would find nothing to do and the label would keep
+                // the previous face until the text or the size happened to change.
+                || label.fontGeneration != TrioRenderer.fontGeneration()) {
             requestOutTypeSync(container);
             return;
         }
@@ -3468,9 +3579,14 @@ final class TrioHooks {
             // rather than scaled by the user's font-size setting.
             label.setTextSize(TypedValue.COMPLEX_UNIT_PX, size);
         }
-        final Typeface typeface = TrioRenderer.typefaceFor(a.typeWeight);
-        if (label.getTypeface() != typeface) {
-            label.setTypeface(typeface);
+        // The generation is part of the test so a font swap reaches this label even
+        // when the weight it wears did not move.
+        final int generation = TrioRenderer.fontGeneration();
+        if (label.fontGeneration != generation
+                || label.appliedWeight != a.typeWeight) {
+            TrioRenderer.styleTextView(label, a.typeWeight);
+            label.fontGeneration = generation;
+            label.appliedWeight = a.typeWeight;
         }
         final int colour = (state != null) ? state.foreground() : 0xFFFFFFFF;
         if (label.getCurrentTextColor() != colour) {
@@ -3606,6 +3722,13 @@ final class TrioHooks {
          */
         int weight = -1;
 
+        /**
+         * Font generation the current face was built from, or -1 before the first
+         * pass. A font swap leaves the weight alone, so the weight test above
+         * cannot see it; this is what makes the picked file appear.
+         */
+        int fontGeneration = -1;
+
         PerfLabel(Context context) {
             super(context);
         }
@@ -3714,13 +3837,18 @@ final class TrioHooks {
         // size term would notice it and the slider would appear dead. The
         // stored number is also what updatePerfLabel gates its setTypeface on,
         // so the two must be asking about the same value.
+        // The font generation is a fifth term for the same reason the weight is the
+        // fourth: picking a new font changes the face without touching any of the
+        // values above, so without this the gate would find nothing to do and the
+        // new font would not reach the row until something unrelated moved.
         final int weight = TrioConfig.appearance().perfTypeWeight();
         if (perf.getVisibility() != View.VISIBLE
                 || !text.contentEquals(perf.getText())
                 || perf.getTextSize() != perfTextSize(text, container, host)
                 || perf.getLineSpacingMultiplier()
                         != perfLineSpacing(perf, text, container)
-                || perf.weight != weight) {
+                || perf.weight != weight
+                || perf.fontGeneration != TrioRenderer.fontGeneration()) {
             requestPerfSync(container);
             return;
         }
@@ -3845,6 +3973,11 @@ final class TrioHooks {
      */
     private static float perfLineHeight(float size, int weight) {
         PERF_PROBE.setTypeface(TrioRenderer.typefaceFor(weight));
+        // The label itself is emboldened synthetically when a custom single-weight
+        // font is in use, and synthetic bold changes the metrics. The probe has to
+        // match, or the size it decides is fitted to a face the label is not
+        // wearing and the two lines of a stacked readout come out mis-measured.
+        PERF_PROBE.setFakeBoldText(TrioRenderer.fakeBoldFor(weight));
         PERF_PROBE.setTextSize(size);
         final Paint.FontMetrics metrics = PERF_PROBE.getFontMetrics();
         return metrics.descent - metrics.ascent;
@@ -4147,9 +4280,11 @@ final class TrioHooks {
         // equal face, so an identity compare could either miss a real change or
         // re-set the same face on every pass.
         final int weight = a.perfTypeWeight();
-        if (perf.weight != weight) {
-            perf.setTypeface(TrioRenderer.typefaceFor(weight));
+        final int generation = TrioRenderer.fontGeneration();
+        if (perf.weight != weight || perf.fontGeneration != generation) {
+            TrioRenderer.styleTextView(perf, weight);
             perf.weight = weight;
+            perf.fontGeneration = generation;
         }
         // A stack of two readings has to fit the row the bar actually gives it,
         // and it does not at the full line height: the status bar is 88px tall

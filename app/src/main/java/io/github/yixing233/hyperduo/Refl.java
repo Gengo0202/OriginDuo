@@ -53,6 +53,29 @@ final class Refl {
         }
     }
 
+    /**
+     * Like {@link #method}, but walks up the superclasses.
+     *
+     * <p>{@code getDeclaredMethod} only sees what the class itself declares, so a
+     * hook on a framework callback the class merely inherits - {@code onLayout}
+     * and {@code onMeasure} being the two this module needs - resolves to null
+     * and installs as a silent no-op. Walking the chain is what makes those hooks
+     * work; the alternative, guessing which superclass declares it, is exactly
+     * the mistake that kept a fix from running on device.
+     */
+    static Method methodDeep(Class<?> c, String name, Class<?>... sig) {
+        for (Class<?> k = c; k != null; k = k.getSuperclass()) {
+            try {
+                Method m = k.getDeclaredMethod(name, sig);
+                m.setAccessible(true);
+                return m;
+            } catch (Throwable ignored) {
+                // try the superclass
+            }
+        }
+        return null;
+    }
+
     static Object get(Field f, Object o) {
         if (f == null || o == null) {
             return null;
