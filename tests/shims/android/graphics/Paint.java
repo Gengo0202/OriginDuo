@@ -41,6 +41,7 @@ public class Paint {
     private String family = "SansSerif";
     private int typefaceStyle = Font.PLAIN;
     private float letterSpacing = 0f;
+    private boolean fakeBold = false;
 
     public Paint() {
     }
@@ -79,8 +80,24 @@ public class Paint {
         }
     }
 
+    /**
+     * Synthetic emboldening, which the renderer applies to a custom font that
+     * carries a single weight. Mapped onto the desktop bold style so a geometry
+     * probe sees the same thing Android would: a wider face.
+     */
+    public void setFakeBoldText(boolean bold) {
+        fakeBold = bold;
+    }
+
+    public boolean isFakeBoldText() {
+        return fakeBold;
+    }
+
     public Font font() {
-        return new Font(family, typefaceStyle, 12).deriveFont(textSize);
+        // The synthetic flag wins over the typeface's own style, matching the
+        // platform's behaviour of emboldening whatever face is installed.
+        final int style = fakeBold ? (typefaceStyle | Font.BOLD) : typefaceStyle;
+        return new Font(family, style, 12).deriveFont(textSize);
     }
 
     public BasicStroke stroke() {

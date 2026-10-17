@@ -11,6 +11,10 @@
 package io.github.yixing233.hyperduo.ui
 
 import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import java.io.File
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -285,7 +289,6 @@ fun SettingsScreen(repository: SettingsRepository) {
     val partEditing = remember { mutableStateOf<TrioSettingsPart?>(null) }
     var resettingColors by remember { mutableStateOf(false) }
     var restarting by remember { mutableStateOf(false) }
-
     // The section the page is on *is* the top of the back stack, rather than a
     // second piece of state kept in step with it: the strip and the system back
     // gesture then read and write the same list, so they cannot disagree about
@@ -370,6 +373,49 @@ fun SettingsScreen(repository: SettingsRepository) {
                 snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
             }
             Unit
+        }
+    }
+
+    // ------------------------------------------------------------------- font
+
+    // The picked file is copied into shared storage and its path is then written
+    // as an ordinary setting - deliberately as two steps rather than one. The copy
+    // can fail (a wrong file, unreadable storage), and a path recorded for a file
+    // that was never written would leave the status bar loading nothing. So the
+    // copy runs first, and the setting is only written once it succeeded.
+    var installingFont by remember { mutableStateOf(false) }
+    val fontContext = LocalContext.current
+
+    val fontPicker = rememberLauncherForActivityResult(
+        // OpenDocument rather than GetContent: it hands back a document URI that
+        // outlives the picker, which matters because the copy happens after the
+        // picker activity is gone.
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? ->
+        if (uri == null) {
+            return@rememberLauncherForActivityResult
+        }
+        installingFont = true
+        scope.launch {
+            when (val result = FontInstaller.install(fontContext, uri)) {
+                is FontInstaller.Result.Installed -> {
+                    // The old file goes only once the new one is in place, so a
+                    // failed copy can never leave the user with neither font.
+                    val previous = settingsState.value.fontPath
+                    if (previous.isNotEmpty() && previous != result.path) {
+                        FontInstaller.remove(previous)
+                    }
+                    update { it.setFontPath(result.path) }
+                    showMessage(fontContext.getString(R.string.font_applied, result.name))
+                }
+                FontInstaller.Result.NotAFont ->
+                    showMessage(fontContext.getString(R.string.font_not_a_font))
+                is FontInstaller.Result.Failed -> {
+                    android.util.Log.w("HyperDuo", "font install failed: " + result.detail)
+                    showMessage(fontContext.getString(R.string.font_failed))
+                }
+            }
+            installingFont = false
         }
     }
 
@@ -500,6 +546,16 @@ fun SettingsScreen(repository: SettingsRepository) {
                                 }
                                 SettingsTab.About -> aboutTab(
                                     settingsState.value, serviceState.value, updater, showMessage,
+                                    installingFont = installingFont,
+                                    onChooseFont = { fontPicker.launch(arrayOf("*/*")) },
+                                    onClearFont = { fontPath ->
+                                        // Cleared from the settings first, so the status bar is
+                                        // already back on the system face by the time the file
+                                        // goes; a delete that failed would otherwise leave a
+                                        // setting pointing at a file that is gone.
+                                        update { it.setFontPath("") }
+                                        scope.launch { FontInstaller.remove(fontPath) }
+                                    },
                                 ) { block -> update(block) }
                             }
                         }
@@ -1312,10 +1368,6 @@ private fun SectionList(
         content()
     }
 }
-
-
-
-
 /**
  * The gate sentence for a gated row, or null when it is live.
  *
@@ -1335,6 +1387,9 @@ private fun LazyListScope.aboutTab(
     service: XposedService?,
     updater: UpdateController,
     showMessage: (String) -> Unit,
+    installingFont: Boolean,
+    onChooseFont: () -> Unit,
+    onClearFont: (String) -> Unit,
     update: ((SettingsRepository) -> Unit) -> Unit,
 ) {
     item { ActivatedRow(settings = settings, service = service) }
@@ -1348,6 +1403,45 @@ private fun LazyListScope.aboutTab(
                 title = stringResource(R.string.debug_title),
                 summary = stringResource(R.string.debug_summary),
                 insideMargin = SettingsItemMargin,
+            )
+        }
+    }
+    item { SectionTitle(stringResource(R.string.group_font)) }
+    item {
+        Card {
+            val chosen = settings.fontPath
+            ArrowPreference(
+                title = stringResource(R.string.font_title),
+                // Shows which file is in use rather than a bare "chosen" state: the name
+                // is how a user tells two fonts apart when comparing them, and the path
+                // itself is far too long to show here.
+                summary = when {
+                    installingFont -> stringResource(R.string.font_installing)
+                    chosen.isEmpty() -> stringResource(R.string.font_summary_system)
+                    else -> File(chosen).name
+                },
+                insideMargin = SettingsItemMargin,
+                // Disabled while a copy is in flight: a second pick would race the first
+                // one's file out from under it.
+                enabled = !installingFont,
+                onClick = onChooseFont,
+            )
+            // Always present, greyed out when there is nothing to clear - the same shape
+            // every other row here has. It used to appear only once a font was chosen,
+            // which read as "this feature does not exist" to anyone who had not picked
+            // one yet: the row that would have told them how to get back was exactly the
+            // row that was missing.
+            val nothingToClear = chosen.isEmpty()
+            ArrowPreference(
+                title = stringResource(R.string.font_clear_title),
+                summary = if (nothingToClear) {
+                    stringResource(R.string.font_clear_summary_idle)
+                } else {
+                    stringResource(R.string.font_clear_summary)
+                },
+                insideMargin = SettingsItemMargin,
+                enabled = !nothingToClear && !installingFont,
+                onClick = { onClearFont(chosen) },
             )
         }
     }

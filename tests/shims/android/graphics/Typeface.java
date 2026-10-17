@@ -56,6 +56,32 @@ public class Typeface {
         return new Typeface(base == null ? "SansSerif" : base.family, style);
     }
 
+    /**
+     * Loading a font file, as the custom-font feature does.
+     *
+     * <p>The desktop stand-in cannot read a real font, and should not: the offline
+     * probes check glyph geometry, not the user's file. It answers a plain face so
+     * the renderer takes the "a custom font is in use" path - which is the branch
+     * worth exercising, because that is where the synthetic emboldening and the
+     * cache invalidation live. The file is still required to exist, so a caller
+     * that gets its path wrong is not silently accepted.
+     */
+    public static Typeface createFromFile(String path) {
+        Typeface face = createFromFileOrNull(path);
+        if (face == null) {
+            throw new RuntimeException("cannot open font: " + path);
+        }
+        return face;
+    }
+
+    /** The same load, answering null instead of throwing. */
+    public static Typeface createFromFileOrNull(String path) {
+        if (path == null || !new java.io.File(path).isFile()) {
+            return null;
+        }
+        return new Typeface("SansSerif", NORMAL);
+    }
+
     String family() { return family; }
 
     int style() {

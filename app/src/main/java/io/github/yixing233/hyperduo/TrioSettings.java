@@ -211,6 +211,14 @@ public final class TrioSettings {
     /** While charging the ring centre shows the percentage; see {@link Prefs#KEY_CHARGING_SHOWS_VALUE}. */
     public boolean chargingShowsValue;
     /**
+     * Absolute path of the user's font file, or "" for the system face.
+     *
+     * <p>Never null: the renderer treats null and "" the same, but a null here
+     * would also have to be defended in the equals/bundle paths, and emptiness
+     * already means "no custom font" without any of that.
+     */
+    public String fontPath;
+    /**
      * Size of the ring's level-dot rows, as a percentage of the bead the stroke implies.
      *
      * <p>Percent for the same reason as {@link #boltScale}: the beads live in the glyph's
@@ -348,6 +356,7 @@ public final class TrioSettings {
         s.wifiScale = Prefs.DEF_WIFI_SCALE;
         s.typeHideOnWifi = Prefs.DEF_TYPE_HIDE_ON_WIFI;
         s.chargingShowsValue = Prefs.DEF_CHARGING_SHOWS_VALUE;
+        s.fontPath = Prefs.DEF_FONT_PATH;
         s.dotScale = Prefs.DEF_DOT_SCALE;
         s.outOrder = Prefs.OUT_DEFAULT_ORDER.clone();
         s.typeWeight = Prefs.DEF_TYPE_WEIGHT;
@@ -531,6 +540,7 @@ public final class TrioSettings {
                 Prefs.DEF_TYPE_HIDE_ON_WIFI);
         s.chargingShowsValue = p.getBoolean(Prefs.KEY_CHARGING_SHOWS_VALUE,
                 Prefs.DEF_CHARGING_SHOWS_VALUE);
+        s.fontPath = readFontPath(p.getString(Prefs.KEY_FONT_PATH, Prefs.DEF_FONT_PATH));
         s.dotScale = Prefs.clamp(
                 p.getInt(Prefs.KEY_DOT_SCALE, Prefs.DEF_DOT_SCALE),
                 Prefs.MIN_DOT_SCALE, Prefs.MAX_DOT_SCALE);
@@ -872,6 +882,7 @@ public final class TrioSettings {
         s.wifiScale = wifiScale;
         s.typeHideOnWifi = typeHideOnWifi;
         s.chargingShowsValue = chargingShowsValue;
+        s.fontPath = fontPath;
         s.dotScale = dotScale;
         s.outOrder = outOrder == null ? Prefs.OUT_DEFAULT_ORDER.clone() : outOrder.clone();
         s.typeWeight = typeWeight;
@@ -959,6 +970,7 @@ public final class TrioSettings {
             case Prefs.KEY_WIFI_SCALE: wifiScale = src.wifiScale; return true;
             case Prefs.KEY_TYPE_HIDE_ON_WIFI: typeHideOnWifi = src.typeHideOnWifi; return true;
             case Prefs.KEY_CHARGING_SHOWS_VALUE: chargingShowsValue = src.chargingShowsValue; return true;
+            case Prefs.KEY_FONT_PATH: fontPath = src.fontPath; return true;
             case Prefs.KEY_DOT_SCALE: dotScale = src.dotScale; return true;
             case Prefs.KEY_OUT_ORDER:
                 outOrder = src.outOrder == null
@@ -1104,6 +1116,7 @@ public final class TrioSettings {
                 Prefs.DEF_TYPE_HIDE_ON_WIFI);
         s.chargingShowsValue = bundle.getBoolean(Prefs.KEY_CHARGING_SHOWS_VALUE,
                 Prefs.DEF_CHARGING_SHOWS_VALUE);
+        s.fontPath = readFontPath(bundle.getString(Prefs.KEY_FONT_PATH, Prefs.DEF_FONT_PATH));
         s.dotScale = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_DOT_SCALE, Prefs.DEF_DOT_SCALE),
                 Prefs.MIN_DOT_SCALE, Prefs.MAX_DOT_SCALE);
@@ -1207,6 +1220,7 @@ public final class TrioSettings {
         b.putInt(Prefs.KEY_WIFI_SCALE, wifiScale);
         b.putBoolean(Prefs.KEY_TYPE_HIDE_ON_WIFI, typeHideOnWifi);
         b.putBoolean(Prefs.KEY_CHARGING_SHOWS_VALUE, chargingShowsValue);
+        b.putString(Prefs.KEY_FONT_PATH, fontPath);
         b.putInt(Prefs.KEY_DOT_SCALE, dotScale);
         b.putString(Prefs.KEY_OUT_ORDER, Prefs.encodeOutOrder(outOrder));
         b.putInt(Prefs.KEY_TYPE_WEIGHT, typeWeight);
@@ -1221,7 +1235,19 @@ public final class TrioSettings {
      * {@code TrioConfig}, which must not notify the listeners (and re-fold every
      * container) when the delayed read saw the same values the first one did -
      * but a full comparison is also what a snapshot type ought to answer.
+     */
+    /**
+     * Normalises a stored font path to a non-null string.
+     *
+     * <p>Null is folded to the empty string here rather than at every reader,
+     * because the value crosses a process boundary: the hooked side can be handed
+     * a null from a bundle built by an older app, and a null path reaching the
+     * renderer would mean a null check in the draw path.
      */
+    private static String readFontPath(String stored) {
+        return stored == null ? Prefs.DEF_FONT_PATH : stored;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -1311,6 +1337,12 @@ public final class TrioSettings {
                 && wifiScale == s.wifiScale
                 && typeHideOnWifi == s.typeHideOnWifi
                 && chargingShowsValue == s.chargingShowsValue
+                // Objects.equals, not ==: the font path is the one reference-typed
+                // field here, and == would compare identities. Two snapshots built
+                // from the same stored path hold different String instances, so a
+                // reference compare would report "changed" on every read and make
+                // the settings row rebuild endlessly.
+                && java.util.Objects.equals(fontPath, s.fontPath)
                 && dotScale == s.dotScale
                 && java.util.Arrays.equals(outOrder, s.outOrder)
                 && typeWeight == s.typeWeight

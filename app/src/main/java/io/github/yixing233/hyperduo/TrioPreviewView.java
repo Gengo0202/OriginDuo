@@ -477,6 +477,11 @@ public final class TrioPreviewView extends View {
         final TrioAppearance a = TrioAppearance.of(settings);
         labelPaint.setColor(foreground);
         labelPaint.setTypeface(TrioRenderer.typefaceFor(a.typeWeight));
+        // Mirrors what the status-bar label does with the same weight: with a
+        // custom single-weight font the weight only becomes visible through the
+        // synthetic embolden, so the preview has to apply it too or the cell would
+        // show a plainer face than the bar actually draws.
+        labelPaint.setFakeBoldText(TrioRenderer.fakeBoldFor(a.typeWeight));
         labelPaint.setTextAlign(Paint.Align.CENTER);
         labelPaint.setTextScaleX(1f);
         // dp setting to px exactly as the hooked side resolves it, then scaled

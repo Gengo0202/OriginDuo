@@ -236,6 +236,15 @@ public final class TrioAppearance {
     /** While charging the ring centre shows the percentage; see {@link Prefs#KEY_CHARGING_SHOWS_VALUE}. */
     public final boolean chargingShowsValue;
     /**
+     * Absolute path of the user's font file, or "" for the system face.
+     *
+     * <p>Resolved to non-null in the constructor, like every other field here, so
+     * no consumer has to test for null. The renderer compares it against the face
+     * it currently has loaded, which is what makes a font change take effect on
+     * the next frame without any invalidation call.
+     */
+    public final String fontPath;
+    /**
      * Size of the ring's level-dot rows, as a percentage of the bead the stroke implies.
      *
      * <p>Ask {@link #dotScaleFactor()} rather than dividing by 100 at each call site, for
@@ -289,6 +298,7 @@ public final class TrioAppearance {
         typeOutOfRing = c.mobileTypeMode == Prefs.MOBILE_TYPE_OUT_RING;
         typeHideOnWifi = c.typeHideOnWifi;
         chargingShowsValue = c.chargingShowsValue;
+        fontPath = c.fontPath == null ? "" : c.fontPath;
         perfPower = c.perfPower;
         perfTemp = c.perfTemp;
         perfTempChargingOnly = c.perfTempChargingOnly;

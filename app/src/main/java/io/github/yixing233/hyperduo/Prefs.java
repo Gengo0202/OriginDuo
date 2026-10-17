@@ -1174,6 +1174,24 @@ public final class Prefs {
 
     public static final String KEY_DEBUG_LOG = "debug_log";
 
+    /**
+     * Absolute path of the user's font file, or the empty string for the system
+     * face.
+     *
+     * <p>The module's first String-typed key. Every other key is an int or a
+     * boolean because the framework hands stored values over without converting
+     * them; a path has no honest numeric encoding, and a brand-new key is free on
+     * an existing install (an absent key simply reads as its default), so this one
+     * is the type it needs to be. The same "one type per key, forever" rule
+     * applies from here on.
+     *
+     * <p>The value is a path, never the bytes. The app copies the picked file to a
+     * place both it and the hooked SystemUI process can read, and the hooked side
+     * loads the face from there. The directory is not a second key: it is the
+     * stored path's own parent, so it cannot drift out of step with it.
+     */
+    public static final String KEY_FONT_PATH = "font_path";
+
     // -------------------------------------------------------------- defaults
     public static final boolean DEF_ENABLED = true;
     public static final boolean DEF_SHOW_WIFI = true;
@@ -1538,6 +1556,9 @@ public final class Prefs {
     public static final int DEF_TRACK_ALPHA = 56;
 
     public static final boolean DEF_DEBUG_LOG = false;
+
+    /** No font chosen: the renderer keeps building every face from the system family. */
+    public static final String DEF_FONT_PATH = "";
 
     // --------------------------------------------------------------- bounds
     public static final int MIN_RING_STROKE = 4;

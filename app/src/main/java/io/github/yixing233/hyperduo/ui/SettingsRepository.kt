@@ -291,6 +291,15 @@ class SettingsRepository(context: Context) {
      */
     fun setOutOrder(order: IntArray) =
         writeString(Prefs.KEY_OUT_ORDER, Prefs.encodeOutOrder(order))
+    // ------------------------------------------------------------------- font
+
+    /**
+     * Path of the installed font, or the empty string for the system face.
+     *
+     * See [Prefs.KEY_FONT_PATH]. The caller has already copied the file to a
+     * location the hooked process can read; this only records where.
+     */
+    fun setFontPath(value: String) = writeString(Prefs.KEY_FONT_PATH, value)
 
     // ----------------------------------------------------------------- colours
 
@@ -411,6 +420,11 @@ class SettingsRepository(context: Context) {
             prefs.putInt(Prefs.KEY_PERF_SCALE, snapshot.perfScale)
             prefs.putInt(Prefs.KEY_PERF_WEIGHT, snapshot.perfWeight)
             prefs.putInt(Prefs.KEY_GLYPH_SCALE, snapshot.glyphScale)
+            // A key missing from this list is re-pushed as its default after every
+            // framework reconnect, so a chosen font would silently revert on the
+            // next bind. This is the list DEVELOPMENT.md calls out for exactly that
+            // reason.
+            prefs.putString(Prefs.KEY_FONT_PATH, snapshot.fontPath)
 
             prefs.putBoolean(Prefs.KEY_ROLE_COLORS, snapshot.roleColors)
             prefs.putInt(Prefs.KEY_COLOR_CRITICAL_ON_DARK, snapshot.criticalOnDark)
@@ -474,6 +488,7 @@ class SettingsRepository(context: Context) {
         push { it.putString(key, value) }
         notifyModule()
     }
+
 
     /**
      * Tells the hooked process to re-read the settings, carrying the whole

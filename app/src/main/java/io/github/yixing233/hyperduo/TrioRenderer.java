@@ -135,6 +135,112 @@ final class TrioRenderer {
      */
     private static final Typeface TEXT_BASE = Typeface.create("sans-serif", Typeface.NORMAL);
 
+    /**
+     * Path of the font currently installed on {@link #TEXT}, or "" for the system
+     * family. The request, not the outcome: see {@link #sFontFailed}.
+     */
+    private static volatile String sFontPath = "";
+
+    /**
+     * The loaded custom face, or null when none is in effect.
+     *
+     * <p>Held across frames on purpose. Loading a font reads and parses the file,
+     * and {@link #applyWeight} runs inside {@code onDraw}; doing that work per
+     * frame would be an IO and parse on the render thread, which is exactly what
+     * the {@code sTextWeight} cache above exists to avoid. {@link #setFont}
+     * refreshes it when - and only when - the setting actually changes.
+     */
+    private static volatile Typeface sFontFace;
+
+    /**
+     * The path whose load was last attempted and rejected, so a missing or
+     * unreadable file is not re-read on every frame. Empty means "no failure
+     * recorded".
+     */
+    private static volatile String sFontFailed = "";
+
+    /**
+     * Bumped on every font change, and compared by {@link #applyWeight} alongside
+     * the weight so a swapped face is never skipped by an unchanged weight.
+     */
+    private static volatile int sFontGeneration;
+
+    /**
+     * Loads the user's font, or falls back to the system family.
+     *
+     * <p>Called from the settings-change path, never from a draw. Passing the same
+     * path twice is free, which matters because the appearance is rebuilt on every
+     * frame: the caller can just hand over what the settings say and let this
+     * decide whether anything actually moved.
+     *
+     * <p>A file that cannot be read - deleted, truncated, or refused by the
+     * platform - leaves the system face in place and is recorded, so the status
+     * bar keeps working and the failure is not retried every frame. The next
+     * different path clears that record and tries again.
+     */
+    static void setFont(String path) {
+        final String want = path == null ? "" : path;
+        final String current = sFontPath;
+        if (want.equals(current)) {
+            // Same request. A recorded failure for a path that is still the
+            // request is deliberately not retried: the file may be unreadable for
+            // a reason that does not change (a permissions mismatch, a directory),
+            // and retrying per frame would spin on IO.
+            return;
+        }
+        sFontPath = want;
+        sFontFailed = "";
+        sFontFace = null;
+        sFontGeneration++;
+        if (want.length() == 0) {
+            return;
+        }
+        try {
+            sFontFace = Typeface.createFromFile(want);
+        } catch (Throwable t) {
+            sFontFace = null;
+            sFontFailed = want;
+        }
+    }
+
+    /** Whether the current font request failed to load. For diagnostics. */
+    static boolean fontFailed() {
+        return sFontFailed.length() > 0;
+    }
+
+    /** The path {@link #setFont} was last asked for, "" when the system face is in use. */
+    static String fontPath() {
+        return sFontPath;
+    }
+
+    /**
+     * Whether the glyph should embolden {@code weight} synthetically.
+     *
+     * <p>With the system family {@code Typeface.create(base, weight, false)} has
+     * nine real weights to choose from and no help is needed. A user-supplied file
+     * usually carries one, so asking for 700 and 300 returns the same face and the
+     * weight sliders appear dead. Synthetic emboldening restores a visible
+     * difference on the same threshold the platform itself uses for "bold", and
+     * because every draw path measures its text <em>after</em> this is applied, the
+     * wider synthetic face is what the fit math sees - the digits cannot overflow
+     * the space they were sized for.
+     */
+    static boolean fakeBoldFor(int weight) {
+        return sFontFace != null && weight >= FAKE_BOLD_FROM;
+    }
+
+    /** The weight at or above which a custom face is emboldened synthetically. */
+    private static final int FAKE_BOLD_FROM = 600;
+
+    /**
+     * The font generation {@link #applyWeight} last installed on {@link #TEXT}.
+     *
+     * <p>Paired with {@link #sTextWeight} so the cache cannot confuse "the same
+     * weight" with "the same face": a font swap leaves the weight alone, and on
+     * the weight test alone the swap would be skipped.
+     */
+    private static int sTextGeneration = -1;
+
     static {
         STROKE.setStyle(Paint.Style.STROKE);
         STROKE.setStrokeCap(Paint.Cap.ROUND);
@@ -257,6 +363,11 @@ final class TrioRenderer {
             return;
         }
         final float scale = transform[0];
+        // Both callers - the hooked view and the settings preview - come through
+        // here, so this one line is enough to keep the loaded face in step with
+        // the setting. The call is free when nothing changed; the load it may
+        // trigger happens only on the frame a new path arrives, never per frame.
+        setFont(appearance.fontPath);
         // The two arrangements have different ink extents, so each is fitted to
         // the host view with its own box.
         final boolean rect = appearance.rect;
@@ -1636,13 +1747,22 @@ final class TrioRenderer {
      * path. The percentage and the network type share this cache because they
      * share the paint; when they differ both pay one swap per frame, which
      * {@link Typeface#create(Typeface, int, boolean)} answers from its own cache.
+     *
+     * <p>The font generation is part of the cache key. Without it a weight that
+     * did not change would skip the swap even though the face behind it did, and a
+     * newly picked font would not appear until something else happened to move
+     * the weight.
      */
     private static void applyWeight(int weight) {
-        if (weight == sTextWeight) {
+        if (weight == sTextWeight && sTextGeneration == sFontGeneration) {
             return;
         }
         TEXT.setTypeface(typefaceFor(weight));
+        // Always set, never only when true: a leftover synthetic embolden from a
+        // heavier weight would otherwise thicken a face that should be plain.
+        TEXT.setFakeBoldText(fakeBoldFor(weight));
         sTextWeight = weight;
+        sTextGeneration = sFontGeneration;
     }
 
 
@@ -1937,9 +2057,59 @@ final class TrioRenderer {
      * The shared text face at a numeric weight. The settings app and the hooked
      * side have to agree on it, and so do the in-canvas glyph and the label view
      * drawn beside it.
+     *
+     * <p>With a custom font loaded this builds on the user's file instead of the
+     * system family. The weight overload still runs, because a font that does
+     * carry several weights should use them; for the common single-weight file it
+     * returns that one face unchanged, and {@link #fakeBoldFor} supplies the
+     * visible difference on top.
      */
     static Typeface typefaceFor(int weight) {
-        return Typeface.create(TEXT_BASE, weight, false);
+        final Typeface base = (sFontFace != null) ? sFontFace : TEXT_BASE;
+        return Typeface.create(base, weight, false);
+    }
+
+    /**
+     * Dresses a real {@code TextView} in the shared face at {@code weight}.
+     *
+     * <p>The canvas path has {@link #applyWeight} to set the face and the embolden
+     * flag together, but a view carries them in two places - the view's own
+     * typeface and its paint's fake-bold flag - so the pairing belongs here rather
+     * than repeated at every call site. Without the paint half, a single-weight
+     * custom file leaves the weight sliders looking dead.
+     *
+     * <p>Unconditional work, guarded by the caller. Its callers already remember
+     * "what did I install last time" as a plain number - see {@code PerfLabel} and
+     * {@code OutTypeLabel} - and they add {@link #fontGeneration()} to that test.
+     * Comparing the installed {@link Typeface} here instead would be wrong:
+     * {@code Typeface.create} is only documented to answer an equal face rather
+     * than the same instance, so an identity compare can fail on every pass and,
+     * because the embolden flag forces a re-layout, put the view into a layout
+     * loop.
+     */
+    static void styleTextView(android.widget.TextView view, int weight) {
+        if (view == null) {
+            return;
+        }
+        view.setTypeface(typefaceFor(weight));
+        // Always set, never only when true: a leftover synthetic embolden from a
+        // heavier weight would otherwise thicken a face that should be plain.
+        view.getPaint().setFakeBoldText(fakeBoldFor(weight));
+        // The face and the embolden flag both change the measured width, and a
+        // TextView keeps its layout until it is asked to re-measure.
+        view.requestLayout();
+    }
+
+    /**
+     * Bumped whenever the loaded font changes.
+     *
+     * <p>A view's own "last weight" memory is not enough on its own: picking a new
+     * font can leave the weight untouched, and the stored number would then say
+     * "nothing to do" while the face behind it had moved. Callers fold this into
+     * that test so a font swap reaches them exactly once.
+     */
+    static int fontGeneration() {
+        return sFontGeneration;
     }
 
     // ----------------------------------------------------------- path builders

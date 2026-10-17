@@ -13,6 +13,7 @@
     <string name="group_type">Network type</string>
     <string name="group_out_signal">Out-of-ring signal</string>
     <string name="group_track">Track</string>
+    <string name="group_font">Font</string>
 
     <string name="tab_parts">Components</string>
     <string name="tab_home">Home</string>
@@ -308,4 +309,18 @@
     <string name="capsule_nudge_right_dx_summary">Positive moves right, negative left.</string>
     <string name="capsule_nudge_right_dy_title">Right cell vertical</string>
     <string name="capsule_nudge_right_dy_summary">Positive moves down, negative up.</string>
+
+    <!-- Custom font. The chosen file's own name is the summary, so this row shows
+         what is in use rather than only that something is. -->
+    <string name="font_title">Custom font</string>
+    <string name="font_summary_system">The system font. Tap to pick a font file (.ttf / .otf).</string>
+    <string name="font_installing">Installing…</string>
+    <string name="font_clear_title">Back to the system font</string>
+    <string name="font_clear_summary">Removes the installed font file; the trio text goes back to the system face.</string>
+    <!-- Shown greyed out when no custom font is in use. -->
+    <string name="font_clear_summary_idle">The system font is already in use.</string>
+    <!-- %1$s is the font file's own name. -->
+    <string name="font_applied">Applied %1$s</string>
+    <string name="font_not_a_font">That file is not a font (only .ttf / .otf), ignored</string>
+    <string name="font_failed">Could not install the font, please try again</string>
 </resources>

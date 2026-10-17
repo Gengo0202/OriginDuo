@@ -10,6 +10,7 @@
     <string name="group_type">网络类型</string>
     <string name="group_out_signal">环外信号</string>
     <string name="group_track">底纹</string>
+    <string name="group_font">字体</string>
 
     <string name="tab_parts">组件</string>
     <string name="tab_home">首页</string>
@@ -307,4 +308,18 @@
     <string name="capsule_nudge_right_dx_summary">正值右移，负值左移。</string>
     <string name="capsule_nudge_right_dy_title">右格垂直位置</string>
     <string name="capsule_nudge_right_dy_summary">正值下移，负值上移。</string>
+
+    <!-- Custom font. The chosen file's own name is the summary, so this row shows
+         what is in use rather than only that something is. -->
+    <string name="font_title">自定义字体</string>
+    <string name="font_summary_system">系统默认字体。点按选择字体文件（.ttf / .otf）。</string>
+    <string name="font_installing">正在安装…</string>
+    <string name="font_clear_title">恢复系统字体</string>
+    <string name="font_clear_summary">移除已安装的字体文件，三合一文字回到系统字体。</string>
+    <!-- Shown greyed out when no custom font is in use. -->
+    <string name="font_clear_summary_idle">当前就是系统字体，无需恢复。</string>
+    <!-- %1$s is the font file's own name. -->
+    <string name="font_applied">已应用字体 %1$s</string>
+    <string name="font_not_a_font">这个文件不是字体（只支持 .ttf / .otf），已忽略</string>
+    <string name="font_failed">字体安装失败，请重试</string>
 </resources>
