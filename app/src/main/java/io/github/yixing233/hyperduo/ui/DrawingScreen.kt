@@ -75,9 +75,7 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import androidx.compose.ui.graphics.vector.ImageVector
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TabRow
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
+import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.icon.extended.ListView
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -361,24 +359,24 @@ private fun DrawingEditorCard(
                         },
                     ),
             ) {
-                FloatingNavigationBar(
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    TrioZones.Zone.entries.forEach { zone ->
+                // Contour variant rather than the plain TabRow: the outline is what makes
+                // the selected third legible ON the glass, where a solid pill would fight
+                // the material behind it.
+                TabRowWithContour(
+                    tabs = TrioZones.Zone.entries.map { zone ->
                         val head = appearance.ringZones[zone.ordinal]
                             .firstOrNull()?.let { TrioZones.decodePart(it) }
-                        FloatingNavigationBarItem(
-                            selected = zone == openZone,
-                            onClick = {
-                                openZone = zone
-                                pressed = null
-                            },
-                            icon = MiuixIcons.ListView,
-                            label = head?.let { stringResource(occupantLabelRes(it)) }
-                                ?: stringResource(R.string.drawing_occupant_none),
-                        )
-                    }
-                }
+                        val label = stringResource(zoneLabelRes(zone, appearance))
+                        if (head == null) label
+                        else label + " · " + stringResource(occupantLabelRes(head))
+                    },
+                    selectedTabIndex = openZone.ordinal,
+                    onTabSelected = { index ->
+                        openZone = TrioZones.Zone.entries[index]
+                        pressed = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
 
             val chain = appearance.ringZones[openZone.ordinal]
