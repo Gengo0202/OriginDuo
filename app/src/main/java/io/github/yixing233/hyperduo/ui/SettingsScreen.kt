@@ -7,6 +7,9 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,6 +66,17 @@ import io.github.yixing233.hyperduo.TrioSettings
 import io.github.libxposed.service.XposedService
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -376,6 +390,12 @@ fun SettingsScreen(repository: SettingsRepository) {
         drawContent()
     }
 
+    // A second layer for the floating bottom capsule. kyant0's backdrop rather than
+    // Miuix's: the pill needs the *lens* refraction and a highlight that travels with
+    // the selection, and those live in the kyant implementation - the same one the
+    // visual reference is built on.
+    val navBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -412,23 +432,106 @@ fun SettingsScreen(repository: SettingsRepository) {
             )
         },
         bottomBar = {
-            // The page switcher at thumb height. It used to be a tab strip pinned under
-            // the top bar, which on a phone is the hardest place to reach one-handed -
-            // and this page is read from the middle down, not from the top.
+            val darkTheme = isSystemInDarkTheme()
+            // A floating capsule rather than a full-width bar, following HyperChanger's
+            // navigation: the pill is narrower than the screen, sits above the gesture bar,
+            // and the selection slides between tabs instead of appearing under them.
+            //
+            // The material is the same backdrop stack the drawing page's third switcher
+            // uses - vibrancy, blur, lens and a rim highlight - so the two surfaces read as
+            // one family rather than as a bar and a panel.
             val openTab = SettingsTab.entries.firstOrNull {
                 it.route == nav.backStack.lastOrNull()
             } ?: SettingsTab.Drawing
-            NavigationBar(modifier = Modifier.fillMaxWidth()) {
-                SettingsTab.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected = tab == openTab,
-                        onClick = { selectTab(tab) },
-                        icon = when (tab) {
-                            SettingsTab.Drawing -> MiuixIcons.Tune
-                            SettingsTab.About -> MiuixIcons.Info
-                        },
-                        label = stringResource(tab.labelRes),
+            val tabCount = SettingsTab.entries.size
+            val capsule = RoundedCornerShape(percent = 50)
+            val glass = if (barBlurSupported) {
+                Modifier.drawBackdrop(
+                    backdrop = navBackdrop,
+                    shape = { capsule },
+                    effects = {
+                        vibrancy()
+                        blur(12.dp.toPx())
+                        lens(16.dp.toPx(), 32.dp.toPx(), depthEffect = true)
+                    },
+                    highlight = {
+                        Highlight.Default.copy(alpha = if (darkTheme) 0.78f else 0.96f)
+                    },
+                    onDrawSurface = {
+                        drawRect(
+                            if (darkTheme) Color.Black.copy(alpha = 0.30f)
+                            else Color(0xFFF5F5F5).copy(alpha = 0.42f),
+                        )
+                    },
+                )
+            } else {
+                Modifier.background(
+                    if (darkTheme) Color(0xFF242424).copy(alpha = 0.88f)
+                    else Color(0xFFF5F5F5).copy(alpha = 0.90f),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(bottom = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxWidth(0.62f)
+                        .height(56.dp)
+                        .shadow(6.dp, capsule, clip = false)
+                        .clip(capsule)
+                        .then(glass),
+                ) {
+                    val slot = maxWidth / tabCount
+                    // The selection is one moving highlight, so switching tabs reads as
+                    // movement rather than as two independent highlights blinking.
+                    Box(
+                        modifier = Modifier
+                            .width(slot)
+                            .fillMaxHeight()
+                            .graphicsLayer {
+                                translationX = openTab.ordinal * slot.toPx()
+                            }
+                            .padding(4.dp)
+                            .clip(capsule)
+                            .background(
+                                if (darkTheme) Color.White.copy(alpha = 0.18f)
+                                else Color.Black.copy(alpha = 0.08f),
+                            ),
                     )
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        SettingsTab.entries.forEach { tab ->
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clickable(
+                                        interactionSource = null,
+                                        indication = null,
+                                        role = Role.Tab,
+                                    ) { selectTab(tab) },
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Icon(
+                                    imageVector = when (tab) {
+                                        SettingsTab.Drawing -> MiuixIcons.Tune
+                                        SettingsTab.About -> MiuixIcons.Info
+                                    },
+                                    contentDescription = null,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                                Text(
+                                    text = stringResource(tab.labelRes),
+                                    style = MiuixTheme.textStyles.footnote2,
+                                    modifier = Modifier.padding(top = 2.dp),
+                                )
+                            }
+                        }
+                    }
                 }
             }
         },
