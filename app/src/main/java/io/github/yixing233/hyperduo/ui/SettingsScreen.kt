@@ -74,6 +74,10 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.NavigationBar
+import top.yukonga.miuix.kmp.basic.NavigationBarItem
+import top.yukonga.miuix.kmp.icon.extended.Info
+import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.SnackbarDuration
 import top.yukonga.miuix.kmp.basic.SnackbarHost
@@ -168,10 +172,11 @@ internal enum class RoleColor(val labelRes: Int) {
  * the saved-state bundle.
  */
 private enum class SettingsTab(val labelRes: Int, val route: Route) {
-    General(R.string.tab_general, Route.General),
+    // Two pages. The other three were retired because each repeated a section of the
+    // drawing page's own editor sheet: the size rows came from the same `geometrySliders()`
+    // table, the colour rows from the same `RoleColor` entries, and the switches from the
+    // same `contentControlsFor()`. Two places to change one value is how they drift.
     Drawing(R.string.tab_drawing, Route.Drawing),
-    Geometry(R.string.group_geometry, Route.Geometry),
-    Colors(R.string.group_colors, Route.Colors),
     About(R.string.about_title, Route.About),
 }
 
@@ -192,16 +197,7 @@ private enum class SettingsTab(val labelRes: Int, val route: Route) {
 @Serializable
 private sealed interface Route : NavKey {
     @Serializable
-    data object General : Route
-
-    @Serializable
     data object Drawing : Route
-
-    @Serializable
-    data object Geometry : Route
-
-    @Serializable
-    data object Colors : Route
 
     @Serializable
     data object About : Route
@@ -275,7 +271,7 @@ fun SettingsScreen(repository: SettingsRepository) {
     // The supertype is spelled out because the reified parameter is otherwise
     // inferred from the argument, and a stack declared as the first concrete
     // route cannot hold the other three once the process is recreated.
-    val nav = rememberNavController<Route>(Route.General)
+    val nav = rememberNavController<Route>(Route.Drawing)
 
     // The framework service can bind or die at any moment; both the status row
     // and every remote write have to follow it.
@@ -319,30 +315,6 @@ fun SettingsScreen(repository: SettingsRepository) {
         }
     }
 
-    // The preview and the strip are the head of every section rather than a band
-    // pinned above the display. They then scroll away with the rows they belong
-    // to, which is how this page behaved before it had a back stack, and the
-    // display has no reason to reshape the page to run a transition over it.
-    //
-    // Being the same two rows in all four sections, they also cost the transition
-    // nothing: two copies fading through one another land on identical pixels.
-    fun LazyListScope.sectionHeader() {
-        item { PreviewCard(settingsState.value) }
-        item {
-            // Read here rather than taken from the enclosing scope: the entries
-            // are built once and remembered, so a value captured above would keep
-            // highlighting whichever section was open when the screen appeared.
-            val current = SettingsTab.entries.firstOrNull { it.route == nav.backStack.lastOrNull() }
-                ?: SettingsTab.General
-            val labels = SettingsTab.entries.map { stringResource(it.labelRes) }
-            TabRow(
-                tabs = labels,
-                selectedTabIndex = current.ordinal,
-                onTabSelected = { index -> selectTab(SettingsTab.entries[index]) },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
 
     val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
     // Resolved here rather than inside the click lambda: a string resource needs
@@ -439,6 +411,27 @@ fun SettingsScreen(repository: SettingsRepository) {
                 },
             )
         },
+        bottomBar = {
+            // The page switcher at thumb height. It used to be a tab strip pinned under
+            // the top bar, which on a phone is the hardest place to reach one-handed -
+            // and this page is read from the middle down, not from the top.
+            val openTab = SettingsTab.entries.firstOrNull {
+                it.route == nav.backStack.lastOrNull()
+            } ?: SettingsTab.Drawing
+            NavigationBar(modifier = Modifier.fillMaxWidth()) {
+                SettingsTab.entries.forEach { tab ->
+                    NavigationBarItem(
+                        selected = tab == openTab,
+                        onClick = { selectTab(tab) },
+                        icon = when (tab) {
+                            SettingsTab.Drawing -> MiuixIcons.Tune
+                            SettingsTab.About -> MiuixIcons.Info
+                        },
+                        label = stringResource(tab.labelRes),
+                    )
+                }
+            }
+        },
         contentWindowInsets = WindowInsets.statusBars,
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
@@ -478,54 +471,21 @@ fun SettingsScreen(repository: SettingsRepository) {
             // Every entry reads settingsState/serviceState rather than a value
             // captured here: the provider is remembered, so an entry built with a
             // snapshot of the settings would go on showing that snapshot.
-            entry<Route.General> {
-                SectionList(sectionPadding, isTop = nav.backStack.lastOrNull() == Route.General) {
-                    sectionHeader()
-                    val s = settingsState.value
-                    generalTab(s) { block -> update(block) }
-                }
-            }
-
-            // The drawing page owns the colour picker as well as its own part
-            // dialog, because a long press there can open a colour. It shares the
-            // page-level `editing` state with the colour tab, so only one picker is
-            // ever on screen however it was reached.
             entry<Route.Drawing> {
                 SectionList(sectionPadding, isTop = nav.backStack.lastOrNull() == Route.Drawing) {
-                    sectionHeader()
                     val s = settingsState.value
                     drawingTab(
                         settings = s,
                         update = { block -> update(block) },
                         onEditColor = { role -> editing = role },
+                        onResetColors = { resettingColors = true },
                     )
                 }
             }
 
-            entry<Route.Geometry> {
-                SectionList(sectionPadding, isTop = nav.backStack.lastOrNull() == Route.Geometry) {
-                    sectionHeader()
-                    val s = settingsState.value
-                    geometryTab(s) { block -> update(block) }
-                }
-            }
-
-            entry<Route.Colors> {
-                SectionList(sectionPadding, isTop = nav.backStack.lastOrNull() == Route.Colors) {
-                    sectionHeader()
-                    val s = settingsState.value
-                    colorsTab(
-                        settings = s,
-                        update = { block -> update(block) },
-                        onEdit = { role -> editing = role },
-                        onReset = { resettingColors = true },
-                    )
-                }
-            }
 
             entry<Route.About> {
                 SectionList(sectionPadding, isTop = nav.backStack.lastOrNull() == Route.About) {
-                    sectionHeader()
                     val s = settingsState.value
                     aboutTab(s, serviceState.value, updater, showMessage) { block ->
                         update(block)
@@ -641,340 +601,8 @@ private fun SectionList(
     }
 }
 
-/**
- * General: the master and appearance switches, then the advanced rows.
- * Advanced has no tab of its own, so it folds in here.
- */
-private fun LazyListScope.generalTab(
-    settings: TrioSettings,
-    update: ((SettingsRepository) -> Unit) -> Unit,
-) {
-    item { SectionTitle(stringResource(R.string.group_appearance)) }
-    item {
-        Card {
-            // The same appearance the renderer builds from these settings, so a
-            // row here and the glyph on screen can never disagree about what is
-            // switched on - which is what used to let the two drift apart.
-            val a = TrioAppearance.of(settings)
-            SwitchPreference(
-                checked = settings.enabled,
-                onCheckedChange = { value -> update { it.setEnabled(value) } },
-                title = stringResource(R.string.master_title),
-                summary = stringResource(R.string.master_summary),
-                insideMargin = SettingsItemMargin,
-            )
-            // 0 = the ring arrangement, 1 = the rectangular one, 2 = the capsule;
-            // the option list is ordered so its index is exactly the stored value.
-            //
-            // Sits directly under the master switch rather than with the sliders:
-            // it decides which arrangement every other row below applies to, and
-            // it is the one setting here that is a choice of layout rather than
-            // of content. Gated on the master switch only - the arrangement is
-            // still worth picking while the icon itself is off, and nothing here
-            // depends on Wi-Fi or the percentage being shown.
-            val styles = listOf(
-                stringResource(R.string.trio_style_ring),
-                stringResource(R.string.trio_style_rect),
-                stringResource(R.string.trio_style_capsule),
-            )
-            OverlayDropdownPreference(
-                items = styles,
-                selectedIndex = a.style,
-                title = stringResource(R.string.trio_style_title),
-                summary = stringResource(R.string.trio_style_summary),
-                insideMargin = SettingsItemMargin,
-                enabled = a.glyph,
-                onSelectedIndexChange = { index -> update { repo -> repo.setTrioStyle(index) } },
-            )
-            SwitchPreference(
-                checked = a.wifi,
-                onCheckedChange = { value -> update { it.setShowWifi(value) } },
-                title = stringResource(R.string.show_wifi_title),
-                summary = stringResource(R.string.show_wifi_summary),
-                insideMargin = SettingsItemMargin,
-                enabled = a.glyph,
-            )
-            SwitchPreference(
-                checked = a.mobile,
-                onCheckedChange = { value -> update { it.setShowMobile(value) } },
-                title = stringResource(R.string.show_mobile_title),
-                summary = stringResource(R.string.show_mobile_summary),
-                insideMargin = SettingsItemMargin,
-                enabled = a.glyph,
-            )
-            // Sits directly under the mobile meter because it only ever reshapes
-            // that meter: one row per SIM instead of one row for the data SIM.
-            // Gated on showMobile for the same reason the bolt row is gated on
-            // showValue - with no meter there is nothing for this to reshape.
-            val mobileGate = gateHint(
-                a.glyph to R.string.master_title,
-                a.mobile to R.string.show_mobile_title,
-            )
-            TooltipBox(text = mobileGate.orEmpty(), enabled = mobileGate != null) {
-                SwitchPreference(
-                    checked = a.dualSim,
-                    onCheckedChange = { value -> update { it.setDualSim(value) } },
-                    title = stringResource(R.string.dual_sim_title),
-                    summary = stringResource(R.string.dual_sim_summary),
-                    insideMargin = SettingsItemMargin,
-                    enabled = a.glyph && a.mobile,
-                )
-            }
-            SwitchPreference(
-                checked = a.value,
-                onCheckedChange = { value -> update { it.setShowValue(value) } },
-                title = stringResource(R.string.show_value_title),
-                summary = stringResource(R.string.show_value_summary),
-                insideMargin = SettingsItemMargin,
-                enabled = a.glyph,
-            )
-            // The three rows below are the out-of-ring reading. The first is a
-            // position rather than a switch, and the other two are switches that
-            // only mean anything once the reading has actually moved out of the
-            // ring - which is why both of them name that position as their gate.
-            //
-            // Stored values are 0 = inside the ring, 1 = outside it, so the
-            // option list is ordered so its index is exactly the stored value.
-            val signalModes = listOf(
-                stringResource(R.string.signal_mode_inside),
-                stringResource(R.string.signal_mode_outside),
-            )
-            OverlayDropdownPreference(
-                items = signalModes,
-                selectedIndex = a.signalMode,
-                title = stringResource(R.string.signal_mode_title),
-                summary = stringResource(R.string.signal_mode_summary),
-                insideMargin = SettingsItemMargin,
-                // Gated on the master switch only: the position is still worth
-                // picking while the icon is off, and it is the reading's own
-                // switch, not the dots', so the mobile row above must not hold
-                // it shut.
-                enabled = a.glyph,
-                onSelectedIndexChange = { index -> update { repo -> repo.setSignalMode(index) } },
-            )
-            // Every gate here is another row, so the hint can always name the
-            // switch that is holding it shut. Self-gating would be unrecoverable:
-            // the rule would go false when the switch is turned off, and the row
-            // would disable before it could be turned back on.
-            val stackedGate = gateHint(
-                a.glyph to R.string.master_title,
-                a.signalOutOfRing to R.string.signal_mode_title,
-            )
-            TooltipBox(text = stackedGate.orEmpty(), enabled = stackedGate != null) {
-                SwitchPreference(
-                    checked = a.stackedSignal,
-                    onCheckedChange = { value -> update { it.setStackedSignal(value) } },
-                    title = stringResource(R.string.stacked_signal_title),
-                    summary = stringResource(R.string.stacked_signal_summary),
-                    insideMargin = SettingsItemMargin,
-                    enabled = a.glyph && a.signalOutOfRing,
-                )
-            }
-            // Needs the reading to be in the out-of-ring form before there is a
-            // second reading to hide: turned off, the native icon shows both SIMs
-            // on its own and this row could not deliver what it promises. The
-            // stacked switch is named rather than the rule's own outcome
-            // (stackedOut), so the hint points at the row the user can act on.
-            val dataSimGate = gateHint(
-                a.glyph to R.string.master_title,
-                a.signalOutOfRing to R.string.signal_mode_title,
-                a.stackedSignal to R.string.stacked_signal_title,
-            )
-            TooltipBox(text = dataSimGate.orEmpty(), enabled = dataSimGate != null) {
-                SwitchPreference(
-                    checked = a.dataSimOnly,
-                    onCheckedChange = { value -> update { it.setDataSimOnly(value) } },
-                    title = stringResource(R.string.data_sim_only_title),
-                    summary = stringResource(R.string.data_sim_only_summary),
-                    insideMargin = SettingsItemMargin,
-                    enabled = a.glyph && a.signalOutOfRing && a.stackedSignal,
-                )
-            }
-            // The rows below inherit the master gate, but the ones with a second
-            // dependency explain the specific switch that is holding them shut:
-            // "off because the master is off" is already visible on screen.
-            //
-            // The gate is the percentage switch, and it has to be that switch
-            // rather than {@link TrioAppearance#drawsBolt}. drawsBolt() folds in
-            // this very row's own value, so gating on it makes the switch lock
-            // itself: turn the bolt off and "the rule would draw a bolt" goes
-            // false, the row disables, and it can never be turned back on.
-            // A row may be gated by other switches but never by its own.
-            val valueGate = gateHint(
-                a.glyph to R.string.master_title,
-                a.value to R.string.show_value_title,
-            )
-            TooltipBox(text = valueGate.orEmpty(), enabled = valueGate != null) {
-                SwitchPreference(
-                    checked = a.boltWanted,
-                    onCheckedChange = { value -> update { it.setShowBolt(value) } },
-                    title = stringResource(R.string.show_bolt_title),
-                    summary = stringResource(R.string.show_bolt_summary),
-                    insideMargin = SettingsItemMargin,
-                    enabled = a.glyph && a.value,
-                )
-            }
-            // 0 = hidden, 1 = inside the ring, 2 = drawn outside the ring; the
-            // option list is ordered so its index is exactly the stored value.
-            //
-            // Gated on the master switch only, not on showValue the way the bolt
-            // row above is: the renderer picks the in-ring type centre slot
-            // without consulting showValue (TrioRenderer typeInCentre), and the
-            // out-of-ring label is a separate view entirely. Requiring the
-            // percentage would leave this row unreachable for no reason.
-            val typeModes = listOf(
-                stringResource(R.string.mobile_type_off),
-                stringResource(R.string.mobile_type_inside),
-                stringResource(R.string.mobile_type_outside),
-            )
-            OverlayDropdownPreference(
-                items = typeModes,
-                selectedIndex = a.typeMode,
-                title = stringResource(R.string.show_mobile_type_title),
-                summary = stringResource(R.string.show_mobile_type_summary),
-                insideMargin = SettingsItemMargin,
-                enabled = a.glyph,
-                onSelectedIndexChange = { index -> update { repo -> repo.setMobileTypeMode(index) } },
-            )
-            // The centred-percentage row has three dependencies, and the style is
-            // one of them: only the ring has a notch to move the arcs into, so
-            // {@code TrioAppearance.centreValue} is false under the rectangle and
-            // the capsule whatever the stored switch says. Gating on that rule -
-            // rather than on {@code settings.valueCentred && !a.rect} - keeps the
-            // reason in one place. It is also the one intended behaviour change of
-            // this refactor: under any other arrangement the row is now plainly
-            // unavailable instead of silently doing nothing.
-            val centreHint = gateHint(
-                a.glyph to R.string.master_title,
-                a.ring to R.string.trio_style_ring,
-                a.wifi to R.string.show_wifi_title,
-                a.value to R.string.show_value_title,
-            )
-            TooltipBox(text = centreHint.orEmpty(), enabled = centreHint != null) {
-                SwitchPreference(
-                    checked = settings.valueCentred,
-                    onCheckedChange = { value -> update { it.setValueCentred(value) } },
-                    title = stringResource(R.string.value_centre_title),
-                    summary = stringResource(R.string.value_centre_summary),
-                    insideMargin = SettingsItemMargin,
-                    // The arcs have to be drawn for "move them into the notch" to
-                    // mean anything, and the percentage has to be drawn for it to
-                    // be centred at all.
-                    enabled = a.glyph && a.ring && a.wifi && a.value,
-                )
-            }
-            // The performance readouts. They sit at the end of the card because
-            // they are the only rows here whose subject is the battery rather
-            // than the glyph: they draw in the same out-of-ring strip the
-            // network type uses, but nothing above them depends on them.
-            //
-            // Gated on the master switch and on nothing else. The two readouts
-            // share one view, so gating either row on the pair - which is what
-            // {@code a.perfAnywhere()} answers - would make it lock itself off
-            // the moment it was switched off: the rule would go false, the row
-            // would disable, and it could never be turned back on. A row may be
-            // gated by other switches but never by its own. Master-only gating
-            // carries no tooltip, exactly like the overlay and Wi-Fi rows above:
-            // "off because the master is off" is already visible on screen.
-            SwitchPreference(
-                checked = settings.perfPower,
-                onCheckedChange = { value -> update { it.setPerfPower(value) } },
-                title = stringResource(R.string.perf_power_title),
-                summary = stringResource(R.string.perf_power_summary),
-                insideMargin = SettingsItemMargin,
-                enabled = a.glyph,
-            )
-            SwitchPreference(
-                checked = settings.perfTemp,
-                onCheckedChange = { value -> update { it.setPerfTemp(value) } },
-                title = stringResource(R.string.perf_temp_title),
-                summary = stringResource(R.string.perf_temp_summary),
-                insideMargin = SettingsItemMargin,
-                enabled = a.glyph,
-            )
-            // The readout's own size and weight live on the Geometry page, not
-            // here: they are numbers in the same sense the stroke and type sizes
-            // are, and a page of switches is not where a slider belongs. They sit
-            // under the same 整体尺寸 heading as the glyph's own scale, because
-            // the reading is drawn beside the glyph and the two are adjusted
-            // against each other.
-        }
-    }
-}
 
-/**
- * Geometry: the size rows, rendered from the one table in {@code PartControls}.
- *
- * <p>The rows, their ranges, their gates and their style-dependent wording all
- * live in [geometrySliders] rather than here, because the drawing page's
- * long-press dialog renders the same rows. Two lists would drift, and the way
- * they drift is that one of them keeps a range the other has moved past - so the
- * table wins and this function only groups and orders it.
- */
-private fun LazyListScope.geometryTab(
-    settings: TrioSettings,
-    update: ((SettingsRepository) -> Unit) -> Unit,
-) {
-    // Built per composition rather than captured: several rows rename themselves
-    // for the rectangular arrangement, and every gate follows the live snapshot.
-    val a = TrioAppearance.of(settings)
-    val sliders = geometrySliders()
 
-    // One Card per group, in the enum's order, with the group's rows in the
-    // table's order. A group with no rows is skipped rather than drawn empty.
-    GeometryGroup.entries.forEach { group ->
-        val rows = sliders.filter { it.group == group }
-        if (rows.isEmpty()) {
-            return@forEach
-        }
-        item { SectionTitle(stringResource(group.titleRes)) }
-        item {
-            Card {
-                rows.forEach { spec ->
-                    // The hint is resolved in a composable scope and only when the
-                    // row is actually gated: a live row has nothing to explain, and
-                    // a tooltip that says nothing would still eat the long-press.
-                    val hint = spec.firstHint(a)
-                    if (hint == null) {
-                        GeometrySlider(spec, settings, update)
-                    } else {
-                        TooltipBox(text = hint, enabled = true) {
-                            GeometrySlider(spec, settings, update)
-                        }
-                    }
-                }
-            }
-
-        }
-    }
-}
-
-/**
- * One size row.
- *
- * <p>Deliberately thin: everything it needs comes off [spec], and the only work
- * here is reading the title and summary through the appearance, which is what lets
- * a row rename itself by arrangement.
- */
-@Composable
-private fun GeometrySlider(
-    spec: SliderSpec,
-    settings: TrioSettings,
-    update: ((SettingsRepository) -> Unit) -> Unit,
-) {
-    val a = TrioAppearance.of(settings)
-    IntSlider(
-        value = spec.read(settings),
-        min = spec.min,
-        max = spec.max,
-        step = spec.step,
-        title = stringResource(spec.titleRes(a)),
-        summary = stringResource(spec.summaryRes(a)),
-        enabled = spec.enabled(a),
-        valueTextSuffix = spec.suffix,
-        onValueChange = { v -> update { r -> spec.write(r, v) } },
-    )
-}
 
 /**
  * The gate sentence for a gated row, or null when it is live.
@@ -988,78 +616,6 @@ private fun SliderSpec.firstHint(a: TrioAppearance): String? {
     return stringResource(R.string.gate_hint, stringResource(missing.second))
 }
 
-/**
- * Colors: the role-colour switch, the low-battery threshold and the three
- * per-role colour rows. The threshold stays here rather than under Geometry
- * because it only ever chooses between two colours.
- */
-private fun LazyListScope.colorsTab(
-    settings: TrioSettings,
-    update: ((SettingsRepository) -> Unit) -> Unit,
-    onEdit: (RoleColor) -> Unit,
-    onReset: () -> Unit,
-) {
-    item {
-        Card {
-            // Built here for the same reason as the other two tabs: the rows
-            // follow the rule rather than restating the settings.
-            val a = TrioAppearance.of(settings)
-            SwitchPreference(
-                checked = a.roleColors,
-                onCheckedChange = { value -> update { it.setRoleColors(value) } },
-                title = stringResource(R.string.color_role_title),
-                summary = stringResource(R.string.color_role_summary),
-                insideMargin = SettingsItemMargin,
-                enabled = a.glyph,
-            )
-            // One gate for the whole card: everything under the switch is
-            // meaningless while per-role colours are off, so they share the hint.
-            val roleGate = gateHint(
-                a.glyph to R.string.master_title,
-                a.roleColors to R.string.color_role_title,
-            )
-            TooltipBox(text = roleGate.orEmpty(), enabled = roleGate != null) {
-                IntSlider(
-                    value = settings.lowThreshold,
-                    min = Prefs.MIN_LOW_THRESHOLD,
-                    max = Prefs.MAX_LOW_THRESHOLD,
-                    title = stringResource(R.string.low_threshold_title),
-                    summary = stringResource(R.string.low_threshold_summary),
-                    enabled = a.glyph && a.roleColors,
-                    onValueChange = { v -> update { it.setLowThreshold(v) } },
-                )
-            }
-            RoleColor.entries.forEach { role ->
-                TooltipBox(text = roleGate.orEmpty(), enabled = roleGate != null) {
-                    ArrowPreference(
-                        title = stringResource(role.labelRes),
-                        summary = stringResource(role.colorFieldLabelRes),
-                        insideMargin = SettingsItemMargin,
-                        startAction = {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Swatch(colorFor(settings, role, onDark = true))
-                                Swatch(colorFor(settings, role, onDark = false))
-                            }
-                        },
-                        enabled = a.glyph && a.roleColors,
-                        onClick = { onEdit(role) },
-                    )
-                }
-            }
-            TooltipBox(text = roleGate.orEmpty(), enabled = roleGate != null) {
-                ArrowPreference(
-                    title = stringResource(R.string.color_reset),
-                    summary = stringResource(R.string.color_reset_summary),
-                    insideMargin = SettingsItemMargin,
-                    enabled = a.glyph && a.roleColors,
-                    // Asks first: the reset throws away every custom colour at
-                    // once and there is no undo behind it.
-                    onClick = onReset,
-                )
-            }
-        }
-    }
-}
 
 /** About: activation state, the counters, module info, updates and the log switch. */
 private fun LazyListScope.aboutTab(
@@ -1290,115 +846,6 @@ private fun UpdateCard(updater: UpdateController, showMessage: (String) -> Unit)
             summary = stringResource(R.string.update_repo_summary),
             insideMargin = SettingsItemMargin,
             onClick = { updater.openInBrowser(REPO_HOME) },
-        )
-    }
-}
-
-/**
- * Previews the glyph in seven states, drawn by the very renderer the status bar
- * uses, so the two can never disagree about the geometry.
- *
- * <p>The no-Wi-Fi state is the one worth watching: with no Wi-Fi ink the value
- * moves down into the ring centre, which is where the percentage lives whenever
- * Wi-Fi is off.
- *
- * <p>The last two cells are the odd ones out: neither is the glyph but one of
- * the two things the status bar lays out beside the icon when the reading is
- * moved out of the ring. They get their own cells because neither has a size or
- * a shape that shows up anywhere else on this screen.
- */
-@Composable
-private fun PreviewCard(settings: TrioSettings) {
-    Card {
-        Column(modifier = Modifier.padding(vertical = 16.dp)) {
-            Text(
-                text = stringResource(R.string.preview_title),
-                style = MiuixTheme.textStyles.subtitle,
-                modifier = Modifier.padding(horizontal = 18.dp),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                PreviewCell(settings, 88, charging = true, caption = stringResource(R.string.preview_charging))
-                PreviewCell(
-                    settings, 88,
-                    charging = true,
-                    quickCharging = true,
-                    caption = stringResource(R.string.preview_quick_charge),
-                )
-                PreviewCell(settings, 64, caption = stringResource(R.string.preview_normal))
-                PreviewCell(
-                    settings, 79,
-                    wifiLevel = NO_WIFI_LEVEL,
-                    slotLevels = DUAL_SIM_PREVIEW,
-                    mobileType = MOBILE_TYPE_PREVIEW,
-                    caption = stringResource(R.string.preview_no_wifi),
-                )
-                PreviewCell(settings, 24, powerSave = true, low = true, caption = stringResource(R.string.preview_low))
-                PreviewCell(settings, 12, low = true, caption = stringResource(R.string.preview_critical))
-                PreviewCell(
-                    settings, 79,
-                    mobileType = MOBILE_TYPE_PREVIEW,
-                    outTypeOnly = true,
-                    caption = stringResource(R.string.preview_out_type),
-                )
-                PreviewCell(
-                    settings, 79,
-                    slotLevels = DUAL_SIM_PREVIEW,
-                    outSignalOnly = true,
-                    caption = stringResource(R.string.preview_out_signal),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RowScope.PreviewCell(
-    settings: TrioSettings,
-    level: Int,
-    charging: Boolean = false,
-    quickCharging: Boolean = false,
-    powerSave: Boolean = false,
-    low: Boolean = false,
-    wifiLevel: Int = WIFI_LEVEL,
-    slotLevels: IntArray? = null,
-    mobileType: String = "",
-    /** Draws the out-of-ring type label instead of the glyph in this cell. */
-    outTypeOnly: Boolean = false,
-    /** Draws the out-of-ring signal reading instead of the glyph in this cell. */
-    outSignalOnly: Boolean = false,
-    caption: String,
-) {
-    // The status bar sits on the wallpaper, so the preview follows the app's own
-    // light/dark mode rather than trying to guess the wallpaper.
-    val dark = isDarkTheme()
-
-    Column(
-        modifier = Modifier.weight(1f),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        AndroidView(
-            modifier = Modifier.size(PREVIEW_SIZE),
-            factory = { context -> TrioPreviewView(context) },
-            update = { view ->
-                view.setSettings(settings)
-                view.setOutTypeOnly(outTypeOnly)
-                view.setOutSignalOnly(outSignalOnly)
-                view.setPreviewBackground(if (dark) 0xFF1C1B1F.toInt() else 0xFFF2F2F7.toInt())
-                view.setForeground(if (dark) 0xFFFFFFFF.toInt() else 0xFF000000.toInt())
-                view.setState(level, charging, quickCharging, powerSave, low, wifiLevel,
-                    MOBILE_LEVEL, slotLevels, mobileType)
-            },
-        )
-        Text(
-            text = caption,
-            style = MiuixTheme.textStyles.footnote2,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 6.dp),
         )
     }
 }

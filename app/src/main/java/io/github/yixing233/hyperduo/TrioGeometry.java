@@ -19,25 +19,66 @@ final class TrioGeometry {
     static final float B_R = 51.5f;
     /** Default ring stroke; the user's {@code ring_stroke} setting overrides it. */
     static final float B_STROKE = 8f;
-    /** Start angle (deg) from centre towards (15.5, 88.25). */
-    static final float B_START = 148.69008689281117f;
-    /** Clockwise sweep (deg) to (103.5, 88.25). The missing part is at the BOTTOM. */
-    static final float B_SWEEP = 242.6198262143777f;
 
     /**
-     * The whole open arc is further broken at 12 o'clock by stroke-dasharray over
-     * pathLength=100: "35.3 29.4 35.3 4" -> gap covers [0.353, 0.647] of the path.
+     * The width of the ring's 12 o'clock opening, in degrees.
      *
-     * <p>The reference figures are widened here: 29.4% of the path leaves only
-     * ~60 design units of chord, which forced the percentage to shrink and left
-     * the charging bolt looking pinched. Opening the mouth gives the top
-     * indicator the room the ring interior already has.
+     * <p>This is the <em>reference</em> opening: the arc's own bottom gap is set to
+     * match it (see {@link #B_SWEEP}), so a ring with content at both ends reads as
+     * two mirrored halves rather than as a long bottom and a short top.
+     *
+     * <p>Stated in degrees rather than as a fraction of the sweep, so that changing the
+     * sweep cannot silently change how wide the notch is - it used to be
+     * {@code 0.35 * B_SWEEP}, which meant widening the arc by 32 degrees also widened
+     * the notch by 11.
      */
-    static final float GAP_START_IDLE = 0.325f;
-    static final float GAP_END_IDLE = 0.675f;
-    /** Charging variant: "38.5 22.9 38.6 4" -> gap covers [0.385, 0.614]. */
-    static final float GAP_START_CHARGE = 0.345f;
-    static final float GAP_END_CHARGE = 0.655f;
+    static final float GAP_WIDTH_DEG = 96f;
+
+    /**
+     * The angular span the four card beads occupy, in degrees.
+     *
+     * <p>Independent of {@link #GAP_WIDTH_DEG} on purpose. The notch is wider than the
+     * beads need, so the arc's ends keep their distance from them; if the beads were
+     * spread to fill whatever the opening allows, widening the notch would drag the
+     * beads outward with it and the clearance would never change.
+     *
+     * <p>60.4 degrees is the span the beads already have at the default stroke, where
+     * the spacing looked right: four beads, one diameter apart at the ends.
+     */
+    static final float BEAD_SPAN_DEG = 60.4f;
+
+    /**
+     * Clockwise sweep (deg). The missing part is at the BOTTOM.
+     *
+     * <p>Derived from {@link #GAP_WIDTH_DEG}: the bottom opening is
+     * {@code 360 - B_SWEEP}, and making it equal the top gap is what centres the glyph
+     * vertically. It used to be 242.62, leaving 117.38 degrees bare at the bottom
+     * against 84.92 at the top - 16.2 degrees short on each side of the notch, which
+     * reads as "the lower half of the ring is shorter".
+     */
+    static final float B_SWEEP = 360f - GAP_WIDTH_DEG;
+
+    /**
+     * Start angle (deg), placed so the arc's bottom opening is centred on 6 o'clock.
+     *
+     * <p>{@code 270 - sweep/2} puts the midpoint of the missing part at 90 degrees
+     * (straight down). Spelling it out from the sweep rather than keeping the old
+     * absolute 148.69 is what keeps the opening centred if the sweep changes again.
+     */
+    static final float B_START = 270f - B_SWEEP / 2f;
+
+    /**
+     * The 12 o'clock opening, as path progress in {@code 0..1} of the sweep.
+     *
+     * <p>Converted from {@link #GAP_WIDTH_DEG} so the notch keeps its width in
+     * <em>degrees</em> whatever the sweep is. Centred on 0.5, which is 12 o'clock.
+     */
+    static final float GAP_START_IDLE = 0.5f - GAP_WIDTH_DEG / 2f / B_SWEEP;
+    static final float GAP_END_IDLE = 0.5f + GAP_WIDTH_DEG / 2f / B_SWEEP;
+
+    /** The charging mouth: the same width, as it always was for a bolt or two digits. */
+    static final float GAP_START_CHARGE = GAP_START_IDLE;
+    static final float GAP_END_CHARGE = GAP_END_IDLE;
 
     /**
      * The 12 o'clock gap used by the dual-SIM reading: exactly as wide as the
@@ -84,7 +125,7 @@ final class TrioGeometry {
     /**
      * The charging bolt, scaled up from the reference path.
      *
-     * <p>The reference path only spans x 51.3..67.6 and y 2.2..21.6 — a pinched
+     * <p>The reference path only spans x 51.3..67.6 and y 2.2..21.6 鈥?a pinched
      * sliver next to a 103-unit ring. {@link #BOLT_SCALE} grows it about
      * {@link #BOLT_CX} and pins its top edge to {@link #BOLT_TOP}, so it fills
      * the opened 12 o'clock gap without leaving the 120x120 box.
@@ -232,6 +273,303 @@ final class TrioGeometry {
         final double half = Math.toRadians((GAP_END_IDLE - GAP_START_IDLE) * B_SWEEP * 0.5f);
         return (float) (2.0 * B_R * Math.sin(half)) - stroke;
     }
+
+    // -------------------------------------------------- free-ring slot thirds
+    //
+    // The three tappable thirds of the ring, in design units. The renderer places a
+    // piece in one and sizes any text by the room the third gives, and TrioZones
+    // hit-tests the same cuts - so the numbers live here once and both read them.
+    // Two copies of a cut line is how a hot spot ends up beside the piece it names.
+
+    /**
+     * Cut between the top third and the middle one.
+     *
+     * <p><b>38, unchanged.</b> Moving this was tried and reverted: the cut is not
+     * only a size hint, it is the line {@code TrioZones} hit-tests and the line
+     * {@code tests/drawing-zones.ps1} attributes every painted pixel to. Nudging it
+     * to 40 re-attributed the top of the Wi-Fi arcs to the top third and the harness
+     * failed with "WIFI loses ink only in the thirds that name it: got TOP".
+     *
+     * <p>The type's size problem is therefore solved on the type's own terms - see
+     * {@link #zoneTextRoomH} - rather than by redividing a box whose division other
+     * things depend on.
+     */
+    static final float ZONE_CUT_TOP = 38f;
+    /**
+     * Cut between the middle third and the bottom one.
+     *
+     * <p><b>86, raised from 92.</b> This is the one cut that had to move, and the
+     * reason is measured rather than aesthetic: a placed reading is sized by the
+     * room its third gives, and the bottom third used to get
+     * {@code 2 * (104 - 92) = 24} units - about 15pt for a reading the user asked to
+     * be 36. Moving the cut up 6 units gives 36, which is the whole difference
+     * between "half the size you asked for" and "what the slider says".
+     *
+     * <p>What stops it going further is the middle third's tallest drawn piece: a
+     * bolt fitted to the slot box is 44 units tall about a centre line at 64, so it
+     * reaches y = 86. At 86 the two just touch, which is why the harness is what
+     * decides this number rather than a round figure.
+     *
+     * <p>The top cut stays at 38 on purpose: it is also the line the editor
+     * hit-tests, and moving it re-attributed the top of the Wi-Fi arcs to another
+     * third.
+     */
+    static final float ZONE_CUT_BOTTOM = 86f;
+
+    /**
+     * The vertical centre each zone places its piece on: {@code 0} top,
+     * {@code 1} middle, {@code 2} bottom.
+     *
+     * <p>Fixed numbers rather than the middles of the thirds, and that is
+     * deliberate: the drawn figures - the arcs, the bolt, the dot rows - have their
+     * own sizes and were tuned against these centres, so re-centring them whenever
+     * a cut line moves would shift drawings that nobody asked to move. The cuts
+     * divide the <em>hot zones</em>; these say where a piece is painted.
+     *
+     * <p>Text is the one piece that is also bounded by the third it sits in (a
+     * reading has to fit the band it belongs to), which is why
+     * {@link #zoneTextRoomH} measures around these centres rather than around the
+     * cuts' middles - a mismatch there would fit the type to a band it is not drawn
+     * in.
+     */
+    static final float[] ZONE_CY = { 19f, 64f, 104f };
+
+    /**
+     * The vertical room a placed text piece may use in zone {@code z}, in design
+     * units.
+     *
+     * <p>Two different rules, by design:
+     *
+     * <ul>
+     *   <li><b>Top and bottom</b> are limited by the <em>signal-dot box</em> - the
+     *       28 and 20 units the level dots were designed into. Those two slots exist
+     *       to hold a row of dots on the ring's own openings, so a reading placed
+     *       there is a guest in the dots' space and takes the dots' measure.
+     *   <li><b>Middle</b> is limited by the ring's interior, which is the largest
+     *       plainly available area in the glyph and the place a reading is actually
+     *       meant to sit.
+     * </ul>
+     *
+     * <p>Stating it this way is what keeps the three slots from having to share one
+     * compromised number: the middle gets the room it visibly has, while the two end
+     * slots stay in proportion with the dots they stand in for.
+     */
+    static float zoneTextRoomH(int z) {
+        if (z == 1) {
+            // The ring's interior, less a margin so the ink does not touch the arc.
+            // The interior is measured on the arc's inside edge; the extra two units
+            // clear the antialiased rim on both horizontal edges of the line, which is
+            // what turned "fits by measurement" into a two-pixel overlap.
+            return 2f * (B_R - Prefs.DEF_RING_STROKE) - 2f * ZONE_TEXT_INSET
+                    - 2f * ZONE_TYPE_FRINGE;
+        }
+        // A signal-dot box, less the same margin.
+        return signalDotBoxH(z) - 2f * ZONE_TEXT_INSET;
+    }
+
+    /**
+     * The height of the level-dot box a slot stands in for: {@code 28} in the top
+     * third and {@code 20} in the bottom.
+     *
+     * <p>These are the two figures {@code TrioRenderer.drawFreeRing} fits the dot
+     * rows into ({@code height = z == 0 ? 28 : z == 1 ? 44 : 20}). They are named
+     * here because the type cap now uses them too - see {@link #zoneTextRoomH} - and
+     * a second copy of "28" in the renderer is how the two would drift.
+     */
+    static float signalDotBoxH(int z) {
+        return z == 0 ? DOT_BOX_TOP : DOT_BOX_BOTTOM;
+    }
+
+    /** The level-dot placement box in the top third, in design units. */
+    static final float DOT_BOX_TOP = 28f;
+    /** The level-dot placement box in the bottom third, in design units. */
+    static final float DOT_BOX_BOTTOM = 20f;
+    /**
+     * The level-dot placement box in the middle third, in design units. */
+    static final float DOT_BOX_CENTRE = 44f;
+
+    /**
+     * The dot radius for a placed card row in the top or bottom third.
+     *
+     * <p>Exactly half the ring's stroke, so each dot's <b>diameter equals the ring's
+     * thickness</b> and a row of four reads as four beads threaded onto the open arc -
+     * the ring cut into segments, drawn in the same ink. That is the whole point of
+     * putting these rows in the notches: the notch is where the ring has no arc, so
+     * there is nothing to collide with.
+     *
+     * <p>The earlier version treated the row as something drawn <em>inside</em> the
+     * ring and capped its radius by the clear chord at the slot's centre line. That was
+     * the wrong model and produced the absurd result that a thicker ring forced smaller
+     * dots: the notch is 84.9 degrees, so its arc is {@code R * 1.482 = 76.3} design
+     * units long, and four stroke-diameter beads plus their gaps need only 56-60 of
+     * that even at the thickest setting.
+     *
+     * <p>The result is scaled down only if the four beads would not fit the opening,
+     * which the numbers above say cannot happen for the shipped stroke range - but the
+     * guard stays so a future change to the notch width degrades into smaller dots
+     * rather than into overlap.
+     */
+    static float arcRowDotR(int z, int ringStroke, float slotWidth) {
+        // The middle third is not a notch: the ring runs past it on both sides, so a row
+        // there has to fit the space between the arcs rather than being threaded onto
+        // one. It keeps the compact proportions it has always had - the dot box divided
+        // into four - which is also what the aggregate meter uses for a single row.
+        if (z == 1) {
+            return Math.max(0.5f, Math.min(DOT_BOX_CENTRE / 3f / 2f, slotWidth / 18f));
+        }
+        // The end thirds sit in the ring's own openings, where a bead as thick as the
+        // stroke is what makes the row read as outline segments. Four beads plus the
+        // arc's caps have to fit that opening, which the numbers say they always do for
+        // the shipped stroke range.
+        final float preferred = Math.max(1f, ringStroke * 0.5f);
+        return Math.max(0.5f, Math.min(preferred, arcRowBeadRoomR(z, ringStroke)));
+    }
+
+    /**
+     * Clearance kept between the end bead and the arc's own round cap, in design units.
+     *
+     * <p>Both are antialiased, so "touching exactly" still interleaves pixels; one unit
+     * is the fringe.
+     */
+    private static final float ARC_ROW_CLEARANCE = 1f;
+
+    /**
+     * The largest bead radius that still lets four of them sit inside the opening.
+     *
+     * <p>Four beads at diameter {@code 2r}, spaced at most one diameter apart, span
+     * {@code 3 * 2r + 2r = 8r} of arc, and the caps of the arc itself eat a
+     * {@code stroke/2} at each end.
+     */
+    private static float arcRowBeadRoomR(int z, int ringStroke) {
+        final float opening = arcOpeningLength(z);
+        // Both ends of that opening are the arc's own round caps, each reaching stroke/2
+        // in, plus a unit of clearance so the end bead's antialiased edge does not meet
+        // the cap's.
+        final float usable = Math.max(0f, opening - ringStroke - 2f * ARC_ROW_CLEARANCE);
+        return Math.max(0.5f, usable / 8f);
+    }
+
+    /**
+     * The length of the bare arc a zone's row is threaded onto, in design units.
+     *
+     * <p>The top third uses the 12 o'clock notch; the bottom third uses the arc's own
+     * opening. Both are {@link #GAP_WIDTH_DEG} wide by construction, so they measure
+     * the same.
+     */
+    static float arcOpeningLength(int z) {
+        if (z == 2) {
+            return (float) (B_R * Math.toRadians(360f - B_SWEEP));
+        }
+        return (float) (B_R * Math.toRadians(GAP_WIDTH_DEG));
+    }
+
+
+    /**
+     * The horizontal room a placed text piece may use in zone {@code z}, in design
+     * units.
+     *
+     * <p>A single width budget cannot be right, because the ring is round: the room
+     * left at a given height is that height's <em>chord</em>, and it shrinks toward
+     * the top and bottom of the glyph. Fitting to the chord is what stops a wide
+     * reading from clipping the arc at its corners - which is what a budget measured
+     * only at the centre line did.
+     */
+    static float zoneTextRoomW(int z, int ringStroke, float inkH) {
+        if (z != 1) {
+            // The end thirds sit in the ring's own openings, where there is no arc across
+            // the slot at all - the ink there is bounded by the arc's END CAPS, not by a
+            // chord that the text's own height would narrow.
+            //
+            // Measuring the chord there was wrong twice over: it made the budget depend on
+            // the line's height (so the fit oscillated between two values instead of
+            // converging), and at the top it collapsed the budget to about 20 units the
+            // moment the text's upper edge passed the circle's apex - a cliff that no
+            // amount of iterating could settle on.
+            //
+            // The room in an opening is its chord: the straight distance between the two
+            // caps, which is fixed by the opening's width, not by the text.
+            return Math.max(0f, openingChord(z, ringStroke));
+        }
+        final float centre = zoneTextCy(z, ringStroke);
+        final float half = Math.max(0f, inkH) * 0.5f;
+        // The middle third is inside the ring, so its budget really is a chord - and one
+        // that narrows as the line grows, which is why the caller iterates.
+        final float rowA = centre - half;
+        final float rowB = centre + half;
+        final float binding = Math.abs(rowA - B_CY) > Math.abs(rowB - B_CY) ? rowA : rowB;
+        final double dy = binding - B_CY;
+        final double inside = (double) B_R * B_R - dy * dy;
+        if (inside <= 0) {
+            return Math.max(0f, gapClearWidth(ringStroke) - 2f * ZONE_TYPE_FRINGE);
+        }
+        final float chord = (float) (2.0 * Math.sqrt(inside));
+        // One stroke of ink lies inside the arc (half at each side), plus the
+        // antialiased rim of both the glyph and the arc.
+        return Math.max(0f, chord - ringStroke - 4f * ZONE_TYPE_FRINGE);
+    }
+
+    /**
+     * The straight distance between the two arc caps of a zone's opening, in design
+     * units.
+     *
+     * <p>That is the width a piece standing in the opening has: the opening is a sector
+     * bounded by the arc's round ends, so its usable width is the chord across it - a
+     * fixed number, unlike the interior chord which shrinks towards the top of the
+     * circle. Insets a stroke's worth so the ink clears both caps.
+     */
+    static float openingChord(int z, int ringStroke) {
+        final double halfAngle = Math.toRadians(GAP_WIDTH_DEG * 0.5);
+        final float chord = (float) (2.0 * B_R * Math.sin(halfAngle));
+        return Math.max(0f, chord - ringStroke - 4f * ZONE_TYPE_FRINGE);
+    }
+
+    /** The width budget at the centre line alone, for a line whose height is unknown. */
+    static float zoneTextRoomW(int z, int ringStroke) {
+        return zoneTextRoomW(z, ringStroke, 0f);
+    }
+
+    /**
+     * Clearance kept between a fitted line's edge and the arc, in design units.
+     *
+     * <p>Both are antialiased, so "touching exactly" still interleaves pixels. Small
+     * enough to cost a fraction of a point at the default sizes.
+     */
+    private static final float ZONE_TYPE_FRINGE = 1f;
+
+    /**
+     * The centre a placed piece of <em>text</em> is drawn on, per zone.
+     *
+     * <p>The same centres the drawn figures use, deliberately: text that shifted
+     * whenever a cut line moved would sit off-centre from the arcs, the bolt and the
+     * dot rows it shares a third with, and every fit above is measured about this
+     * same point so the two always agree.
+     */
+    static float zoneTextCy(int z, int ringStroke) {
+        return ZONE_CY[z];
+    }
+
+    /**
+     * Slack kept between a fitted line and its third's boundary, in design units.
+     *
+     * <p>Not a tuning knob. It matters because this cap is the one the draw path
+     * trusts: when the width budget binds, the size lands exactly on the cap, and
+     * "exactly" is where the antialiased fringe of the glyph meets the antialiased
+     * edge of the ink above it. Two units is enough for a fringe at the largest
+     * sizes the sliders reach, and small enough that it costs a fifth of a point at
+     * the default size.
+     */
+    private static final float ZONE_TEXT_INSET = 2.5f;
+
+    /**
+     * Clearance kept from the arc's antialiased fringe, in design units.
+     *
+     * <p>The arc's nominal inner edge is {@code B_CY - B_R - stroke / 2}, but the
+     * stroke is drawn antialiased and its round cap adds a rim of partial pixels
+     * outside that. Reserving one unit keeps a fitted line off that rim rather than
+     * exactly on the mathematical edge, which is where "it should fit" and "the ink
+     * overlaps" differ by a handful of pixels.
+     */
+    private static final float ZONE_ARC_FRINGE = 1f;
 
     // ------------------------------------------------------------------- wi-fi
 
@@ -519,14 +857,116 @@ final class TrioGeometry {
 
     // ------------------------------------------------------------------- frame
     /**
-     * Tight ink box of the whole glyph (battery arc + stroke, Wi-Fi arcs + dot,
-     * level dots, top indicator) in design units. Used to fit 120x120 artwork
-     * into the host view without non-uniform scaling.
+     * Tight ink box of the whole glyph (battery arc + stroke, Wi-Fi arcs + dot, level
+     * dots, top indicator), in design units. Used to fit the 120x120 artwork into the
+     * host view without non-uniform scaling.
+     *
+     * <p>Derived from the arc rather than typed in. It used to be
+     * {@code 1.0, 0.5, 117.0, 117.5} - the box of the old 242.6-degree sweep, whose ends
+     * sat at y = 88.25 and whose round caps reached the bottom of the design box. The
+     * sweep is now 264 degrees with the bottom opening centred on 6 o'clock, so those
+     * ends moved down to y ~ 96 and the old box no longer described the ink: the glyph
+     * was scaled to a frame larger than itself and came out visibly smaller in the
+     * status bar.
+     *
+     * <p>The extents are taken from the arc's own endpoints plus half a stroke, which is
+     * what the round caps add. The top of the box is the arc's apex (also half a stroke
+     * clear), and the bottom is the lower of the two endpoints.
      */
-    static final float INK_X = 1.0f;
-    static final float INK_Y = 0.5f;
-    static final float INK_W = 117.0f;
-    static final float INK_H = 117.5f;
+    // The values are literals because the offline harness reads them out of this file with
+    // a regex and measures the render against them; a static initialiser computing them
+    // would make the number invisible to that check. They are still DERIVED, and
+    // {@link #checkInkBox()} recomputes them at class load so a change to the arc or the
+    // beads that is not mirrored here fails loudly instead of silently scaling the glyph
+    // wrong.
+    //
+    // Derivation: the box is SQUARE and centred on the RING'S CENTRE (B_CX, B_CY), not on the
+    // extent of whatever happens to be drawn. That distinction is the whole point:
+    //
+    //   - Centred on the ring, the glyph never moves or resizes as pieces come and go. The
+    //     status bar draws the same ring every frame; only its contents change.
+    //   - Centred on the drawn ink, the ring would slide up and down as a percentage or a dot
+    //     row appeared, because the arc has an opening at the bottom and its ink sits above
+    //     the ring's centre.
+    //
+    // Half-extent 59.5 is the reach of the outermost ink from the ring's centre: the cap of
+    // the thickest stroke above (61.487 - 1.99 = 59.50) and the bottom bead row below
+    // (120.99 - 61.487 = 59.50). Those two are equal, which is what makes the box symmetric
+    // and the ring exactly centred.
+    //
+    // The bead rows ARE included, at the thickest stroke the slider allows. Excluding them
+    // was tried and is wrong: a placed bottom row reaches y 118 while a ring-only box stopped
+    // at 104, so at 100% size the host clipped the row - the visible symptom being a bottom
+    // edge that "does not show completely".
+    static final float INK_X = B_CX - 59.5f;
+    static final float INK_Y = B_CY - 59.5f;
+    static final float INK_W = 119.0f;
+    static final float INK_H = 119.0f;
+
+    static {
+        checkInkBox();
+    }
+
+    /**
+     * Verifies the box is the ring's own square, centred on the ring.
+     *
+     * <p>The check is not "does this match the drawn ink" - the two differ on any frame that
+     * holds a dot row - but the two properties the box exists for:
+     *
+     * <ol>
+     *   <li>it is centred on {@code (B_CX, B_CY)}, so the ring never slides as contents
+     *       change;
+     *   <li>it is big enough for the outermost ink the sliders can ask for, so nothing is
+     *       clipped at 100%.
+     * </ol>
+     *
+     * <p>A comment saying "keep these in step" is not a check, and neither is comparing
+     * against one arbitrary frame: this recomputes both properties and throws at class load,
+     * which means at the first frame in the harness or on the device rather than as a subtly
+     * mis-scaled glyph.
+     */
+    private static void checkInkBox() {
+        // 1. Centred on the ring, and square.
+        if (Math.abs(INK_X + INK_W / 2f - B_CX) > 0.01f
+                || Math.abs(INK_Y + INK_H / 2f - B_CY) > 0.01f) {
+            throw new AssertionError("ink box is not centred on the ring: box centre "
+                    + (INK_X + INK_W / 2f) + "," + (INK_Y + INK_H / 2f)
+                    + " vs ring " + B_CX + "," + B_CY);
+        }
+        if (Math.abs(INK_W - INK_H) > 0.01f) {
+            throw new AssertionError("ink box is not square: " + INK_W + "x" + INK_H
+                    + " - a non-square box scales the ring differently on each axis");
+        }
+        // 2. Big enough for the outermost ink, recomputed the way the drawing places it.
+        final float capPad = Prefs.MAX_RING_STROKE * 0.5f;
+        float reach = 0f;
+        for (int i = 0; i <= 360; i++) {
+            final double angle = Math.toRadians(B_START + (i / 360.0) * B_SWEEP);
+            final float dx = Math.abs(B_R * (float) Math.cos(angle)) + capPad;
+            final float dy = Math.abs(B_R * (float) Math.sin(angle)) + capPad;
+            reach = Math.max(reach, Math.max(dx, dy));
+        }
+        final int stroke = Prefs.MAX_RING_STROKE;
+        final float beadR = arcRowDotR(0, stroke, 78f - stroke);
+        final float halfOpening = (float) Math.toRadians(GAP_WIDTH_DEG * 0.5);
+        final float inset = (beadR + stroke * 0.5f + 1f) / B_R;
+        final float beadHalfAngle = Math.min(halfOpening - inset,
+                (float) Math.toRadians(BEAD_SPAN_DEG * 0.5));
+        for (int row = 0; row < 2; row++) {
+            final float sign = row == 1 ? 1f : -1f;
+            for (int i = -1; i <= 1; i++) {
+                final float angle = beadHalfAngle * i;
+                final float dx = Math.abs(B_R * (float) Math.sin(angle)) + beadR;
+                final float dy = Math.abs(B_R * (float) Math.cos(angle)) + beadR;
+                reach = Math.max(reach, Math.max(dx, dy));
+            }
+        }
+        final float half = INK_W / 2f;
+        if (reach > half + 0.01f) {
+            throw new AssertionError("ink box too small: outermost ink reaches " + reach
+                    + " from the ring centre, the box allows " + half);
+        }
+    }
 
     /**
      * The same box for the rectangular arrangement.

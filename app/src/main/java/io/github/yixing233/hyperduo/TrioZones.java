@@ -84,8 +84,10 @@ public final class TrioZones {
         VALUE,
         /** The in-glyph mobile network type, "5G" / "5GA". */
         TYPE,
-        /** The second row of level dots, one per SIM. */
-        DUAL,
+        /** SIM 1's own row of four dots. */
+        SIM_1,
+        /** SIM 2's own row of four dots. */
+        SIM_2,
         /** The capsule's fixed left clock, editable but not removable. */
         CLOCK
     }
@@ -160,8 +162,14 @@ public final class TrioZones {
     private static final float RECT_SEAM_LEFT = TrioGeometry.RECT_TEXT_LEFT;
     private static final float RECT_SEAM_RIGHT = TrioGeometry.RECT_TEXT_RIGHT;
 
-    private static final float RING_TOP_BOTTOM = 38f;
-    private static final float RING_CENTRE_BOTTOM = 92f;
+    // The ring's two cuts now come from TrioGeometry, because the renderer needs
+    // them as well: a piece placed in a third is sized by the room that third
+    // gives, so the band the editor hit-tests and the band the text is fitted into
+    // have to be the same band. They used to be 38/92 here and a separate set of
+    // placement centres there - the numbers agree only by luck, and they stopped
+    // agreeing the moment a slot had to hold a full-size reading.
+    private static final float RING_TOP_BOTTOM = TrioGeometry.ZONE_CUT_TOP;
+    private static final float RING_CENTRE_BOTTOM = TrioGeometry.ZONE_CUT_BOTTOM;
 
     /**
      * The rectangles {@code zone} covers in design units, each
@@ -398,51 +406,11 @@ public final class TrioZones {
         if (a == null || r == null) {
             return null;
         }
-        switch (zone) {
-            case TOP:
-                // The notch. The percentage is in it by default - that is what
-                // "the number sits in the 12 o'clock opening" means - and it is
-                // displaced by the bolt, the dual row, the centred arcs or the
-                // type label, in that order.
-                if (r.bolt) {
-                    return Part.BOLT;
-                }
-                if (r.valueInGap) {
-                    return Part.VALUE;
-                }
-                if (r.dual) {
-                    return Part.DUAL;
-                }
-                if (r.wifiInGap) {
-                    return Part.WIFI;
-                }
-                if (r.typeInGap) {
-                    return Part.TYPE;
-                }
-                return null;
-            case CENTRE:
-                // The ring's interior. The arcs live here unless the user moved
-                // them into the notch, and the percentage or the type label take
-                // it when nothing else competes.
-                if (r.valueInCentre) {
-                    return Part.VALUE;
-                }
-                if (r.typeInCentre) {
-                    return Part.TYPE;
-                }
-                if (r.wifi && r.drawWifi && !r.wifiInGap) {
-                    return Part.WIFI;
-                }
-                return null;
-            case BOTTOM:
-            default:
-                // One row or two, this is the mobile meter: the dual switch
-                // changes how the same reading is arranged rather than adding a
-                // second reading, so the bottom band always offers the meter
-                // itself. The second row's own switch is reachable from the
-                // notch, where that row is drawn.
-                return a.signalDots() ? Part.MOBILE : null;
-        }
+        // One answer, because there is one layout: the slot says what is drawn, and
+        // TrioAppearance has already blanked the slots whose piece has nothing to show
+        // this frame. The switch-derived arbitration that used to follow is gone with the
+        // automatic layout.
+        return decodePart(r.parts[zone.ordinal()]);
     }
 
     /** The same, for the rectangular arrangement. */
@@ -502,7 +470,221 @@ public final class TrioZones {
                 : occupant(zone, a, a.ring(level, charging, wifiLevel, mobileType, sims));
     }
 
+    /** Hit only the battery arc, including its round caps, leaving component gaps editable. */
+    public static boolean batteryRingAt(float[] transform, TrioAppearance a,
+            TrioAppearance.Ring ring, float viewX, float viewY) {
+        if (transform == null || transform.length < 3 || transform[0] <= 0f
+                || a == null || !a.ring || ring == null) return false;
+        double x = (viewX - transform[1]) / transform[0] - TrioGeometry.B_CX;
+        double y = (viewY - transform[2]) / transform[0] - TrioGeometry.B_CY;
+        double tolerance = Math.max(5f, a.ringStroke * .5f + 2f);
+        if (Math.abs(Math.hypot(x, y) - TrioGeometry.B_R) > tolerance) return false;
+        double cap = Math.toDegrees(Math.atan2(tolerance, TrioGeometry.B_R));
+        double angle = (Math.toDegrees(Math.atan2(y, x)) - TrioGeometry.B_START + 360) % 360;
+        if (angle > 360 - cap) angle -= 360;
+        if (angle < -cap || angle > TrioGeometry.B_SWEEP + cap) return false;
+        double progress = angle / TrioGeometry.B_SWEEP;
+        double pad = cap / TrioGeometry.B_SWEEP;
+        return ring.gapStart() == ring.gapEnd()
+                || progress <= ring.gapStart() + pad || progress >= ring.gapEnd() - pad;
+    }
+
     // ------------------------------------------------------------- assignment
+
+    /** Stable storage IDs, deliberately independent of enum declaration order. */
+    public static int encodePart(Part part) {
+        if (part == null) return Prefs.PART_NONE;
+        switch (part) {
+            case WIFI: return Prefs.PART_WIFI;
+            case MOBILE: return Prefs.PART_MOBILE;
+            case SIM_1: return Prefs.PART_SIM_1;
+            case SIM_2: return Prefs.PART_SIM_2;
+            case VALUE: return Prefs.PART_VALUE;
+            case BOLT: return Prefs.PART_BOLT;
+            case TYPE: return Prefs.PART_TYPE;
+            case CLOCK: return Prefs.PART_CLOCK;
+            default: return Prefs.PART_NONE;
+        }
+    }
+
+    public static Part decodePart(int id) {
+        switch (id) {
+            case Prefs.PART_WIFI: return Part.WIFI;
+            case Prefs.PART_MOBILE: return Part.MOBILE;
+            case Prefs.PART_VALUE: return Part.VALUE;
+            case Prefs.PART_BOLT: return Part.BOLT;
+            case Prefs.PART_TYPE: return Part.TYPE;
+            case Prefs.PART_CLOCK: return Part.CLOCK;
+            case Prefs.PART_SIM_1: return Part.SIM_1;
+            case Prefs.PART_SIM_2: return Part.SIM_2;
+            default: return null;
+        }
+    }
+
+    /**
+     * The piece a zone's list puts first, whether or not it can draw right now.
+     *
+     * <p>This is the saved priority's top entry, not the frame's render decision: the editor
+     * uses it to show "what this zone is for" while the preview shows what actually appears.
+     */
+    public static Part configuredPart(TrioAppearance a, Zone zone) {
+        final int[] order = a.ringZones[zone.ordinal()];
+        return order.length == 0 ? null : decodePart(order[0]);
+    }
+
+    /**
+     * The three slots as they currently stand.
+     *
+     * <p>No conversion is needed any more. This used to freeze the <em>automatic</em>
+     * frame into explicit slots the first time the editor was opened, because the ring
+     * had two ways of deciding positions and the editor only spoke slots. Slots are the
+     * only answer now, so this is a read.
+     */
+    public static TrioSettings editableRingSettings(TrioSettings current, int level,
+            boolean charging, int wifiLevel, String mobileType, int sims) {
+        return current;
+    }
+
+    /**
+     * Explicit placement: the settings that put {@code want} in {@code zone}.
+     *
+     * <p>Delegates to {@link #assign}, which is the one place that knows how a placement
+     * is expressed. This used to be a second implementation of the same rules - a copy
+     * that only handled the ring - and the two were free to disagree about which
+     * switches a placement turns on.
+     */
+    public static Assignment place(Zone zone, Part want, TrioSettings current, int sims) {
+        if (current == null || zone == null) return null;
+        return assign(zone, current.trioStyle == Prefs.STYLE_RECT, want, current, sims);
+    }
+
+    /**
+     * {@code current} with {@code want} at the front of {@code zone}'s priority list.
+     *
+     * <p>Three behaviours in one, because they are the same write seen from different
+     * starting points:
+     *
+     * <ul>
+     *   <li>a piece that was not placed anywhere is <b>added</b>;
+     *   <li>a piece already in this zone moves to the front, so the user can promote an
+     *       existing candidate without re-adding it;
+     *   <li>a piece that was in another zone is <b>moved</b>, removed from there - the same
+     *       piece in two zones would draw twice and make the priority lists disagree about
+     *       which copy is the real one.
+     * </ul>
+     *
+     * <p>Passing {@code null} clears the zone instead. To drop a single candidate see
+     * {@link #withoutAt(TrioSettings, int, int)}: "empty this third" and "remove this one
+     * entry" are different intentions, and one call cannot honestly mean both.
+     */
+    public static TrioSettings withPiece(TrioSettings current, int zone, Part want) {
+        if (current == null || zone < 0 || zone >= Prefs.ZONE_COUNT) {
+            return current;
+        }
+        final TrioSettings next = current.copy();
+        final int id = encodePart(want);
+        if (id == Prefs.PART_NONE) {
+            final int[][] cleared = TrioSettings.copyZones(current.ringZones);
+            cleared[zone] = new int[0];
+            next.ringZones = cleared;
+            return next;
+        }
+        final java.util.List<java.util.List<Integer>> lists = new java.util.ArrayList<>();
+        for (int z = 0; z < Prefs.ZONE_COUNT; z++) {
+            final java.util.List<Integer> list = new java.util.ArrayList<>();
+            for (int existing : current.ringZones[z]) {
+                // Drop the id everywhere, then re-add it at the target's front: that single
+                // rule gives add, promote and move without three separate paths.
+                if (existing == id) {
+                    continue;
+                }
+                list.add(existing);
+            }
+            lists.add(list);
+        }
+        lists.get(zone).add(0, id);
+        final int[][] zones = new int[Prefs.ZONE_COUNT][];
+        for (int z = 0; z < Prefs.ZONE_COUNT; z++) {
+            final java.util.List<Integer> list = lists.get(z);
+            zones[z] = new int[list.size()];
+            for (int i = 0; i < zones[z].length; i++) {
+                zones[z][i] = list.get(i);
+            }
+        }
+        next.ringZones = zones;
+        // A placed piece needs its own switch on, or the zone would reserve space it then
+        // draws nothing in.
+        if (want == Part.WIFI) next.showWifi = true;
+        if (want == Part.VALUE) next.showValue = true;
+        if (want == Part.BOLT) next.showBolt = true;
+        if (want == Part.MOBILE) next.showMobile = true;
+        if (want == Part.SIM_1) { next.showMobile = true; next.showSim1 = true; }
+        if (want == Part.SIM_2) { next.showMobile = true; next.showSim2 = true; }
+        if (want == Part.TYPE) next.mobileTypeMode = Prefs.MOBILE_TYPE_IN_RING;
+        return next;
+    }
+
+    /**
+     * {@code current} with the entry at {@code index} dropped from {@code zone}'s list.
+     *
+     * <p>Separate from {@link #withPiece(TrioSettings, int, Part)} because "clear this zone"
+     * and "drop this one candidate" are different intentions: when a zone's head is removed
+     * the user expects the piece behind it to take over, not the whole chain to vanish.
+     */
+    public static TrioSettings withoutAt(TrioSettings current, int zone, int index) {
+        if (current == null || zone < 0 || zone >= Prefs.ZONE_COUNT) {
+            return current;
+        }
+        final int[] list = current.ringZones[zone];
+        if (index < 0 || index >= list.length) {
+            return current;
+        }
+        final TrioSettings next = current.copy();
+        final int[][] zones = TrioSettings.copyZones(current.ringZones);
+        final java.util.List<Integer> kept = new java.util.ArrayList<>();
+        for (int i = 0; i < list.length; i++) {
+            if (i != index) {
+                kept.add(list[i]);
+            }
+        }
+        zones[zone] = new int[kept.size()];
+        for (int i = 0; i < zones[zone].length; i++) {
+            zones[zone][i] = kept.get(i);
+        }
+        next.ringZones = zones;
+        return next;
+    }
+
+    /**
+     * {@code current} with the entries of {@code zone} swapped around {@code index}.
+     *
+     * @param delta -1 to promote one place, +1 to demote
+     */
+    public static TrioSettings moveWithin(TrioSettings current, int zone, int index, int delta) {
+        if (current == null || zone < 0 || zone >= Prefs.ZONE_COUNT) {
+            return current;
+        }
+        final TrioSettings next = current.copy();
+        final int[][] zones = TrioSettings.copyZones(current.ringZones);
+        final int[] list = zones[zone];
+        final int to = index + delta;
+        if (index < 0 || index >= list.length || to < 0 || to >= list.length) {
+            // Out of range is a no-op rather than an error: the buttons at the ends of the
+            // list stay present and simply do nothing, which is honest feedback.
+            return current;
+        }
+        final int swapped = list[index];
+        list[index] = list[to];
+        list[to] = swapped;
+        next.ringZones = zones;
+        return next;
+    }
+
+    public static java.util.List<Part> placementChoices(Zone zone, TrioSettings current, int sims) {
+        return current.trioStyle == Prefs.STYLE_RING
+                ? java.util.Arrays.asList(Part.values())
+                : choices(zone, current.trioStyle == Prefs.STYLE_RECT, current, sims);
+    }
 
     /**
      * The switch settings that put {@code want} into {@code zone}, or null when no
@@ -555,6 +737,17 @@ public final class TrioZones {
         }
         if (current.trioStyle == Prefs.STYLE_CAPSULE && zone == Zone.TOP) {
             return want == Part.CLOCK ? new Assignment(current.copy(), 0) : null;
+        }
+        // The ring keeps ordered lists, so "put X in Z" appends or moves X to the FRONT of
+        // Z's list: the newly chosen piece is the one that wins the zone, and the ones
+        // behind it stay as fallbacks rather than being thrown away.
+        //
+        // Moving rather than copying matters: a piece that was in another zone is removed
+        // from there, because the same piece twice would draw in two places and make the
+        // priority lists fight over it.
+        if (current.trioStyle == Prefs.STYLE_RING) {
+            return new Assignment(withPiece(current, zone.ordinal(), want),
+                    distance(current, withPiece(current, zone.ordinal(), want)));
         }
         final int level = ASSIGN_LEVEL;
         final int wifiLevel = ASSIGN_WIFI_LEVEL;
@@ -685,17 +878,28 @@ public final class TrioZones {
         if (!s.showMobile) { n++; }
         if (!s.showValue) { n++; }
         if (s.mobileTypeMode == Prefs.MOBILE_TYPE_OFF) { n++; }
+        // The two per-card switches hide a piece exactly as the others do, so
+        // leaving them out would make "switch a card off" look free and let the
+        // tie-break prefer it over moving a piece that is on screen.
+        if (!s.showSim1) { n++; }
+        if (!s.showSim2) { n++; }
         return n;
     }
 
     /** How many switches differ between two snapshots. */
     private static int distance(TrioSettings a, TrioSettings b) {
         int n = 0;
+        // The layout itself is an edit. It used to be only the switches, because the
+        // layout lived in them - but a placement IS a slot write now, so leaving this
+        // out would report "moved a component to another slot" as zero changes and make
+        // the smallest-edit tie-break meaningless.
+        if (!java.util.Arrays.deepEquals(a.ringZones, b.ringZones)) { n++; }
         if (a.showWifi != b.showWifi) { n++; }
         if (a.showMobile != b.showMobile) { n++; }
         if (a.showValue != b.showValue) { n++; }
         if (a.showBolt != b.showBolt) { n++; }
-        if (a.dualSim != b.dualSim) { n++; }
+        if (a.showSim1 != b.showSim1) { n++; }
+        if (a.showSim2 != b.showSim2) { n++; }
         if (a.valueCentred != b.valueCentred) { n++; }
         if (a.mobileTypeMode != b.mobileTypeMode) { n++; }
         return n;
@@ -727,34 +931,39 @@ public final class TrioZones {
                 ? new int[] { Prefs.MOBILE_TYPE_OFF, Prefs.MOBILE_TYPE_IN_RING,
                               Prefs.MOBILE_TYPE_OUT_RING }
                 : new int[] { Prefs.MOBILE_TYPE_OFF, Prefs.MOBILE_TYPE_IN_RING };
-        // The dual reading only ever adds a second row to the ring's notch, so it is
-        // the one switch worth varying only for that zone. Everywhere else it is held
-        // where the user had it.
-        final boolean[] duals = (!capsule && !rect && zone == Zone.TOP) ? bools
-                : new boolean[] { current.dualSim };
         // The signal meter's switch decides whether the bottom band and the
         // rectangle's columns hold anything, so it is varied there and held
         // everywhere else: this page places pieces, it is not the place to decide
         // whether the signal is drawn at all.
         final boolean[] mobiles = (zone == Zone.BOTTOM) ? bools
                 : new boolean[] { current.showMobile };
+        // The two per-card rows are placed by a slot and by their own switch, and
+        // they can sit in any of the three zones - so unlike the aggregate meter
+        // they are varied everywhere. Their switches are also what makes them
+        // reachable at all: held at "off", a request to place one could never be
+        // satisfied.
+        final boolean[] sim1s = bools;
+        final boolean[] sim2s = bools;
 
         for (boolean wifi : bools) {
             for (boolean value : bools) {
                 for (boolean centred : centres) {
                     for (boolean bolt : bools) {
-                        for (boolean dual : duals) {
-                            for (int typeMode : typeModes) {
-                                for (boolean mobile : mobiles) {
-                                    final TrioSettings s = current.copy();
-                                    s.showWifi = wifi;
-                                    s.showValue = value;
-                                    s.valueCentred = centred;
-                                    s.showBolt = bolt;
-                                    s.dualSim = dual;
-                                    s.mobileTypeMode = typeMode;
-                                    s.showMobile = mobile;
-                                    out.add(s);
+                        for (int typeMode : typeModes) {
+                            for (boolean mobile : mobiles) {
+                                for (boolean sim1 : sim1s) {
+                                    for (boolean sim2 : sim2s) {
+                                        final TrioSettings s = current.copy();
+                                        s.showWifi = wifi;
+                                        s.showValue = value;
+                                        s.valueCentred = centred;
+                                        s.showBolt = bolt;
+                                        s.mobileTypeMode = typeMode;
+                                        s.showMobile = mobile;
+                                        s.showSim1 = sim1;
+                                        s.showSim2 = sim2;
+                                        out.add(s);
+                                    }
                                 }
                             }
                         }

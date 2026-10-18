@@ -1,3 +1,4 @@
+param([string]$SourceDirectory)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $jdk=Join-Path $root '.tools/jdk/jdk-21.0.12.1+1/bin'
@@ -27,10 +28,13 @@ if(!(Test-Path $javac)){$javac='javac';$java='java'}
 # ---------------------------------------------------------------------------
 
 $trio=Join-Path $root 'app/src/main/java/io/github/yixing233/hyperduo'
+if($SourceDirectory){$trio=$SourceDirectory}
 $glyphPath=Join-Path $trio 'GlyphDrawable.java'
 $hooksPath=Join-Path $trio 'TrioHooks.java'
 $glyph=[System.IO.File]::ReadAllText($glyphPath)
 $hooks=[System.IO.File]::ReadAllText($hooksPath)
+$drawHook=[regex]::Match($hooks,'(?s)"hyperduo-draw", new XposedInterface.Hooker\(\) \{(.*?)\n                \}\);').Groups[1].Value
+if(!$drawHook){throw 'Production battery draw hook missing'}
 
 # --- source contract pins ----------------------------------------------------
 # Everything the desktop cannot observe: which ROM names are reached, that the
@@ -60,7 +64,7 @@ foreach($banned in @('WindowManager','TYPE_STATUS_BAR','FLAG_NOT_TOUCHABLE','add
     }
 }
 # Refl.set swallows a failure, so the write is read back before it is believed.
-if($glyph -notmatch 'return Refl\.get\(slot, host\) == glyph;'){
+if($glyph -notmatch 'if \(Refl\.get\(slot, host\) != glyph'){
     throw 'install no longer reads the slot back after writing it'
 }
 # uninstall asks MIUI to rebuild first and only empties the slot if that did not
@@ -87,6 +91,10 @@ $repaintAt=$hooks.IndexOf('TrioRenderer.draw(canvas, host, state)', $installAt)
 if($installAt -lt 0 -or $repaintAt -lt 0){
     throw 'the frame that takes the slot no longer repaints over MIUI''s own battery'
 }
+$gateAt=$hooks.IndexOf('final boolean paint =')
+$uninstallAt=$hooks.IndexOf('GlyphDrawable.uninstall((View) self);', $gateAt)
+$nativeAt=$hooks.IndexOf('chain.proceed()', $gateAt)
+if($gateAt -lt 0 -or $uninstallAt -gt $nativeAt){throw 'native onDraw sees the old glyph before uninstall'}
 
 # --- generated trees ---------------------------------------------------------
 # Both are rebuilt whole: the compile step collects every .java below the tree,
@@ -198,11 +206,18 @@ package android.graphics;
 public class Canvas { }
 '@
 
-$trioHooks=@'
+$trioHooks=@"
 package io.github.yixing233.hyperduo;
 
 import java.util.ArrayList;
 import java.util.List;
+import android.view.View;
+import android.graphics.Canvas;
+
+final class XposedInterface {
+ interface Hooker { Object intercept(Chain chain) throws Throwable; }
+ interface Chain { Object proceed(); Object getThisObject(); Object getArg(int index); }
+}
 
 /** Records what the drawable logs, so the one-shot notes can be asserted. */
 final class TrioHooks {
@@ -216,8 +231,22 @@ final class TrioHooks {
     private TrioHooks() { }
 
     static void log(int priority, String msg) { LOGGED.add(priority + ":" + msg); }
+    static boolean island;
+    static boolean islandHideBattery(){return island;}
+    static TrioState stateFor(View host){return null;}
+    static TrioState registerHost(View host){return new TrioState();}
+    static void recolourOutRing(TrioState s,int ink){}
+    static Object draw(View host, Canvas canvas) throws Throwable {
+        return new XposedInterface.Hooker() {
+            $drawHook
+        }.intercept(new XposedInterface.Chain(){
+            public Object proceed(){host.nativeDraw(canvas);return null;}
+            public Object getThisObject(){return host;}
+            public Object getArg(int index){return canvas;}
+        });
+    }
 }
-'@
+"@
 
 $trioState=@'
 package io.github.yixing233.hyperduo;
@@ -226,6 +255,9 @@ package io.github.yixing233.hyperduo;
 final class TrioState {
 
     int refreshes;
+    int outRingInk;
+    int foreground(){return 0xFF000000;}
+    static void attachContext(Object context){}
 
     void refresh() { refreshes++; }
 }
@@ -235,7 +267,7 @@ $trioSettings=@'
 package io.github.yixing233.hyperduo;
 
 /** The renderer below ignores the settings, so this only has to exist. */
-final class TrioSettings { }
+final class TrioSettings { boolean enabled=true; }
 '@
 
 $trioConfig=@'
@@ -249,6 +281,7 @@ final class TrioConfig {
     private TrioConfig() { }
 
     static TrioSettings get() { return SNAPSHOT; }
+    static void installReceiver(Object context){}
 }
 '@
 
@@ -280,6 +313,9 @@ final class TrioRenderer {
         lastH = h;
         lastCanvas = canvas;
         lastState = s;
+    }
+    static void draw(Canvas canvas,android.view.View host,TrioState s){
+        drawState(canvas,host.getWidth(),host.getHeight(),s,TrioConfig.get());
     }
 
     static void reset() {
@@ -348,7 +384,7 @@ public class GlyphTest {
         return c.newInstance(state);
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws Throwable {
         final String shape = args[0];
         final boolean hasSlot = !"nofield".equals(shape);
         final boolean clearVisible = "full".equals(shape) || "legacy".equals(shape);
@@ -361,7 +397,8 @@ public class GlyphTest {
             ok("the first frame on a slot host takes the slot", took);
             final Object mounted = slot(host);
             ok("the slot holds the glyph afterwards", mounted instanceof GlyphDrawable);
-            ok("the second frame does not claim it again", !GlyphDrawable.install(host, state));
+            ok("subsequent frames use direct drawing only for legacy hosts",
+                    GlyphDrawable.install(host, state) == "legacy".equals(shape));
             ok("and keeps the same drawable, not a fresh one", slot(host) == mounted);
 
             // Re-installing is how a host whose state object was replaced is
@@ -375,7 +412,8 @@ public class GlyphTest {
             ok("a re-install repoints the drawable at the newer state",
                     TrioRenderer.lastState == later);
         } else {
-            ok("a host without the field is left alone", !took);
+            ok("a host without the field requests direct drawing", took);
+            ok("missing slot keeps drawing on later frames", GlyphDrawable.install(host, state));
             ok("nothing is written to it", slotField() == null);
             ok("and it says so", logged("has no mTintBgDrawable"));
         }
@@ -434,6 +472,8 @@ public class GlyphTest {
                 ok("MIUI's own artwork owns the slot again",
                         !(slot(owned) instanceof GlyphDrawable));
                 ok("so the empty fallback did not run", slot(owned) != null);
+                eq("uninstall replays native dark mode after clearing tint", owned.darkCalls, 1);
+                ok("native tint is restored immediately", owned.tinted);
             } else {
                 eq("a clearTint this build does not expose is not called",
                         owned.clearTintCalls, before);
@@ -459,6 +499,32 @@ public class GlyphTest {
             GlyphDrawable.uninstall(new View());
             ok("uninstall on a host with no slot is harmless", true);
         }
+
+        // Drive the real hook around a native onDraw that calls the current
+        // slot. This checks first-frame ordering and fallback over time.
+        View live=new View();
+        for(int frame=0;frame<3;frame++){
+            TrioRenderer.reset();TrioHooks.draw(live,new Canvas());
+            eq("glyph exists exactly once in frame "+frame,TrioRenderer.calls,1);
+        }
+        boolean legacyBefore=live.mUseLegacyDrawable;
+        live.mUseLegacyDrawable=!legacyBefore;TrioRenderer.reset();TrioHooks.draw(live,new Canvas());
+        eq("legacy mode changes are read per instance",TrioRenderer.calls,1);
+        live.mUseLegacyDrawable=legacyBefore;TrioRenderer.reset();TrioHooks.draw(live,new Canvas());
+        eq("returning from legacy also paints once",TrioRenderer.calls,1);
+        if(!hasSlot){
+            int notes=0;for(String message:TrioHooks.LOGGED)if(message.contains("has no mTintBgDrawable"))notes++;
+            eq("missing slot is logged once per host class",notes,1);
+        }
+        TrioConfig.get().enabled=false;TrioRenderer.reset();int nativeBefore=live.nativeArt;
+        TrioHooks.draw(live,new Canvas());
+        eq("first disabled frame contains no stale glyph",TrioRenderer.calls,0);
+        ok("native artwork restored in that frame",live.nativeArt>nativeBefore && live.tinted);
+        TrioConfig.get().enabled=true;TrioHooks.draw(live,new Canvas());
+        TrioHooks.island=true;TrioRenderer.reset();TrioHooks.draw(live,new Canvas());
+        eq("first island frame contains no stale glyph",TrioRenderer.calls,0);
+        TrioHooks.island=false;TrioRenderer.reset();TrioHooks.draw(live,new Canvas());
+        eq("leaving island resumes painting immediately",TrioRenderer.calls,1);
 
         System.out.println("PASS: " + checks + " cases over the glyph slot (" + shape + ")");
     }
@@ -512,6 +578,17 @@ foreach($shape in $shapes){
     if($shape.slot){ $view += "    public Drawable mTintBgDrawable;`n`n" }
     $view += "    public boolean mUseLegacyDrawable = " + $(if($shape.legacy){'true'}else{'false'}) + ";`n`n"
     $view += "    public int clearTintCalls;`n`n"
+    $view += "    public int darkCalls; public boolean tinted=true;`n"
+    $view += "    public void onDarkChangeInternal() { darkCalls++; tinted=true; }`n"
+    $view += "    public int nativeArt;`n"
+    $view += "    public Object getContext(){return null;} public int getWidth(){return 84;} public int getHeight(){return 60;}`n"
+    $view += "    public void nativeDraw(android.graphics.Canvas canvas){`n"
+    if($shape.slot){
+        $view += "        if(!mUseLegacyDrawable && mTintBgDrawable!=null){if(!mTintBgDrawable.getClass().getSimpleName().equals(""GlyphDrawable"")){nativeArt++;}mTintBgDrawable.setBounds(0,0,84,60);mTintBgDrawable.draw(canvas);}else{nativeArt++;}`n"
+    }else{
+        $view += "        nativeArt++;`n"
+    }
+    $view += "    }`n"
     if($shape.clear -eq 'public'){
         $view += "    public void clearTint() {`n"
     } elseif($shape.clear -eq 'package'){
@@ -519,6 +596,7 @@ foreach($shape in $shapes){
     }
     if($shape.clear -ne 'none'){
         $view += "        clearTintCalls++;`n"
+        $view += "        tinted=false;`n"
         $view += "        mTintBgDrawable = new MiuiArtDrawable();`n"
         $view += "    }`n"
     }

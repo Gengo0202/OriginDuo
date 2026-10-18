@@ -3,23 +3,29 @@ package io.github.yixing233.hyperduo.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import io.github.yixing233.hyperduo.Prefs
 import io.github.yixing233.hyperduo.R
 import io.github.yixing233.hyperduo.TrioAppearance
 import io.github.yixing233.hyperduo.TrioSettings
 import io.github.yixing233.hyperduo.TrioZones
-import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TooltipBox
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -27,20 +33,24 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * it. The drawing page needs the name as well as the identity, because the dialog
  * it opens is titled with it.
  */
-internal enum class TrioSettingsPart(val part: TrioZones.Part, val labelRes: Int) {
+internal enum class TrioSettingsPart(val part: TrioZones.Part?, val labelRes: Int) {
+    Appearance(null, R.string.drawing_part_appearance),
+    Battery(null, R.string.drawing_part_battery),
+    Readouts(null, R.string.perf_pair_title),
     Wifi(TrioZones.Part.WIFI, R.string.show_wifi_title),
     Mobile(TrioZones.Part.MOBILE, R.string.show_mobile_title),
     Value(TrioZones.Part.VALUE, R.string.show_value_title),
     Bolt(TrioZones.Part.BOLT, R.string.show_bolt_title),
     Type(TrioZones.Part.TYPE, R.string.show_mobile_type_title),
-    Dual(TrioZones.Part.DUAL, R.string.dual_sim_title),
+    Sim1(TrioZones.Part.SIM_1, R.string.show_sim_1_title),
+    Sim2(TrioZones.Part.SIM_2, R.string.show_sim_2_title),
     Clock(TrioZones.Part.CLOCK, R.string.drawing_occupant_clock),
     ;
 
     companion object {
         /** The entry for {@code part}, or null when it has no row of its own. */
         fun of(part: TrioZones.Part?): TrioSettingsPart? =
-            entries.firstOrNull { it.part == part }
+            if (part == null) null else entries.firstOrNull { it.part == part }
     }
 }
 
@@ -84,6 +94,14 @@ internal class SliderSpec(
     val part: TrioZones.Part?,
     val min: Int,
     val max: Int,
+    /**
+     * The ceiling for the current appearance, when it is not a constant.
+     *
+     * <p>Only the percentage uses it: a placed reading in the ring is sized by the third it
+     * sits in, which can carry far more than the fixed slots of the capsule and rectangle.
+     * Defaults to [max], so every other row keeps its constant span.
+     */
+    val maxFor: (TrioAppearance) -> Int = { max },
     val read: (TrioSettings) -> Int,
     val write: (SettingsRepository, Int) -> Unit,
     val titleRes: (TrioAppearance) -> Int,
@@ -93,6 +111,7 @@ internal class SliderSpec(
     val hints: (TrioAppearance) -> List<Pair<Boolean, Int>> = { emptyList() },
     val step: Int = 1,
     val suffix: String? = null,
+    val editorOwner: TrioSettingsPart = TrioSettingsPart.Appearance,
 )
 
 /**
@@ -123,8 +142,8 @@ internal fun geometrySliders(): List<SliderSpec> {
             write = { r, v -> r.setClockSize(v) },
             titleRes = { R.string.clock_size_title },
             summaryRes = { R.string.clock_size_summary },
-            enabled = { it.glyph && it.capsule },
-            hints = { listOf(it.glyph to R.string.master_title, it.capsule to R.string.trio_style_capsule) },
+            enabled = { it.glyph },
+            hints = { listOf(it.glyph to R.string.master_title) },
         ),
         SliderSpec(
             group = GeometryGroup.Text,
@@ -136,8 +155,8 @@ internal fun geometrySliders(): List<SliderSpec> {
             write = { r, v -> r.setClockWeight(v) },
             titleRes = { R.string.clock_weight_title },
             summaryRes = { R.string.clock_weight_summary },
-            enabled = { it.glyph && it.capsule },
-            hints = { listOf(it.glyph to R.string.master_title, it.capsule to R.string.trio_style_capsule) },
+            enabled = { it.glyph },
+            hints = { listOf(it.glyph to R.string.master_title) },
         ),
         SliderSpec(
             group = GeometryGroup.Scale,
@@ -160,6 +179,7 @@ internal fun geometrySliders(): List<SliderSpec> {
             min = Prefs.MIN_PERF_SCALE,
             max = Prefs.MAX_PERF_SCALE,
             read = { it.perfScale },
+            editorOwner = TrioSettingsPart.Readouts,
             write = { r, v -> r.setPerfScale(v) },
             titleRes = { R.string.perf_scale_title },
             summaryRes = { R.string.perf_scale_summary },
@@ -180,6 +200,7 @@ internal fun geometrySliders(): List<SliderSpec> {
             max = Prefs.MAX_PERF_WEIGHT,
             step = WEIGHT_STEP,
             read = { it.perfWeight },
+            editorOwner = TrioSettingsPart.Readouts,
             write = { r, v -> r.setPerfWeight(v) },
             titleRes = { R.string.perf_weight_title },
             summaryRes = { R.string.perf_weight_summary },
@@ -194,6 +215,7 @@ internal fun geometrySliders(): List<SliderSpec> {
             min = Prefs.MIN_RING_STROKE,
             max = Prefs.MAX_RING_STROKE,
             read = { it.ringStroke },
+            editorOwner = TrioSettingsPart.Battery,
             write = { r, v -> r.setRingStroke(v) },
             // One stroke setting, two names: the rectangle spends it on the bar's
             // thickness, the ring on the outline's width.
@@ -221,6 +243,11 @@ internal fun geometrySliders(): List<SliderSpec> {
             part = value,
             min = Prefs.MIN_VALUE_SIZE,
             max = Prefs.MAX_VALUE_SIZE,
+            // The ring's slots are sized by the third each piece sits in, so a placed
+            // reading has more room than the capsule's or the rectangle's fixed slot. The
+            // extra ceiling applies only there: letting the other two ask for a size they
+            // cannot draw would be a slider that does nothing.
+            maxFor = { if (it.ring) Prefs.MAX_RING_VALUE_SIZE else Prefs.MAX_VALUE_SIZE },
             read = { it.valueSize },
             write = { r, v -> r.setValueSize(v) },
             titleRes = { R.string.value_size_title },
@@ -352,54 +379,12 @@ internal fun geometrySliders(): List<SliderSpec> {
             },
         ),
         SliderSpec(
-            group = GeometryGroup.OutSignal,
-            part = mobile,
-            min = Prefs.MIN_OUT_SIGNAL_SIZE,
-            max = Prefs.MAX_OUT_SIGNAL_SIZE,
-            read = { it.outSignalSize },
-            write = { r, v -> r.setOutSignalSize(v) },
-            titleRes = { R.string.out_signal_size_title },
-            summaryRes = { R.string.out_signal_size_summary },
-            // The knob is the rule that there is a reading to size, rather than a
-            // second copy of the same three conditions. Its hint names the four
-            // upstream switches individually - none of them is this row itself.
-            enabled = { it.stackedOut() },
-            hints = { a ->
-                listOf(
-                    a.glyph to R.string.master_title,
-                    a.mobile to R.string.show_mobile_title,
-                    a.signalOutOfRing to R.string.signal_mode_title,
-                    a.stackedSignal to R.string.stacked_signal_title,
-                )
-            },
-            suffix = "dp",
-        ),
-        SliderSpec(
-            group = GeometryGroup.OutSignal,
-            part = mobile,
-            min = Prefs.MIN_OUT_SIGNAL_MARGIN,
-            max = Prefs.MAX_OUT_SIGNAL_MARGIN,
-            read = { it.outSignalMargin },
-            write = { r, v -> r.setOutSignalMargin(v) },
-            titleRes = { R.string.out_signal_margin_title },
-            summaryRes = { R.string.out_signal_margin_summary },
-            enabled = { it.stackedOut() },
-            hints = { a ->
-                listOf(
-                    a.glyph to R.string.master_title,
-                    a.mobile to R.string.show_mobile_title,
-                    a.signalOutOfRing to R.string.signal_mode_title,
-                    a.stackedSignal to R.string.stacked_signal_title,
-                )
-            },
-            suffix = "dp",
-        ),
-        SliderSpec(
             group = GeometryGroup.Track,
             part = null,
             min = Prefs.MIN_TRACK_ALPHA,
             max = Prefs.MAX_TRACK_ALPHA,
             read = { it.trackAlpha },
+            editorOwner = TrioSettingsPart.Battery,
             write = { r, v -> r.setTrackAlpha(v) },
             titleRes = { R.string.track_alpha_title },
             summaryRes = { R.string.track_alpha_summary },
@@ -411,6 +396,16 @@ internal fun geometrySliders(): List<SliderSpec> {
 /** The rows that size one component, for the drawing page's long-press dialog. */
 internal fun slidersForPart(part: TrioZones.Part): List<SliderSpec> =
     geometrySliders().filter { it.part == part }
+
+internal fun slidersForEditor(part: TrioSettingsPart): List<SliderSpec> = when (part) {
+    TrioSettingsPart.Appearance, TrioSettingsPart.Battery, TrioSettingsPart.Readouts ->
+        geometrySliders().filter { it.part == null && it.editorOwner == part }
+    // Both cards render from the aggregate meter's rows: the dots' diameter and
+    // the track alpha are one shared setting, so there is deliberately no second
+    // pair of sliders to drift.
+    TrioSettingsPart.Sim1, TrioSettingsPart.Sim2 -> slidersForPart(TrioZones.Part.MOBILE)
+    else -> part.part?.let(::slidersForPart).orEmpty()
+}
 
 /**
  * The role colours a component's ink takes, so the dialog can offer them.
@@ -443,79 +438,121 @@ internal fun roleColorsForPart(part: TrioZones.Part): List<RoleColor> = when (pa
  * it.
  */
 @Composable
-internal fun PartSettingsDialog(
+internal fun PartSettingsSheet(
+    show: Boolean,
     part: TrioSettingsPart,
     settings: TrioSettings,
     update: ((SettingsRepository) -> Unit) -> Unit,
     onEditColor: (RoleColor) -> Unit,
+    onResetColors: () -> Unit,
     onDismiss: () -> Unit,
+    onDismissFinished: () -> Unit,
+    preview: (@Composable () -> Unit)? = null,
+    ringSettings: TrioSettings = settings,
 ) {
     val a = TrioAppearance.of(settings)
-    val rows = slidersForPart(part.part)
-    val colors = roleColorsForPart(part.part)
+    val rows = slidersForEditor(part)
+    val controls = contentControlsFor(part)
+    val colors = if (part == TrioSettingsPart.Appearance || part == TrioSettingsPart.Battery) RoleColor.entries
+        else part.part?.let(::roleColorsForPart).orEmpty()
+    val configuration = LocalConfiguration.current
+    val compact = configuration.screenHeightDp < 600 || configuration.fontScale > 1.3f
+    val maxHeight = (configuration.screenHeightDp * 0.72f).dp
+    // The system's gesture bar (or nav bar) overlays the bottom of the window, so the
+    // sheet's last row has to stay above it. Only the bottom inset is taken: the sheet
+    // is anchored to the bottom edge, and adding the side/top insets there would shift
+    // its full-bleed background away from the screen edge.
+    val bottomInset = WindowInsets.navigationBars.asPaddingValues()
+        .calculateBottomPadding()
 
-    OverlayDialog(
-        show = true,
-        title = stringResource(R.string.drawing_settings_title, stringResource(part.labelRes)),
+    OverlayBottomSheet(
+        show = show,
+        title = stringResource(R.string.drawing_settings_title,
+            stringResource(if (part == TrioSettingsPart.Battery && a.ring) R.string.drawing_part_ring else part.labelRes)),
         onDismissRequest = onDismiss,
+        onDismissFinished = onDismissFinished,
     ) {
-        Column(modifier = Modifier.padding(horizontal = 4.dp)) {
-            if (rows.isEmpty() && colors.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.drawing_settings_none),
-                    style = MiuixTheme.textStyles.footnote1,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(vertical = 8.dp),
-                )
-            }
+        Column(
+            modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight)
+                .padding(bottom = bottomInset),
+        ) {
+            if (!compact) preview?.invoke()
+            Column(modifier = Modifier.weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()).padding(horizontal = 4.dp)) {
+                if (compact) preview?.invoke()
+                controls.forEach { control -> ContentControlRow(control, settings, update, ringSettings) }
+                if (rows.isEmpty() && colors.isEmpty() && controls.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.drawing_settings_none),
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                }
 
-            rows.forEach { spec ->
-                // The hint is resolved in a composable scope and passed down, the
-                // same shape the size page uses: a row that is live has nothing to
-                // explain, and a tooltip saying nothing would still eat the press.
-                val hint = gateHintFor(spec, a)
-                if (hint == null) {
-                    SliderRow(spec, settings, update)
-                } else {
-                    TooltipBox(text = hint, enabled = true) {
-                        SliderRow(spec, settings, update)
+                if (colors.isNotEmpty()) {
+                    SwitchPreference(
+                        checked = a.roleColors,
+                        title = stringResource(R.string.color_role_title),
+                        summary = stringResource(R.string.color_role_summary),
+                        insideMargin = SettingsItemMargin,
+                        enabled = a.glyph,
+                        onCheckedChange = { value -> update { it.setRoleColors(value) } },
+                    )
+                    if (part != TrioSettingsPart.Bolt) {
+                        IntSlider(
+                            value = settings.lowThreshold,
+                            min = Prefs.MIN_LOW_THRESHOLD,
+                            max = Prefs.MAX_LOW_THRESHOLD,
+                            title = stringResource(R.string.low_threshold_title),
+                            summary = stringResource(R.string.low_threshold_summary),
+                            enabled = a.glyph && a.roleColors,
+                            onValueChange = { value -> update { it.setLowThreshold(value) } },
+                        )
                     }
                 }
-            }
 
-            colors.forEach { role ->
-                ArrowPreference(
-                    title = stringResource(role.labelRes),
-                    summary = stringResource(R.string.color_field_summary),
-                    insideMargin = SettingsItemMargin,
-                    startAction = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Swatch(colorFor(settings, role, onDark = true))
-                            Swatch(colorFor(settings, role, onDark = false))
+                rows.forEach { spec ->
+                    // The hint is resolved in a composable scope and passed down, the
+                    // same shape the size page uses: a row that is live has nothing to
+                    // explain, and a tooltip saying nothing would still eat the press.
+                    val hint = gateHintFor(spec, a)
+                    if (hint == null) {
+                        SliderRow(spec, settings, update)
+                    } else {
+                        TooltipBox(text = hint, enabled = true) {
+                            SliderRow(spec, settings, update)
                         }
-                    },
-                    // Gated on the same two switches the colour page uses: with
-                    // per-role colours off these values are not read at all, so
-                    // editing them here would change nothing on screen.
-                    enabled = a.glyph && a.roleColors,
-                    onClick = { onEditColor(role) },
-                )
-            }
+                    }
+                }
 
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                // One action, given the full width rather than paired with a second
-                // button of the same name: this dialog has nothing to cancel, since
-                // every row in it applies as it is changed. Two buttons both called
-                // "close" would offer a choice that does not exist.
-                Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(text = stringResource(R.string.drawing_close))
+                colors.forEach { role ->
+                    ArrowPreference(
+                        title = stringResource(role.labelRes),
+                        summary = stringResource(R.string.color_field_summary),
+                        insideMargin = SettingsItemMargin,
+                        startAction = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Swatch(colorFor(settings, role, onDark = true))
+                                Swatch(colorFor(settings, role, onDark = false))
+                            }
+                        },
+                        // Gated on the same two switches the colour page uses: with
+                        // per-role colours off these values are not read at all, so
+                        // editing them here would change nothing on screen.
+                        enabled = a.glyph && a.roleColors,
+                        onClick = { onEditColor(role) },
+                    )
+                }
+
+                if (part == TrioSettingsPart.Appearance) {
+                    ArrowPreference(
+                        title = stringResource(R.string.color_reset),
+                        summary = stringResource(R.string.color_reset_summary),
+                        insideMargin = SettingsItemMargin,
+                        enabled = a.glyph && a.roleColors,
+                        onClick = onResetColors,
+                    )
                 }
             }
         }
@@ -531,9 +568,9 @@ private fun SliderRow(
 ) {
     val a = TrioAppearance.of(settings)
     IntSlider(
-        value = spec.read(settings),
+        value = spec.read(settings).coerceAtMost(spec.maxFor(a)),
         min = spec.min,
-        max = spec.max,
+        max = spec.maxFor(a),
         step = spec.step,
         title = stringResource(spec.titleRes(a)),
         summary = stringResource(spec.summaryRes(a)),

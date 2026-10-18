@@ -61,26 +61,22 @@ public final class TrioAppearance {
      * neither Wi-Fi ink nor a charger to report - see {@link #dualReading}.
      */
     public final boolean dualSim;
-    /** {@link Prefs#SIGNAL_IN_RING} or {@link Prefs#SIGNAL_OUT_RING}. */
-    public final int signalMode;
-    /** The signal is the glyph's own level dots. */
-    public final boolean signalInRing;
     /**
-     * The signal is drawn beside the battery instead of inside the glyph.
+     * SIM 1's own row of four dots is wanted, as a component of its own.
      *
-     * <p>Alone this means "do not draw it, and do not claim it either" - the
-     * native icon stays where MIUI put it. Whether the module draws a
-     * replacement is {@link #stackedSignal}, and whether it takes the native
-     * icon away is {@link #stackedOut}.
+     * <p>Separate from {@link #dualSim}: that switch asks the aggregate meter for
+     * a second row, this pair places each card's row independently. Neither
+     * implies the other - a user can place SIM 2 in the notch and SIM 1 at the
+     * bottom, or read only one card without touching the dual switch.
      */
-    public final boolean signalOutOfRing;
-    /** The user wants the bars-and-dots reading of the out-of-ring signal. */
-    public final boolean stackedSignal;
-    /** The user wants only the current data SIM in that reading. */
+    public final boolean showSim1;
+    /** SIM 2's own row of four dots is wanted; see {@link #showSim1}. */
+    public final boolean showSim2;
+    /** The user wants only the current data SIM in the out-of-ring reading. */
     public final boolean dataSimOnly;
     /** The battery percentage is drawn. */
     public final boolean value;
-    /** The user wants the bolt while charging. Only ever drawn with {@link #value}. */
+    /** The charging bolt toggle; the free ring gives it a slot independent of the percentage. */
     public final boolean boltWanted;
     /**
      * The percentage takes the ring's centre even when the arcs are drawn.
@@ -148,7 +144,7 @@ public final class TrioAppearance {
     public final int trackAlpha;
     public final int valueSize;
     public final int valueWeight;
-    /** Size and weight of the capsule's clock, which the value's no longer drive. */
+    /** Independent size and weight of the capsule or free-ring clock. */
     public final int clockSize;
     public final int clockWeight;
     public final int typeSize;
@@ -177,14 +173,14 @@ public final class TrioAppearance {
         rect = c.trioStyle == Prefs.STYLE_RECT;
         capsule = c.trioStyle == Prefs.STYLE_CAPSULE;
         ring = c.trioStyle == Prefs.STYLE_RING;
+        ringZones = TrioSettings.copyZones(c.ringZones);
+
         glyph = c.enabled;
         wifi = c.showWifi;
         mobile = c.showMobile;
         dualSim = c.dualSim;
-        signalMode = c.signalMode;
-        signalInRing = c.signalMode == Prefs.SIGNAL_IN_RING;
-        signalOutOfRing = c.signalMode == Prefs.SIGNAL_OUT_RING;
-        stackedSignal = c.stackedSignal;
+        showSim1 = c.showSim1;
+        showSim2 = c.showSim2;
         dataSimOnly = c.dataSimOnly;
         value = c.showValue;
         boltWanted = c.showBolt;
@@ -230,18 +226,82 @@ public final class TrioAppearance {
     }
 
     /**
-     * Whether the glyph draws the bolt itself: only while it also draws the
-     * percentage the bolt replaces.
+     * Whether the glyph owns the bolt.
      *
-     * <p>This one line is why the bolt has no effect when the percentage is off,
-     * which is the behaviour the settings screen now explains instead of leaving
-     * the user to discover.
+     * <p>The two arrangements answer differently, and the difference is real rather
+     * than leftover:
      *
-     * <p>Not gated on {@link #glyph}, because the preview keeps drawing the
-     * chosen arrangement while the master switch is off.
+     * <ul>
+     *   <li>The <b>ring</b> places pieces in three slots, so the bolt appears exactly
+     *       where a slot names it ({@code PART_BOLT}). It is no longer tied to the
+     *       percentage: with slots, "show the bolt" and "show the number" are two
+     *       independent placements, and tying them would make one switch silently
+     *       govern the other's slot.
+     *   <li>The <b>capsule</b> has no slots - its right-hand reading is arbitrated
+     *       (bolt, then arcs, then percentage, then type) - so there the bolt keeps
+     *       following the percentage switch, which is what "charging replaces the
+     *       number" means in that arrangement.
+     * </ul>
+     *
+     * <p>Not gated on {@link #glyph}, because the preview keeps drawing the chosen
+     * arrangement while the master switch is off.
      */
     public boolean drawsBolt() {
-        return boltWanted && value;
+        return boltWanted && (ring ? hasRingPart(Prefs.PART_BOLT) : value);
+    }
+
+    /**
+     * The three ring slots, packed four bits each - the whole layout.
+     *
+     * <p>There is no second, switch-derived layout: every piece the ring draws is
+     * whatever these three slots name.
+     */
+    public final int[][] ringZones;
+
+    /**
+     * Whether {@code part} appears anywhere in the layout, whatever its priority.
+     *
+     * <p>This is the question the native-icon handoff needs: if a piece is placed at all,
+     * the module owns that reading and MIUI's own icon must stay folded - even on a frame
+     * where a higher-priority candidate is the one actually drawing that zone. Asking
+     * "is it drawn this frame" instead would make the native icon flicker in and out as
+     * the fallback chain moved.
+     */
+    public boolean hasRingPart(int part) {
+        for (int z = 0; z < Prefs.ZONE_COUNT; z++) {
+            final int[] ids = ringZones[z];
+            for (int i = 0; i < ids.length; i++) {
+                if (ids[i] == part) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether the module draws the arcs itself, which is also what decides whether MIUI's
+     * own Wi-Fi icon is folded away.
+     *
+     * <p>Only the ring is slot-based; the capsule and the rectangle arbitrate their single
+     * reading from the switches, so there the switch alone answers. Asking slots outside
+     * the ring would read a layout those arrangements never consult.
+     */
+    public boolean ownsWifi() {
+        return wifi && (!ring || hasRingPart(Prefs.PART_WIFI));
+    }
+
+    public boolean ownsValue() {
+        return value && (!ring || hasRingPart(Prefs.PART_VALUE));
+    }
+
+    public boolean ownsType() {
+        return typeOutOfRing || (typeInRing && (!ring || hasRingPart(Prefs.PART_TYPE)));
+    }
+
+    /** Native percentage follows the user's system style when the free ring releases it. */
+    public boolean handsBackPercentage() {
+        return glyph && ring && !ownsValue();
     }
 
     /**
@@ -254,7 +314,7 @@ public final class TrioAppearance {
 
     /** Whether the Wi-Fi arcs carry ink at this signal level. */
     public boolean wifiInk(int wifiLevel) {
-        return wifi && wifiLevel >= 1;
+        return ownsWifi() && wifiLevel >= 1;
     }
 
     /**
@@ -280,32 +340,6 @@ public final class TrioAppearance {
     }
 
     /**
-     * Whether the two-SIM rows take the ring's 12 o'clock notch.
-     *
-     * <p>The notch is a single slot, so the things that can occupy it are ordered
-     * rather than merely each testing for themselves. This is that order: the
-     * rows outrank the Wi-Fi arcs and the type label, and only the bolt outranks
-     * the rows.
-     *
-     * <p>What suppresses the rows here is the <em>bolt</em> - the glyph actually
-     * drawing one - and deliberately not the charger. The two came apart when the
-     * bolt became switchable: with "show the charging bolt" off the glyph hands
-     * the bolt back to MIUI and its own notch is free again, so the rows can have
-     * it. Keying this on charging, as {@link #dualSimRows} does, would keep the
-     * notch empty on a charging frame that draws nothing in it.
-     *
-     * <p>{@link #dualSimRows} stays as it is for the rectangular arrangement,
-     * which has no notch to arbitrate: there the second row is a column beside
-     * the first, so the arcs and the charger really do rule it out.
-     *
-     * @param bolt whether this frame draws the charging bolt
-     * @param sims how many SIM signal levels are known this frame
-     */
-    public boolean dualClaimsNotch(boolean bolt, int sims) {
-        return dualSim && signalDots() && sims >= 2 && !bolt;
-    }
-
-    /**
      * Whether the glyph itself draws the mobile level dots.
      *
      * <p>Both arrangements go through here so the two can never disagree about
@@ -314,40 +348,57 @@ public final class TrioAppearance {
      * same signal twice.
      */
     public boolean signalDots() {
-        return mobile && signalInRing;
+        // The ring is slot-based, so a card has to be placed there to be drawn. The capsule
+        // and the rectangle derive what they draw from the switches alone - they have no
+        // slots - so for them the switch IS the answer.
+        return mobile && (!ring || hasRingPart(Prefs.PART_MOBILE));
     }
 
     /**
-     * Whether the module takes the native signal icon away and draws its own
-     * reading in its place.
+     * Whether the glyph draws SIM 1's own row this frame.
      *
-     * <p>This is the one condition that folds the mobile slots while the signal
-     * is out of ring. With the switch off the slots are left alone, so MIUI
-     * keeps showing its own icon exactly where it always was - which is the
-     * whole difference between the two positions of the switch.
+     * <p>Placement is the only thing that can turn a per-card row on: the row
+     * exists as a <em>slot occupant</em>, and only the free ring has slots. The
+     * automatic layouts keep the aggregate meter they have always drawn, because
+     * they have no place to put a second independent piece - so answering "yes"
+     * there would claim the native mobile slot while drawing nothing at all.
+     * The switch is still independent of its twin: it gates the row without the
+     * slot (a reserved slot with the switch off draws nothing, as with Wi-Fi).
      *
-     * <p>Also gated on {@link #mobile}: the meter switch means "no mobile
-     * reading anywhere", and it already answers that way in ring through
-     * {@link #signalDots()}. Leaving it out here would let the mobile meter be
-     * off and the stacked reading drawn anyway - a signal the user turned off,
-     * showing up because a different switch was the one they did not touch.
+     * <p>Deliberately not gated on the two-SIM condition {@link #dualSimRows}
+     * needs: a row is one card's reading, so a single-SIM device can still place
+     * SIM 1's row. SIM 2's row draws nothing there, which is what an absent
+     * reading should look like.
      */
-    public boolean stackedOut() {
-        return glyph && mobile && signalOutOfRing && stackedSignal;
+    public boolean drawsSim1() {
+        return showSim1 && mobile && ring
+                && hasRingPart(Prefs.PART_SIM_1);
+    }
+
+    /** Whether the glyph draws SIM 2's own row this frame; see {@link #drawsSim1()}. */
+    public boolean drawsSim2() {
+        return showSim2 && mobile && ring
+                && hasRingPart(Prefs.PART_SIM_2);
+    }
+
+    /** Whether either per-card row is drawn, which is what the hooks must ask. */
+    public boolean drawsAnySimRow() {
+        return drawsSim1() || drawsSim2();
     }
 
     /**
      * Whether MIUI's own mobile-signal slot has to be handed over, which is
      * exactly while this module draws that signal itself.
      *
-     * <p>Stated here rather than inside {@code TrioHooks.foldedSlots()} so the
-     * rule can be exercised without the Xposed API. The trap this encodes is the
-     * out-of-ring position with the stacked switch off: nothing is drawn and the
-     * native icon has to stay, so folding there would simply delete a signal
-     * indicator from the status bar.
+     * <p>Stated here rather than inside {@code TrioHooks.foldedSlots()} so the rule can be
+     * exercised without the Xposed API. The trap it encodes: folding the slot while drawing
+     * nothing in its place would delete a signal indicator from the status bar. That is why
+     * this asks "am I drawing the reading" rather than "did the user ask for a reading" -
+     * with the out-of-ring position gone, the only way the module draws it is by having a
+     * card placed in a third, which is exactly what these three predicates test.
      */
     public boolean foldsMobile() {
-        return signalDots() || stackedOut();
+        return signalDots() || drawsAnySimRow();
     }
 
     /** Whether the network type is drawn at all, in either position. */
@@ -428,6 +479,8 @@ public final class TrioAppearance {
      * <p>Immutable.
      */
     public static final class Ring {
+        /** Actual occupants this frame; null selects the original automatic layout. */
+        public final int[] parts;
         /** The arcs leave ink this frame. */
         public final boolean wifi;
         /** The arcs are drawn at all. */
@@ -451,51 +504,134 @@ public final class TrioAppearance {
          */
         public final boolean dual;
 
+        /**
+         * The renderer and editor use the same opening around the top component.
+         *
+         * <p>Only the <em>dual reading</em> widens the mouth: its top row is
+         * {@code DOTS} mirrored about the ring centre, so the outer dots sit almost on
+         * the arc's own radius and a narrow mouth runs the rounded stroke end into
+         * them.
+         *
+         * <p>The ring's <b>bottom</b> opening is the reference for symmetry, not this
+         * mouth - see {@code TrioGeometry.B_SWEEP}, where the arc's own bottom opening
+         * was brought down to the top gap's width so the two halves mirror each other.
+         */
+        public float gapStart() {
+            return !gapUsed ? TrioGeometry.GAP_NONE
+                    : dual ? TrioGeometry.GAP_START_DUAL
+                    : bolt ? TrioGeometry.GAP_START_CHARGE : TrioGeometry.GAP_START_IDLE;
+        }
+
+        public float gapEnd() {
+            return !gapUsed ? TrioGeometry.GAP_NONE
+                    : dual ? TrioGeometry.GAP_END_DUAL
+                    : bolt ? TrioGeometry.GAP_END_CHARGE : TrioGeometry.GAP_END_IDLE;
+        }
+
+        /**
+         * The first entry of {@code order} that has ink on this frame, or {@link
+         * Prefs#PART_NONE}.
+         *
+         * <p>Skipping rather than stopping is the whole behaviour: a candidate whose own
+         * switch is off, or which has no reading to show, is simply passed over and the next
+         * one is tried. That is why a zone does not go blank when the top of its list happens
+         * to be a piece with nothing to draw.
+         *
+         * <p>Each condition is the same one that piece would test on its own - a percentage
+         * needs a level, the arcs need a signal, the bolt only exists while charging, and a
+         * card answers to its own switch - so a place's list cannot resurrect something the
+         * user switched off.
+         */
+        private static int firstDrawable(TrioAppearance a, int[] order, int level,
+                                         boolean charging, int wifiLevel, String mobileType) {
+            if (order == null) {
+                return Prefs.PART_NONE;
+            }
+            for (int i = 0; i < order.length; i++) {
+                if (draws(a, order[i], level, charging, wifiLevel, mobileType)) {
+                    return order[i];
+                }
+            }
+            return Prefs.PART_NONE;
+        }
+
+        /**
+         * Whether one piece would draw ink on this frame, judging only its SWITCH and the
+         * frame's readings - never the layout.
+         *
+         * <p>The layout is what is being decided here, so consulting it would be circular:
+         * {@link #drawsBolt()} asks whether the bolt is placed, and asking that while working
+         * out what to place would make the answer depend on itself. The switch alone is the
+         * right question, because "is this piece wanted" and "is this the zone it goes in" are
+         * separate, and this only answers the first.
+         */
+        private static boolean draws(TrioAppearance a, int part, int level, boolean charging,
+                                     int wifiLevel, String mobileType) {
+            switch (part) {
+                case Prefs.PART_WIFI:
+                    return a.wifi && a.wifiInk(wifiLevel);
+                case Prefs.PART_VALUE:
+                    return a.value && level >= 0;
+                case Prefs.PART_BOLT:
+                    return a.boltWanted && charging;
+                case Prefs.PART_TYPE:
+                    return a.typeInRing && mobileType != null && !mobileType.isEmpty();
+                case Prefs.PART_MOBILE:
+                    return a.mobile && a.ring;
+                case Prefs.PART_SIM_1:
+                    return a.mobile && a.ring && a.showSim1;
+                case Prefs.PART_SIM_2:
+                    return a.mobile && a.ring && a.showSim2;
+                case Prefs.PART_CLOCK:
+                    // The clock always has something to say; whether the arrangement shows it
+                    // is the renderer's business.
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /**
+         * Resolves one frame from the three zones.
+         *
+         * <p>There is no automatic alternative any more: the slots are the layout, so
+         * this reads them and decides only whether each piece has anything to draw on
+         * this frame (a percentage needs a level, the arcs need a signal, and so on).
+         * The old second path - which derived every position from switches and had a
+         * priority order for the shared notch - is gone, and with it the case where the
+         * same settings produced two different drawings depending on whether the user
+         * had ever opened the editor.
+         */
         private Ring(TrioAppearance a, int level, boolean charging, int wifiLevel,
                      String mobileType, int sims) {
-            wifi = a.wifiInk(wifiLevel);
+            parts = new int[3];
+            for (int z = 0; z < Prefs.ZONE_COUNT; z++) {
+                // The zone draws the FIRST candidate that has something to show this frame.
+                //
+                // That is what makes the list a fallback chain rather than a stack: with
+                // [percentage, arcs] the percentage takes the zone while it has a reading,
+                // and the arcs step in on a frame where it does not - so a zone never goes
+                // blank while any of its pieces could draw. Order is therefore the only
+                // arbitration, which is exactly what dragging the list edits.
+                parts[z] = firstDrawable(a, a.ringZones[z], level, charging, wifiLevel,
+                        mobileType);
+            }
+            wifi = drawWifi = a.wifiInk(wifiLevel);
             bolt = charging && a.drawsBolt();
-            final boolean type = a.typeInRing && mobileType != null && !mobileType.isEmpty();
-            final boolean hasValue = a.value && level >= 0;
-
-            // The plug, not the bolt: charging suppresses the second row whether
-            // or not this frame happens to draw a bolt for it (the bolt is
-            // conditional on the percentage being on, the plug never is).
-            // The notch is arbitrated, not merely shared: the rows outrank the
-            // arcs, and only the bolt outranks the rows. See dualClaimsNotch.
-            dual = a.dualClaimsNotch(bolt, sims);
-            // The dual reading's top row owns the 12 o'clock notch, so the
-            // percentage cannot be drawn there: it moves to the ring centre,
-            // which is where it already goes whenever the notch is spoken for.
-            // The in-glyph type label then yields, exactly as it does to the
-            // percentage everywhere else.
-            valueInCentre = hasValue && (a.centreValue || dual || (!wifi && !type));
-            valueInGap = hasValue && !valueInCentre && !bolt;
-            // The rows outrank the arcs: both want the same slot, and the rows
-            // carry a per-SIM reading the arcs cannot show anywhere else, while a
-            // Wi-Fi level is also legible from the arcs' absence. The bolt above
-            // already yielded to the rows via dualClaimsNotch.
-            wifiInGap = wifi && a.centreValue && !bolt && !dual;
-            typeInCentre = type && !wifi && !valueInCentre;
-            // The second row sits in the notch the gap label would otherwise use,
-            // so the label yields rather than overlapping SIM 1's dots.
-            typeInGap = type && valueInCentre && !wifi && !bolt && !dual;
-            // The rows live in the ring's two openings, so the ring has to open
-            // even when nothing else claimed the notch: a closed ring would draw
-            // its arc straight through the top row.
-            gapUsed = bolt || wifiInGap || valueInGap || typeInGap || dual;
-            // With the centre reserved and nothing to move into the notch, the
-            // arcs are dropped outright rather than drawn behind the number.
-            //
-            // Keyed on where the percentage actually landed, not on the switch
-            // that asked for it: the rows reserve the centre as well, so a frame
-            // with the rows in the notch while the centring switch is off would
-            // otherwise send the arcs to the centre and draw them across the
-            // number. That combination is reachable since the rows outrank the
-            // arcs; with the rows off, `valueInCentre` and `centreValue` agree
-            // except when there is no ink to draw anyway.
-            drawWifi = a.wifi && (!valueInCentre || wifiInGap);
-            drawValue = valueInCentre || valueInGap;
+            drawValue = a.ownsValue() && level >= 0;
+            valueInCentre = parts[1] == Prefs.PART_VALUE;
+            valueInGap = parts[0] == Prefs.PART_VALUE;
+            wifiInGap = parts[0] == Prefs.PART_WIFI;
+            typeInCentre = parts[1] == Prefs.PART_TYPE;
+            typeInGap = parts[0] == Prefs.PART_TYPE;
+            gapUsed = parts[0] != Prefs.PART_NONE;
+            // The dual switch does not change how a zone is drawn. It used to mean "add a
+            // second row to the meter, and widen the notch to hold it" - but a zone draws one
+            // piece, so a second row has nowhere to go. Two cards are expressed by placing
+            // PART_SIM_1 and PART_SIM_2 in two different zones. Kept as a field (always false
+            // here) so the renderer's parameters do not change shape for the rectangular
+            // arrangement, which does still have two columns.
+            dual = false;
         }
     }
 
@@ -547,8 +683,8 @@ public final class TrioAppearance {
     /**
      * Whether the bar's own clock has to step aside for this appearance.
      *
-     * <p>True only for the capsule, and only while the module is drawing: the
-     * capsule is the one arrangement that puts the time inside the icon, so
+     * <p>True for the capsule or an assigned free-ring clock while drawing:
+     * those arrangements put the time inside the icon, so
      * leaving the bar's clock visible would show the time twice. Turning the
      * module off has to bring it back, which is why this follows the master
      * switch and not just the style.
@@ -558,7 +694,7 @@ public final class TrioAppearance {
      * disagree - the failure being either a duplicated clock or none at all.
      */
     public boolean hidesStatusClock() {
-        return glyph && capsule;
+        return glyph && (capsule || (ring && hasRingPart(Prefs.PART_CLOCK)));
     }
 
     /**

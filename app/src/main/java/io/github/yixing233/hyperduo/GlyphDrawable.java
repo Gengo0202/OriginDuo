@@ -7,6 +7,10 @@ import android.graphics.drawable.Drawable;
 import android.view.View;
 
 import java.lang.reflect.Field;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * The trio glyph, painted by the battery icon view itself.
@@ -35,11 +39,8 @@ import java.lang.reflect.Field;
  * another draw, and {@link #install} is idempotent, so the next frame takes the
  * slot back.
  *
- * <p>One build is out of reach: with {@code battery_meter_use_legacy_drawable}
- * set, MIUI's {@code onDraw} calls {@code super.onDraw} and returns before the
- * tint slot is ever drawn, so the platform paints its own battery and this
- * drawable is never called. The glyph is silent there rather than wrong; the
- * build this was written against reports {@code false}.
+ * <p>Legacy builds return before drawing the tint slot. Those hosts, and hosts
+ * without a writable slot, use the hook's direct draw on every frame instead.
  */
 final class GlyphDrawable extends Drawable {
 
@@ -49,11 +50,13 @@ final class GlyphDrawable extends Drawable {
     /** The switch that tells the icon view to draw from a Drawable at all. */
     private static final String LEGACY = "mUseLegacyDrawable";
 
-    private static Field sSlot;
-    private static Field sLegacy;
-
-    /** The build's legacy-drawable setting, or -1 while it is still unknown. */
-    private static int sLegacyOn = -1;
+    // Cache negative lookups as well: a missing optional field is a class
+    // capability, not something to rediscover and log on every animation frame.
+    private static final Map<Class<?>, Field> SLOTS = new HashMap<Class<?>, Field>();
+    private static final Map<Class<?>, Field> LEGACIES = new HashMap<Class<?>, Field>();
+    private static final Set<Class<?>> MISSING_NOTED = new HashSet<Class<?>>();
+    private static final Set<Class<?>> WRITE_NOTED = new HashSet<Class<?>>();
+    private static final Set<Class<?>> LEGACY_NOTED = new HashSet<Class<?>>();
 
     /**
      * The host whose readings the next frame is built from. Held as a field
@@ -70,26 +73,31 @@ final class GlyphDrawable extends Drawable {
      * Puts the glyph in the battery icon's own drawable slot, if it is not
      * already the one holding it.
      *
-     * <p>Answers whether the slot was just taken. MIUI's own {@code onDraw}
+     * <p>Answers whether the caller must paint this frame. MIUI's own {@code onDraw}
      * runs before the caller gets a look at the canvas, so on the frame that
      * takes the slot MIUI's battery has already been painted into it and the
      * caller has to paint over it. Later frames need nothing: the drawable is
-     * in the slot and MIUI draws it itself.
+     * in the slot and MIUI draws it itself. A missing slot or a legacy draw path
+     * always needs the direct draw; it must not be confused with an installed slot.
      */
     static boolean install(View host, TrioState state) {
         final Field slot = field(host, true);
         if (slot == null) {
-            return false;
+            return true;
         }
-        noteLegacy(host);
+        final boolean legacy = noteLegacy(host);
         final Object current = Refl.get(slot, host);
         if (current instanceof GlyphDrawable) {
             ((GlyphDrawable) current).state = state;
-            return false;
+            return legacy;
         }
         final GlyphDrawable glyph = new GlyphDrawable(state);
         Refl.set(slot, host, glyph);
-        return Refl.get(slot, host) == glyph;
+        // Read back the write: if it failed the direct path is still required.
+        if (Refl.get(slot, host) != glyph && WRITE_NOTED.add(host.getClass())) {
+            TrioHooks.log(TrioHooks.LOG_INFO, "glyph: tint slot write failed, using direct draw");
+        }
+        return true;
     }
 
     /** Hands the slot back to MIUI, if the glyph is what is holding it. */
@@ -102,6 +110,9 @@ final class GlyphDrawable extends Drawable {
         // right now. Putting back a remembered drawable would put back the
         // artwork of a state the battery has since left.
         Refl.callByName(host, "clearTint");
+        // OS4 itself pairs these calls. clearTint resets mDark and installs
+        // un-tinted artwork; replay the current theme before native onDraw.
+        Refl.callByName(host, "onDarkChangeInternal");
         if (Refl.get(slot, host) instanceof GlyphDrawable) {
             // No clearTint() on this build: then the slot goes empty rather
             // than keep painting a glyph for a module that is switched off.
@@ -114,14 +125,15 @@ final class GlyphDrawable extends Drawable {
      * ever ask for it to be handed back, because that is still a field read.
      */
     private static Field field(View host, boolean needed) {
-        if (sSlot == null) {
-            sSlot = Refl.field(host.getClass(), SLOT);
-            if (sSlot == null && needed) {
-                TrioHooks.log(TrioHooks.LOG_INFO,
-                        "glyph: " + host.getClass().getName() + " has no " + SLOT);
-            }
+        final Class<?> cls = host.getClass();
+        if (!SLOTS.containsKey(cls)) {
+            SLOTS.put(cls, Refl.field(cls, SLOT));
         }
-        return sSlot;
+        final Field slot = SLOTS.get(cls);
+        if (slot == null && needed && MISSING_NOTED.add(cls)) {
+            TrioHooks.log(TrioHooks.LOG_INFO, "glyph: " + cls.getName() + " has no " + SLOT);
+        }
+        return slot;
     }
 
     /**
@@ -129,19 +141,18 @@ final class GlyphDrawable extends Drawable {
      * never reaches. The glyph would be on and invisible, which is the one
      * failure that has no other symptom.
      */
-    private static void noteLegacy(View host) {
-        if (sLegacyOn >= 0) {
-            return;
+    private static boolean noteLegacy(View host) {
+        final Class<?> cls = host.getClass();
+        if (!LEGACIES.containsKey(cls)) {
+            LEGACIES.put(cls, Refl.field(cls, LEGACY));
         }
-        if (sLegacy == null) {
-            sLegacy = Refl.field(host.getClass(), LEGACY);
-        }
-        sLegacyOn = Refl.getBool(sLegacy, host, false) ? 1 : 0;
-        if (sLegacyOn == 1) {
+        final boolean legacy = Refl.getBool(LEGACIES.get(cls), host, false);
+        if (legacy && LEGACY_NOTED.add(cls)) {
             TrioHooks.log(TrioHooks.LOG_INFO,
                     "glyph: this build draws the battery from a legacy drawable, "
-                            + "which returns before the tint slot is drawn");
+                            + "using the direct draw path");
         }
+        return legacy;
     }
 
     @Override

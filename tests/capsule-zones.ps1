@@ -78,9 +78,13 @@ public class CapsuleZonesTest {
    ok("right slot renders "+part,occupant(placed.settings,Zone.CENTRE,part==Part.BOLT,3)==part);
    ok("capsule ignores the ring centring switch",placed.settings.valueCentred==s.valueCentred);
   }
-  for(int style:new int[]{Prefs.STYLE_RING,Prefs.STYLE_RECT}){
-   TrioSettings old=s.copy();old.trioStyle=style;
-   for(Zone zone:Zone.values())ok("other styles have no clock slot",TrioZones.assign(zone,style==Prefs.STYLE_RECT,Part.CLOCK,old,2)==null);
+  // The ring places the clock in a slot like anything else; the fixed left slot is the
+  // capsule's own rule. The rectangle still has no clock.
+  {
+   TrioSettings rectFrame=s.copy();rectFrame.trioStyle=Prefs.STYLE_RECT;
+   for(Zone zone:Zone.values())ok("the rectangle has no clock slot",TrioZones.assign(zone,true,Part.CLOCK,rectFrame,2)==null);
+   TrioSettings ringFrame=s.copy();ringFrame.trioStyle=Prefs.STYLE_RING;
+   ok("the ring can place the clock",TrioZones.assign(Zone.CENTRE,false,Part.CLOCK,ringFrame,2)!=null);
   }
   BufferedImage weak=paint(s,79,1,null,"19:41"),zero=paint(s,79,0,null,"19:41");
   ok("first signal dot follows mobile level",alpha(weak,s,0,false)>alpha(zero,s,0,false));

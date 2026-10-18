@@ -51,14 +51,64 @@ class SettingsRepository(context: Context) {
     fun setShowValue(value: Boolean) = writeBoolean(Prefs.KEY_SHOW_VALUE, value)
     fun setShowBolt(value: Boolean) = writeBoolean(Prefs.KEY_SHOW_BOLT, value)
     fun setDualSim(value: Boolean) = writeBoolean(Prefs.KEY_DUAL_SIM, value)
+    /** SIM 1's own row of dots, placed as a component - see [Prefs.KEY_SHOW_SIM_1]. */
+    fun setShowSim1(value: Boolean) = writeBoolean(Prefs.KEY_SHOW_SIM_1, value)
+    /** SIM 2's own row of dots, placed as a component - see [Prefs.KEY_SHOW_SIM_2]. */
+    fun setShowSim2(value: Boolean) = writeBoolean(Prefs.KEY_SHOW_SIM_2, value)
     fun setValueCentred(value: Boolean) = writeBoolean(Prefs.KEY_VALUE_CENTRED, value)
     /** 0 = hidden, 1 = inside the ring, 2 = outside it. */
     fun setMobileTypeMode(value: Int) = writeInt(Prefs.KEY_MOBILE_TYPE_MODE, value)
-    /** 0 = the ring arrangement, 1 = the rectangular one. */
-    fun setTrioStyle(value: Int) = writeInt(Prefs.KEY_TRIO_STYLE, value)
+    /** Stored IDs stay 0 = ring and 2 = capsule; retired ID 1 returns to the ring. */
+    fun setTrioStyle(value: Int) = writeInt(Prefs.KEY_TRIO_STYLE, Prefs.normalizeTrioStyle(value))
+
+    /** Publish one layout edit as a single local/remote transaction and one broadcast. */
+    fun applyRingAssignment(next: TrioSettings) {
+        val write: (SharedPreferences.Editor) -> Unit = { e ->
+            e.putString(Prefs.KEY_RING_LAYOUT, Prefs.encodeLayout(next.ringZones))
+            e.putBoolean(Prefs.KEY_SHOW_WIFI, next.showWifi)
+            e.putBoolean(Prefs.KEY_SHOW_MOBILE, next.showMobile)
+            e.putBoolean(Prefs.KEY_SHOW_VALUE, next.showValue)
+            e.putBoolean(Prefs.KEY_SHOW_BOLT, next.showBolt)
+            e.putBoolean(Prefs.KEY_SHOW_SIM_1, next.showSim1)
+            e.putBoolean(Prefs.KEY_SHOW_SIM_2, next.showSim2)
+            e.putInt(Prefs.KEY_MOBILE_TYPE_MODE, next.mobileTypeMode)
+        }
+        val editor = preferences().edit()
+        write(editor)
+        editor.commit()
+        push(write)
+        notifyModule()
+    }
+
+    /**
+     * Put a piece at the front of a zone's priority list, or take it out of the layout.
+     *
+     * <p>Mirrors the old "position" control: 1..3 name a ring zone and 0 (or the external
+     * type slot) removes the piece. The three ints are still the three zones, which is why
+     * the mapping is kept - the ring's editor drives the priority lists directly.
+     */
+    fun setRingPartPosition(part: io.github.yixing233.hyperduo.TrioZones.Part, position: Int) {
+        val zones = io.github.yixing233.hyperduo.TrioZones.Zone.entries
+        val current = TrioSettings.from(preferences(), density)
+        if (position in 1..3) {
+            applyRingAssignment(
+                io.github.yixing233.hyperduo.TrioZones.withPiece(current, position - 1, part)
+            )
+        } else {
+            val next = current.copy()
+            val id = io.github.yixing233.hyperduo.TrioZones.encodePart(part)
+            next.ringZones = io.github.yixing233.hyperduo.TrioSettings.copyZones(current.ringZones)
+            for (zone in next.ringZones.indices) {
+                next.ringZones[zone] = next.ringZones[zone].filter { it != id }.toIntArray()
+            }
+            if (part == io.github.yixing233.hyperduo.TrioZones.Part.TYPE) {
+                next.mobileTypeMode =
+                    if (position == 4) Prefs.MOBILE_TYPE_OUT_RING else Prefs.MOBILE_TYPE_OFF
+            }
+            applyRingAssignment(next)
+        }
+    }
     /** 0 = the signal readings stay inside the ring, 1 = they move outside it. */
-    fun setSignalMode(value: Int) = writeInt(Prefs.KEY_SIGNAL_MODE, value)
-    fun setStackedSignal(value: Boolean) = writeBoolean(Prefs.KEY_STACKED_SIGNAL, value)
     fun setDataSimOnly(value: Boolean) = writeBoolean(Prefs.KEY_DATA_SIM_ONLY, value)
 
     // ------------------------------------------------------- performance readouts
@@ -148,11 +198,12 @@ class SettingsRepository(context: Context) {
             prefs.putBoolean(Prefs.KEY_SHOW_VALUE, snapshot.showValue)
             prefs.putBoolean(Prefs.KEY_SHOW_BOLT, snapshot.showBolt)
             prefs.putBoolean(Prefs.KEY_DUAL_SIM, snapshot.dualSim)
+            prefs.putBoolean(Prefs.KEY_SHOW_SIM_1, snapshot.showSim1)
+            prefs.putBoolean(Prefs.KEY_SHOW_SIM_2, snapshot.showSim2)
             prefs.putInt(Prefs.KEY_MOBILE_TYPE_MODE, snapshot.mobileTypeMode)
             prefs.putBoolean(Prefs.KEY_VALUE_CENTRED, snapshot.valueCentred)
             prefs.putInt(Prefs.KEY_TRIO_STYLE, snapshot.trioStyle)
-            prefs.putInt(Prefs.KEY_SIGNAL_MODE, snapshot.signalMode)
-            prefs.putBoolean(Prefs.KEY_STACKED_SIGNAL, snapshot.stackedSignal)
+            prefs.putString(Prefs.KEY_RING_LAYOUT, Prefs.encodeLayout(snapshot.ringZones))
             prefs.putBoolean(Prefs.KEY_DATA_SIM_ONLY, snapshot.dataSimOnly)
             prefs.putBoolean(Prefs.KEY_PERF_POWER, snapshot.perfPower)
             prefs.putBoolean(Prefs.KEY_PERF_TEMP, snapshot.perfTemp)

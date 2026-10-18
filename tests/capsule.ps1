@@ -104,35 +104,29 @@ if (![regex]::IsMatch($renderer, 'TrioGeometry\.capTextMaxSize\(stroke\)')) {
     throw 'the capsule readings are no longer bounded by the interior height'
 }
 
-# The style is honoured through the same clamp every other style goes through,
-# and the clamp's ceiling is the capsule: a stored value above it still has to
-# degrade to a drawable style rather than to a blank glyph.
+# Capsule retains its stored ID while retired styles return to the ring.
 $maxStyle = [regex]::Match($prefs, 'static final int MAX_TRIO_STYLE = STYLE_(\w+);')
 if (!$maxStyle.Success -or $maxStyle.Groups[1].Value -ne 'CAPSULE') {
     throw 'MAX_TRIO_STYLE no longer reaches the capsule'
 }
 if (![regex]::IsMatch($settings,
-        'p\.getInt\(Prefs\.KEY_TRIO_STYLE, Prefs\.DEF_TRIO_STYLE\),\s*\r?\n\s*Prefs\.MIN_TRIO_STYLE, Prefs\.MAX_TRIO_STYLE\)')) {
-    throw 'the stored style is no longer clamped on read'
+        'Prefs\.normalizeTrioStyle\(p\.getInt\(Prefs\.KEY_TRIO_STYLE, Prefs\.DEF_TRIO_STYLE\)\)')) {
+    throw 'the stored style no longer migrates retired configurations'
 }
 
-# The settings screen offers all three, in ordinal order - the dropdown stores an
-# index, so a list that is short or misordered selects the wrong arrangement.
-$screen = [System.IO.File]::ReadAllText((Join-Path $trio 'ui\SettingsScreen.kt'))
+# Dropdown indices map explicitly to the non-contiguous storage IDs 0 and 2.
+$screen = [System.IO.File]::ReadAllText((Join-Path $trio 'ui\ContentControls.kt'))
 $styleList = [regex]::Match($screen,
-    '(?s)val styles = listOf\((.*?)\r?\n\s*\)').Groups[1].Value
-if (!$styleList) { throw 'could not read the style dropdown from SettingsScreen' }
-# Order is the contract, so check the offsets rather than mere presence: the
-# dropdown stores an index, and a list that is short or misordered selects the
-# wrong arrangement without failing to compile or to render.
+    '(?s)ContentControl.Style ->.*?listOf\(R.string.trio_style_ring, R.string.trio_style_capsule\)').Value
+if (!$styleList) { throw 'could not read the shared style dropdown' }
 $iRing = $styleList.IndexOf('trio_style_ring')
 $iRect = $styleList.IndexOf('trio_style_rect')
 $iCaps = $styleList.IndexOf('trio_style_capsule')
 if ($iRing -lt 0) { throw 'the style dropdown no longer offers trio_style_ring' }
-if ($iRect -lt 0) { throw 'the style dropdown no longer offers trio_style_rect' }
+if ($iRect -ge 0) { throw 'the style dropdown still offers the retired rectangular style' }
 if ($iCaps -lt 0) { throw 'the style dropdown no longer offers trio_style_capsule' }
-if (!($iRing -lt $iRect -and $iRect -lt $iCaps)) {
-    throw 'the style dropdown is no longer in ordinal order'
+if (!($iRing -lt $iCaps) -or !$screen.Contains('setTrioStyle(styles[index])')) {
+    throw 'the style dropdown no longer maps its indices to stored style IDs'
 }
 
 # --- generated probe -----------------------------------------------------------

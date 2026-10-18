@@ -3,9 +3,6 @@
     <string name="app_name">HyperDuo</string>
     <string name="xposed_description">Merges Wi-Fi, mobile signal and battery into a single iPhone-Duo style trio glyph in the status bar.</string>
 
-    <string name="group_appearance">Appearance</string>
-    <string name="group_geometry">Geometry</string>
-    <string name="group_colors">Colors</string>
 
     <string name="group_stroke">Stroke</string>
     <string name="group_scale">Overall size</string>
@@ -14,13 +11,29 @@
     <string name="group_out_signal">Out-of-ring signal</string>
     <string name="group_track">Track</string>
 
-    <string name="tab_general">General</string>
     <string name="tab_drawing">Drawing</string>
 
     <string name="drawing_title">Tap the part of the icon you want to change</string>
     <string name="drawing_summary">Tap a part and pick a component to put there; press and hold to change its size and colours.</string>
-    <string name="drawing_zone_change">Change…</string>
     <string name="drawing_zone_edit">Adjust…</string>
+    <string name="drawing_zone_add">Add…</string>
+    <string name="drawing_zone_manage">Manage…</string>
+    <string name="drawing_priority_title">Show order for %1$s</string>
+    <string name="drawing_priority_summary">Tried top to bottom: when the first one has nothing to draw (no Wi-Fi, not charging), the next takes over. Drag the handle to reorder; long press a row to remove it.</string>
+    <string name="drawing_priority_empty_summary">Nothing placed here yet. Use "Add component" below.</string>
+    <string name="drawing_priority_first">#%1$d · shown first</string>
+    <string name="drawing_priority_fallback">#%1$d · takes over if above cannot draw</string>
+    <string name="drawing_priority_move_up">Move up</string>
+    <string name="drawing_priority_move_down">Move down</string>
+    <string name="drawing_priority_remove">Remove</string>
+    <string name="drawing_priority_showing">#1 · showing now</string>
+    <string name="drawing_pick_in_zone">In ring</string>
+    <string name="drawing_pick_elsewhere">Elsewhere</string>
+    <string name="drawing_pick_showing_now">This is the one being shown.</string>
+    <string name="drawing_pick_promote_summary">Already in this third; tapping moves it to the front.</string>
+    <string name="drawing_pick_move_summary">Currently in %1$s; tapping moves it here and leaves %1$s empty.</string>
+    <string name="drawing_priority_add">Add component</string>
+    <string name="drawing_priority_done">Done</string>
     <string name="drawing_occupant_clock">Time</string>
     <string name="drawing_hint_clock">Left clock</string>
     <string name="drawing_hint_reading">Right reading</string>
@@ -49,20 +62,31 @@
     <string name="drawing_occupant_bolt">Charging bolt</string>
     <string name="drawing_occupant_wifi">Wi-Fi arcs</string>
     <string name="drawing_occupant_mobile">Mobile dots</string>
-    <string name="drawing_occupant_dual">Dual-SIM rows</string>
+    <string name="drawing_occupant_sim_1">SIM 1 dots</string>
+    <string name="drawing_occupant_sim_2">SIM 2 dots</string>
     <string name="drawing_occupant_type">Network type</string>
     <string name="drawing_master_off">The master switch is off: the preview still draws the style you pick, but the status bar will not.</string>
     <string name="drawing_settings_title">Settings for “%1$s”</string>
     <string name="drawing_settings_none">This part has no size or colour of its own.</string>
     <string name="drawing_close">Close</string>
+    <string name="drawing_part_appearance">Overall appearance</string>
+    <string name="drawing_part_readouts">Power and temperature</string>
+    <string name="drawing_parts_title">All components</string>
+    <string name="drawing_parts_summary">Open settings here even when a component is hidden or outside the icon.</string>
+    <string name="drawing_outside_title">Outside content samples · tap to adjust</string>
+    <string name="drawing_readout_sample_summary">Sample readings show content and weight; final sizing follows the status bar.</string>
+    <string name="drawing_preview_hidden">Hidden outside</string>
+    <string name="drawing_power_preview_hint">Select Charging to preview power</string>
+    <string name="drawing_theme_system">System theme</string>
+    <string name="drawing_theme_light">Light background</string>
+    <string name="drawing_theme_dark">Dark background</string>
 
     <string name="master_title">Enable trio icon</string>
     <string name="master_summary">Master switch; turn off to restore the stock battery and signal icons.</string>
 
     <string name="trio_style_title">Trio style</string>
-    <string name="trio_style_summary">The ring is the default; the rectangular one puts a column of signal dots on each side of the centre; the capsule uses its own outline as the battery gauge.</string>
+    <string name="trio_style_summary">Use the default ring, or a capsule with the time and readings inside its battery outline.</string>
     <string name="trio_style_ring">Ring</string>
-    <string name="trio_style_rect">Rectangular</string>
     <string name="trio_style_capsule">Capsule</string>
 
     <string name="show_wifi_title">Show Wi-Fi arcs</string>
@@ -71,8 +95,11 @@
     <string name="show_mobile_title">Show mobile dots</string>
     <string name="show_mobile_summary">Draw four level dots for mobile network signal strength.</string>
 
-    <string name="dual_sim_title">Dual-SIM signal</string>
-    <string name="dual_sim_summary">Draw two rows of dots instead of one: SIM 1 on top, SIM 2 below. Applies with two SIMs only.</string>
+
+    <string name="show_sim_1_title">SIM 1 dots</string>
+    <string name="show_sim_1_summary">Draw SIM 1\'s level as its own row of four dots, in any slot of the ring. Independent of SIM 2.</string>
+    <string name="show_sim_2_title">SIM 2 dots</string>
+    <string name="show_sim_2_summary">Draw SIM 2\'s level as its own row of four dots, in any slot of the ring. Independent of SIM 1.</string>
 
     <string name="show_value_title">Show battery number</string>
     <string name="show_value_summary">Show the battery percentage inside the ring; replaced by a bolt while charging.</string>
@@ -86,28 +113,18 @@
     <string name="mobile_type_inside">In the ring</string>
     <string name="mobile_type_outside">Outside the ring</string>
 
-    <string name="signal_mode_title">Signal position</string>
-    <string name="signal_mode_summary">Where the mobile signal reading lives: inside the ring keeps the level dots, outside moves it beside the battery icon.</string>
-    <string name="signal_mode_inside">Inside the ring</string>
-    <string name="signal_mode_outside">Outside the ring</string>
 
-    <string name="stacked_signal_title">Stacked signal</string>
-    <string name="stacked_signal_summary">Draw the reading yourself while it is outside the ring: bars for one SIM, dots for the other.</string>
 
     <string name="data_sim_only_title">Data SIM only</string>
     <string name="data_sim_only_summary">With two SIMs, draw only the reading of the SIM that carries data.</string>
 
-    <string name="out_signal_size_title">Out-of-ring signal size</string>
-    <string name="out_signal_size_summary">Overall height of the out-of-ring reading, in dp. The default is 15dp - the same height as the status bar\'s own signal icon - and the slider covers 6–20dp. The same row is drawn at the same size whether or not the dot row follows it.</string>
 
-    <string name="out_signal_margin_title">Out-of-ring signal gap</string>
-    <string name="out_signal_margin_summary">The gap between the out-of-ring reading and the battery icon, in dp. The default is 2dp and the slider covers 0–16dp. The gap is reserved: widening it pushes the native icons over by the same amount, so the reading can never land on top of them.</string>
 
     <string name="perf_power_title">Charging power</string>
-    <string name="perf_power_summary">Show the charging power beside the battery icon, from the battery\'s own current and voltage; below 10W one decimal is kept.</string>
+    <string name="perf_power_summary">Show live power beside the battery while charging.</string>
 
     <string name="perf_temp_title">Battery temperature</string>
-    <string name="perf_temp_summary">Show the battery temperature beside the battery icon, in whole degrees Celsius, stacked with the charging power.</string>
+    <string name="perf_temp_summary">Show battery temperature in °C.</string>
 
     <string name="glyph_scale_title">Overall icon size</string>
     <string name="glyph_scale_summary">The whole icon as a percentage of the box the status bar gives it; 100%% by default. That box is only about 20dp tall, so the slider can only shrink - 100%% means "as large as the system allows". Every stroke, arc and digit shrinks by the same factor, so the shape is unchanged.</string>
@@ -119,8 +136,6 @@
 
     <string name="perf_pair_title">Charging power and battery temperature</string>
 
-    <string name="value_centre_title">Centre the percentage</string>
-    <string name="value_centre_summary">Enlarge the percentage into the middle of the ring; the top notch goes to dual-SIM, then the Wi-Fi arcs, then the in-ring type.</string>
 
     <string name="color_role_title">State colors</string>
     <string name="color_role_summary">Pick colors for low battery, charging and critical battery.</string>
@@ -156,7 +171,7 @@
     <string name="value_weight_summary">Stroke weight of the battery number, 100 lightest to 900 heaviest.</string>
 
     <string name="clock_size_title">Clock size</string>
-    <string name="clock_size_summary">Font size of the time in the capsule\'s left slot, independent of the battery number.</string>
+    <string name="clock_size_summary">Font size of the time in the capsule or free ring, independent of the battery number.</string>
 
     <string name="clock_weight_title">Clock weight</string>
     <string name="clock_weight_summary">Stroke weight of the time, 100 lightest to 900 heaviest.</string>
@@ -241,4 +256,24 @@
 
     <!-- Tooltip on a row greyed out by another setting; %1$s is that setting's name. -->
     <string name="gate_hint">Turn on &quot;%1$s&quot; first</string>
+    <string name="ring_position_native">Return to system position</string>
+    <string name="ring_position_wifi">Wi-Fi arcs position</string>
+    <string name="ring_position_mobile">Mobile signal position</string>
+    <string name="ring_position_sim_1">SIM 1 dots position</string>
+    <string name="ring_position_sim_2">SIM 2 dots position</string>
+    <string name="ring_position_value">Battery number position</string>
+    <string name="ring_position_bolt">Charging bolt position</string>
+    <string name="ring_position_type">Network type position</string>
+    <string name="ring_position_clock">Clock position</string>
+    <string name="drawing_part_battery">Battery outline</string>
+    <string name="drawing_part_ring">Battery ring</string>
+    <string name="ring_value_summary">Show the battery percentage in its reserved slot, including while charging. Outside the ring, the system percentage setting applies.</string>
+    <string name="ring_slot_reserved">%1$s (currently hidden)</string>
+    <string name="ring_bolt_summary">Show a bolt in its reserved slot while charging, independently of the percentage. When off, charging indication follows the system settings.</string>
+    <string name="ring_position_summary">Choose a ring slot. Outside the ring, the system position and display settings apply. Moving an existing component swaps slots; a new component replaces the destination.</string>
+    <string name="ring_signal_position_summary">Reserves an inside slot independently of inside/outside signal mode. Outside mode keeps this reservation.</string>
+    <string name="ring_layout_title">Ring layout</string>
+    <string name="ring_layout_auto">Automatic</string>
+    <string name="ring_layout_free">Three free slots</string>
+    <string name="ring_layout_summary">Free slots retain their top, middle and bottom assignments. The first edit keeps the current preview components and returns displaced content to the system. Automatic uses the original layout rules.</string>
 </resources>

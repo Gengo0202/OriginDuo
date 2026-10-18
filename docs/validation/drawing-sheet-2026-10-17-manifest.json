@@ -1,0 +1,98 @@
+{
+  "generatedUtc": "2026-10-17T11:22:18.6744094Z",
+  "baseCommit": "db03d5ab0f82a647ec4aaac03755d3dfd775d67f",
+  "workingTreeChanges": true,
+  "scope": "Drawing page battery editor, ring/capsule style selection, concise descriptions and component bottom sheets",
+  "verification": {
+    "debugBuild": "passed",
+    "releaseBuild": "passed",
+    "codeReview": "completed; no blocking findings",
+    "testScripts": "not run this round, per user instruction",
+    "deviceTests": "not run, per user instruction",
+    "installation": "passed; release APK installed using adb install -r; no device tests performed"
+  },
+  "artifacts": [
+    {
+      "path": "app/build/outputs/apk/debug/app-debug.apk",
+      "sha256": "faf00749281836ac8b6bb55a05805fe7b4a9374e81d17c07931a082d7764b405"
+    },
+    {
+      "path": "app/build/outputs/apk/release/app-release.apk",
+      "sha256": "349baef73a3e24258c2f6b76c5ac9880040d021896c050532121a3fdf013ab38"
+    }
+  ],
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "f457f8a8467f41c38071cc2de26cd6f2462cb36809830bfe3ddb77bdec6c597f"
+    },
+    {
+      "path": "app/build.gradle.kts",
+      "sha256": "2d43f738249150f851e68d610f933a16a0e54ab78918f3be58825595574df2c2"
+    },
+    {
+      "path": "app/proguard-rules.pro",
+      "sha256": "de03edcd087b060645e6af6fa3ff7a4b27eaa468cd9b46f4a2c0295a31b9fc5e"
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "sha256": "4eea5c1c9d748913f412e549c8743cecc16a2972bc5f201bc28fd839ee0ed3e4"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/Prefs.java",
+      "sha256": "316b9cbff0815361a6c62187989791be00c9d2ee1b0ce5d1cb5e9c6e085925bc"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioSettings.java",
+      "sha256": "dc7c2edba21dec648bfafbf55f788c8f13675bbfff1b87d7be90cf5bc4980f2f"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioAppearance.java",
+      "sha256": "e8a84cfbed48a33b8bbf1aa71fea02572b9337eba749519840757f9ce5e8406a"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioRenderer.java",
+      "sha256": "1a47c9445afd8366649da795040695367878d9e8964f4238b1d9a4e737bd6035"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioZones.java",
+      "sha256": "2c11635b1b7a6ba6c6f36aa74c0f8b7597811c67df40788cfa7bfa9cf689b742"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioPreviewView.java",
+      "sha256": "dce1050bb5b7698351238b80e57a356ba80bc87d511bde5d23c6c8968db72a49"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsRepository.kt",
+      "sha256": "993456cda48366ae1f4dc825cecb01ed57f3935843552417a3c10673c5aea8ff"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/ContentControls.kt",
+      "sha256": "4ee59417d4104415ae8f4bec6866e041d5d015ef101603f8bebace9d6fd655ac"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/PartControls.kt",
+      "sha256": "80a0cf47592acca44e0a0e3b940a0f1f34f51327859205b2968dd994385aa38d"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/DrawingScreen.kt",
+      "sha256": "05d4538a9216fa4cf42ef2f9235a28a536b9955f3c7dcc979866ecfa675a8719"
+    },
+    {
+      "path": "app/src/main/res/values/strings.xml",
+      "sha256": "7064e0bb2fcea024e1368565c51a0b02886a194604d6c2b8ec6fd75da0404d87"
+    },
+    {
+      "path": "app/src/main/res/values-en/strings.xml",
+      "sha256": "326e86c0d2bc89403a2688a52ea5d701f8eedf33cd2dd11721d2908064011880"
+    },
+    {
+      "path": "tests/capsule.ps1",
+      "sha256": "9315ee5e48679f505f4660a839df9d38db3853747df3003b76296592b9187359"
+    },
+    {
+      "path": "docs/validation/drawing-sheet-2026-10-17.md",
+      "sha256": "32a3f0e1b9b5884f1490cd0facac273ba80d4ac22f9ecd1815d02059f9b6ac24"
+    }
+  ]
+}

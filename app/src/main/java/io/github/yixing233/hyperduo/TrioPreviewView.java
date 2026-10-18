@@ -102,7 +102,10 @@ public final class TrioPreviewView extends View {
         this.settings = value == null ? TrioSettings.defaults() : value;
         // This View belongs to the settings process: use synthetic time just as
         // its battery and SIM readings are synthetic. SystemUI uses ClockTicker.
-        if (this.settings.trioStyle == Prefs.STYLE_CAPSULE && TrioState.sClockText.isEmpty()) {
+        if ((this.settings.trioStyle == Prefs.STYLE_CAPSULE
+                || this.settings.trioStyle == Prefs.STYLE_RING
+                && TrioAppearance.of(this.settings).hasRingPart(Prefs.PART_CLOCK))
+                && TrioState.sClockText.isEmpty()) {
             TrioState.sClockText = "19:41";
         }
         invalidate();
@@ -228,6 +231,16 @@ public final class TrioPreviewView extends View {
             return null;
         }
         return TrioZones.zoneAt(t, TrioAppearance.of(settings), x, y);
+    }
+
+    /** Whether a tap hits the battery arc rather than an internal component. */
+    public boolean isBatteryRingAt(float x, float y) {
+        if (outTypeOnly || outSignalOnly) return false;
+        TrioAppearance a = TrioAppearance.of(settings);
+        int sims = 0;
+        if (slotLevels != null) for (int signal : slotLevels) if (signal >= 0) sims++;
+        return TrioZones.batteryRingAt(zoneTransform(getWidth(), getHeight(), inset, settings),
+                a, a.ring(level, charging, wifiLevel, mobileType, sims), x, y);
     }
 
     /**

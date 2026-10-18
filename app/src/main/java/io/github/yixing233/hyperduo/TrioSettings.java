@@ -53,6 +53,23 @@ public final class TrioSettings {
      */
     public int trioStyle;
     /**
+     * The ring layout: for each of the three zones, an ordered list of candidate pieces.
+     *
+     * <p>Priority order, most wanted first. A zone draws the first entry that has something
+     * to show on this frame, so a list is a fallback chain rather than a stack of overlapping
+     * ink: with nothing but Wi-Fi and the percentage, [percentage, arcs] draws the percentage
+     * while it has a reading and the arcs when it does not.
+     *
+     * <p>Empty by default - a fresh install starts with three empty zones, because with
+     * priority lists there is no single arrangement to ship. Index 0 is the top third, 1 the
+     * middle, 2 the bottom, matching {@code TrioGeometry.ZONE_CY}.
+     *
+     * <p>Stored as the string {@link Prefs#KEY_RING_LAYOUT}; this is its decoded form.
+     * Never null: every entry is a non-null array, possibly empty.
+     */
+    public int[][] ringZones = Prefs.decodeLayout(Prefs.EMPTY_LAYOUT);
+
+    /**
      * Draws one row of level dots per SIM - SIM 1 on top, SIM 2 below - instead
      * of a single row for the current data SIM.
      *
@@ -63,27 +80,18 @@ public final class TrioSettings {
      */
     public boolean dualSim;
     /**
-     * Where the mobile signal is drawn: {@link Prefs#SIGNAL_IN_RING} or
-     * {@link Prefs#SIGNAL_OUT_RING}. Clamped to that range wherever it is read.
+     * Draws SIM 1's own row of four dots, as a placed component.
      *
-     * <p>Outside the glyph {@link #stackedSignal} decides what stands in the
-     * signal's place - see {@link TrioAppearance#stackedOut}.
+     * <p>Independent of {@link #dualSim} and of {@link #showSim2}: the dual
+     * switch describes the aggregate meter's two-row shape, while this pair
+     * describes the cards themselves, and those are arranged by the user rather
+     * than by a rule - see {@link Prefs#KEY_SHOW_SIM_1}.
      */
-    public int signalMode;
+    public boolean showSim1;
+    /** Draws SIM 2's own row of four dots; see {@link #showSim1}. */
+    public boolean showSim2;
     /**
-     * Draws the out-of-ring signal as four ascending capsule bars for one SIM
-     * over four dots for the other, instead of letting MIUI keep its own icon.
-     *
-     * <p>Only meaningful while {@link #signalMode} is
-     * {@link Prefs#SIGNAL_OUT_RING}.
-     */
-    public boolean stackedSignal;
-    /**
-     * Draws only the current data SIM, leaving the other out of the out-of-ring
-     * reading entirely.
-     *
-     * <p>Only meaningful while {@link #stackedSignal} is on: with the native
-     * icon in place the module draws no signal for this to narrow.
+     * Draws only the current data SIM in the out-of-ring reading, leaving the other out.
      */
     public boolean dataSimOnly;
 
@@ -215,8 +223,8 @@ public final class TrioSettings {
         s.valueCentred = Prefs.DEF_VALUE_CENTRED;
         s.trioStyle = Prefs.DEF_TRIO_STYLE;
         s.dualSim = Prefs.DEF_DUAL_SIM;
-        s.signalMode = Prefs.DEF_SIGNAL_MODE;
-        s.stackedSignal = Prefs.DEF_STACKED_SIGNAL;
+        s.showSim1 = Prefs.DEF_SHOW_SIM_1;
+        s.showSim2 = Prefs.DEF_SHOW_SIM_2;
         s.dataSimOnly = Prefs.DEF_DATA_SIM_ONLY;
         s.perfPower = Prefs.DEF_PERF_POWER;
         s.perfTemp = Prefs.DEF_PERF_TEMP;
@@ -283,14 +291,11 @@ public final class TrioSettings {
         s.showBolt = p.getBoolean(Prefs.KEY_SHOW_BOLT, Prefs.DEF_SHOW_BOLT);
         s.mobileTypeMode = readMobileTypeMode(p);
         s.valueCentred = p.getBoolean(Prefs.KEY_VALUE_CENTRED, Prefs.DEF_VALUE_CENTRED);
-        s.trioStyle = Prefs.clamp(
-                p.getInt(Prefs.KEY_TRIO_STYLE, Prefs.DEF_TRIO_STYLE),
-                Prefs.MIN_TRIO_STYLE, Prefs.MAX_TRIO_STYLE);
+        s.trioStyle = Prefs.normalizeTrioStyle(p.getInt(Prefs.KEY_TRIO_STYLE, Prefs.DEF_TRIO_STYLE));
+        s.ringZones = Prefs.decodeLayout(readRingLayout(p));
         s.dualSim = p.getBoolean(Prefs.KEY_DUAL_SIM, Prefs.DEF_DUAL_SIM);
-        s.signalMode = Prefs.clamp(
-                p.getInt(Prefs.KEY_SIGNAL_MODE, Prefs.DEF_SIGNAL_MODE),
-                Prefs.MIN_SIGNAL_MODE, Prefs.MAX_SIGNAL_MODE);
-        s.stackedSignal = p.getBoolean(Prefs.KEY_STACKED_SIGNAL, Prefs.DEF_STACKED_SIGNAL);
+        s.showSim1 = p.getBoolean(Prefs.KEY_SHOW_SIM_1, Prefs.DEF_SHOW_SIM_1);
+        s.showSim2 = p.getBoolean(Prefs.KEY_SHOW_SIM_2, Prefs.DEF_SHOW_SIM_2);
         s.dataSimOnly = p.getBoolean(Prefs.KEY_DATA_SIM_ONLY, Prefs.DEF_DATA_SIM_ONLY);
         s.perfPower = p.getBoolean(Prefs.KEY_PERF_POWER, Prefs.DEF_PERF_POWER);
         s.perfTemp = p.getBoolean(Prefs.KEY_PERF_TEMP, Prefs.DEF_PERF_TEMP);
@@ -323,7 +328,7 @@ public final class TrioSettings {
                 Prefs.MIN_ARC_STROKE, Prefs.MAX_ARC_STROKE);
         s.valueSize = Prefs.clamp(
                 p.getInt(Prefs.KEY_VALUE_SIZE, Prefs.DEF_VALUE_SIZE),
-                Prefs.MIN_VALUE_SIZE, Prefs.MAX_VALUE_SIZE);
+                Prefs.MIN_VALUE_SIZE, Prefs.maxValueSize(s.trioStyle));
         s.valueWeight = Prefs.clamp(
                 p.getInt(Prefs.KEY_VALUE_WEIGHT, Prefs.DEF_VALUE_WEIGHT),
                 Prefs.MIN_VALUE_WEIGHT, Prefs.MAX_VALUE_WEIGHT);
@@ -425,6 +430,62 @@ public final class TrioSettings {
     }
 
     /**
+     * Reads the ring layout, migrating the retired packed encodings.
+     *
+     * <p>The string key wins whenever it is present. Only an install that predates it has
+     * its packed int converted - and the conversion is delegated to
+     * {@link Prefs#migrateLayout(String, String)}, which knows the two widths, because
+     * reading a three-bit value with four-bit shifts would scatter the user's pieces
+     * across the wrong zones.
+     *
+     * <p>Each stored piece becomes the single entry of its zone's list, so an existing
+     * install keeps its arrangement and gains the ability to add candidates behind it.
+     */
+    private static String readRingLayout(SharedPreferences p) {
+        if (p.contains(Prefs.KEY_RING_LAYOUT)) {
+            return p.getString(Prefs.KEY_RING_LAYOUT, Prefs.EMPTY_LAYOUT);
+        }
+        return Prefs.migrateLayout(
+                packedAsString(p, Prefs.KEY_RING_SLOTS_V2),
+                packedAsString(p, Prefs.KEY_RING_SLOTS));
+    }
+
+    /** The broadcast-extras mirror of {@link #readRingLayout(SharedPreferences)}. */
+    private static String readRingLayout(Bundle bundle) {
+        if (bundle.containsKey(Prefs.KEY_RING_LAYOUT)) {
+            return bundle.getString(Prefs.KEY_RING_LAYOUT, Prefs.EMPTY_LAYOUT);
+        }
+        return Prefs.migrateLayout(
+                packedAsString(bundle, Prefs.KEY_RING_SLOTS_V2),
+                packedAsString(bundle, Prefs.KEY_RING_SLOTS));
+    }
+
+    /**
+     * One retired packed key as the string {@link Prefs#migrateLayout} expects, or null.
+     *
+     * <p>The migration works on strings because its live input is a string; the packed keys
+     * are ints, so they are stringified here rather than duplicating the width rules in a
+     * second int-typed overload.
+     */
+    private static String packedAsString(SharedPreferences p, String key) {
+        return p.contains(key) ? String.valueOf(p.getInt(key, 0)) : null;
+    }
+
+    private static String packedAsString(Bundle bundle, String key) {
+        return bundle.containsKey(key) ? String.valueOf(bundle.getInt(key, 0)) : null;
+    }
+
+    /** A deep copy of the zone lists; a snapshot is never mutated after publication. */
+    public static int[][] copyZones(int[][] zones) {
+        final int[][] out = new int[Prefs.ZONE_COUNT][];
+        for (int z = 0; z < Prefs.ZONE_COUNT; z++) {
+            final int[] src = zones != null && z < zones.length ? zones[z] : null;
+            out[z] = src == null ? new int[0] : src.clone();
+        }
+        return out;
+    }
+
+    /**
      * The broadcast-extras mirror of {@link #readMobileTypeMode(SharedPreferences)}.
      *
      * <p>The legacy fallback cannot actually fire here - the settings app only
@@ -457,9 +518,10 @@ public final class TrioSettings {
         s.mobileTypeMode = mobileTypeMode;
         s.valueCentred = valueCentred;
         s.trioStyle = trioStyle;
+        s.ringZones = copyZones(ringZones);
         s.dualSim = dualSim;
-        s.signalMode = signalMode;
-        s.stackedSignal = stackedSignal;
+        s.showSim1 = showSim1;
+        s.showSim2 = showSim2;
         s.dataSimOnly = dataSimOnly;
         s.perfPower = perfPower;
         s.perfTemp = perfTemp;
@@ -521,10 +583,11 @@ public final class TrioSettings {
             case Prefs.KEY_SHOW_BOLT: showBolt = src.showBolt; return true;
             case Prefs.KEY_MOBILE_TYPE_MODE: mobileTypeMode = src.mobileTypeMode; return true;
             case Prefs.KEY_VALUE_CENTRED: valueCentred = src.valueCentred; return true;
-            case Prefs.KEY_TRIO_STYLE: trioStyle = src.trioStyle; return true;
+            case Prefs.KEY_TRIO_STYLE: trioStyle = Prefs.normalizeTrioStyle(src.trioStyle); return true;
+            case Prefs.KEY_RING_LAYOUT: ringZones = copyZones(src.ringZones); return true;
             case Prefs.KEY_DUAL_SIM: dualSim = src.dualSim; return true;
-            case Prefs.KEY_SIGNAL_MODE: signalMode = src.signalMode; return true;
-            case Prefs.KEY_STACKED_SIGNAL: stackedSignal = src.stackedSignal; return true;
+            case Prefs.KEY_SHOW_SIM_1: showSim1 = src.showSim1; return true;
+            case Prefs.KEY_SHOW_SIM_2: showSim2 = src.showSim2; return true;
             case Prefs.KEY_DATA_SIM_ONLY: dataSimOnly = src.dataSimOnly; return true;
             case Prefs.KEY_PERF_POWER: perfPower = src.perfPower; return true;
             case Prefs.KEY_PERF_TEMP: perfTemp = src.perfTemp; return true;
@@ -579,14 +642,11 @@ public final class TrioSettings {
         s.showBolt = bundle.getBoolean(Prefs.KEY_SHOW_BOLT, Prefs.DEF_SHOW_BOLT);
         s.mobileTypeMode = readMobileTypeMode(bundle);
         s.valueCentred = bundle.getBoolean(Prefs.KEY_VALUE_CENTRED, Prefs.DEF_VALUE_CENTRED);
-        s.trioStyle = Prefs.clamp(
-                bundle.getInt(Prefs.KEY_TRIO_STYLE, Prefs.DEF_TRIO_STYLE),
-                Prefs.MIN_TRIO_STYLE, Prefs.MAX_TRIO_STYLE);
+        s.trioStyle = Prefs.normalizeTrioStyle(bundle.getInt(Prefs.KEY_TRIO_STYLE, Prefs.DEF_TRIO_STYLE));
+        s.ringZones = Prefs.decodeLayout(readRingLayout(bundle));
         s.dualSim = bundle.getBoolean(Prefs.KEY_DUAL_SIM, Prefs.DEF_DUAL_SIM);
-        s.signalMode = Prefs.clamp(
-                bundle.getInt(Prefs.KEY_SIGNAL_MODE, Prefs.DEF_SIGNAL_MODE),
-                Prefs.MIN_SIGNAL_MODE, Prefs.MAX_SIGNAL_MODE);
-        s.stackedSignal = bundle.getBoolean(Prefs.KEY_STACKED_SIGNAL, Prefs.DEF_STACKED_SIGNAL);
+        s.showSim1 = bundle.getBoolean(Prefs.KEY_SHOW_SIM_1, Prefs.DEF_SHOW_SIM_1);
+        s.showSim2 = bundle.getBoolean(Prefs.KEY_SHOW_SIM_2, Prefs.DEF_SHOW_SIM_2);
         s.dataSimOnly = bundle.getBoolean(Prefs.KEY_DATA_SIM_ONLY, Prefs.DEF_DATA_SIM_ONLY);
         s.perfPower = bundle.getBoolean(Prefs.KEY_PERF_POWER, Prefs.DEF_PERF_POWER);
         s.perfTemp = bundle.getBoolean(Prefs.KEY_PERF_TEMP, Prefs.DEF_PERF_TEMP);
@@ -619,7 +679,7 @@ public final class TrioSettings {
                 Prefs.MIN_ARC_STROKE, Prefs.MAX_ARC_STROKE);
         s.valueSize = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_VALUE_SIZE, Prefs.DEF_VALUE_SIZE),
-                Prefs.MIN_VALUE_SIZE, Prefs.MAX_VALUE_SIZE);
+                Prefs.MIN_VALUE_SIZE, Prefs.maxValueSize(s.trioStyle));
         s.valueWeight = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_VALUE_WEIGHT, Prefs.DEF_VALUE_WEIGHT),
                 Prefs.MIN_VALUE_WEIGHT, Prefs.MAX_VALUE_WEIGHT);
@@ -698,10 +758,11 @@ public final class TrioSettings {
         b.putBoolean(Prefs.KEY_SHOW_BOLT, showBolt);
         b.putInt(Prefs.KEY_MOBILE_TYPE_MODE, mobileTypeMode);
         b.putBoolean(Prefs.KEY_VALUE_CENTRED, valueCentred);
-        b.putInt(Prefs.KEY_TRIO_STYLE, trioStyle);
+        b.putInt(Prefs.KEY_TRIO_STYLE, Prefs.normalizeTrioStyle(trioStyle));
+        b.putString(Prefs.KEY_RING_LAYOUT, Prefs.encodeLayout(ringZones));
         b.putBoolean(Prefs.KEY_DUAL_SIM, dualSim);
-        b.putInt(Prefs.KEY_SIGNAL_MODE, signalMode);
-        b.putBoolean(Prefs.KEY_STACKED_SIGNAL, stackedSignal);
+        b.putBoolean(Prefs.KEY_SHOW_SIM_1, showSim1);
+        b.putBoolean(Prefs.KEY_SHOW_SIM_2, showSim2);
         b.putBoolean(Prefs.KEY_DATA_SIM_ONLY, dataSimOnly);
         b.putBoolean(Prefs.KEY_PERF_POWER, perfPower);
         b.putBoolean(Prefs.KEY_PERF_TEMP, perfTemp);
@@ -761,9 +822,12 @@ public final class TrioSettings {
                 && mobileTypeMode == s.mobileTypeMode
                 && valueCentred == s.valueCentred
                 && trioStyle == s.trioStyle
+                && java.util.Arrays.deepEquals(ringZones, s.ringZones)
                 && dualSim == s.dualSim
-                && signalMode == s.signalMode
-                && stackedSignal == s.stackedSignal
+                // Two switches of their own, and issue 25 applies: left out, a tap
+                // on either row would write a value the screen cannot see change.
+                && showSim1 == s.showSim1
+                && showSim2 == s.showSim2
                 && dataSimOnly == s.dataSimOnly
                 // The two performance readouts are stored settings like any
                 // other, and the same issue 25 trap applies: the settings screen
@@ -817,7 +881,7 @@ public final class TrioSettings {
         // is used as a value only through equals() - nothing hashes it - but the
         // two performance switches are folded in anyway so that the contract
         // holds if anything ever does.
-        int h = (enabled ? 1 : 0) ^ (mobileTypeMode << 1) ^ signalMode ^ trioStyle;
+        int h = (enabled ? 1 : 0) ^ (mobileTypeMode << 1) ^ trioStyle;
         h = h * 31 + (perfPower ? 1 : 0);
         h = h * 31 + (perfTemp ? 1 : 0);
         h = h * 31 + perfScale;

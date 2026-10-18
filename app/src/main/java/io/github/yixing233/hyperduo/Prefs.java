@@ -120,6 +120,298 @@ public final class Prefs {
      */
     public static final String KEY_TRIO_STYLE = "trio_style";
     /**
+     * The ring layout: an ordered list of pieces per zone, as one string.
+     *
+     * <p>Format is {@code "top|middle|bottom"} where each section is a
+     * comma-separated list of part ids in <b>priority order</b>, and an empty section
+     * means "nothing placed here". For example {@code "3,1|2|7,8"} is
+     * top = [percentage, arcs], middle = [mobile meter], bottom = [SIM 1, SIM 2].
+     *
+     * <p>A string rather than a packed int, for three reasons:
+     *
+     * <ul>
+     *   <li>Order is the whole point now - the first piece that has something to draw
+     *       wins the zone - and a bitmask cannot carry it;
+     *   <li>a zone may hold any number of candidates, so there is no width to pick;
+     *   <li>it is legible in the prefs XML, which the packed encodings never were.
+     * </ul>
+     *
+     * <p>The framework does no type conversion, so this key is only ever read and written
+     * as a String. {@code SharedPreferences} supports it, and the broadcast extras carry
+     * it the same way.
+     */
+    public static final String KEY_RING_LAYOUT = "ring_layout";
+
+    /**
+     * The retired one-piece-per-zone encodings, read once by
+     * {@link #migrateLayout(String)}.
+     */
+    public static final String KEY_RING_SLOTS_V2 = "ring_slots_v2";
+    public static final String KEY_RING_SLOTS = "ring_slots";
+
+    /**
+     * A fresh install starts EMPTY: three zones with nothing placed.
+     *
+     * <p>The user builds the glyph themselves. This is deliberately not "the shipped
+     * look" - with priority lists there is no single arrangement to ship, and an empty
+     * ring is an honest starting point that says "add something" instead of guessing.
+     */
+    public static final String EMPTY_LAYOUT = "||";
+
+    /**
+     * Part ids. {@link #PART_NONE} never appears in a stored layout - an empty zone is an
+     * empty section - so it only means "this id is not a piece" in decoded lists.
+     */
+    public static final int PART_NONE = 0, PART_WIFI = 1, PART_MOBILE = 2,
+            PART_VALUE = 3, PART_BOLT = 4, PART_TYPE = 5, PART_CLOCK = 6,
+            /**
+             * SIM 1's own row of four dots.
+             *
+             * <p>A piece of its own rather than a mode of {@link #PART_MOBILE}: the two
+             * cards are placed independently, so each needs its own id.
+             */
+            PART_SIM_1 = 7,
+            /** SIM 2's own row of four dots; see {@link #PART_SIM_1}. */
+            PART_SIM_2 = 8;
+
+    /** The highest valid part id. */
+    public static final int PART_MAX = PART_SIM_2;
+
+    /** How many parts there are, counting {@link #PART_NONE}. */
+    public static final int PART_COUNT = PART_MAX + 1;
+
+    /** The three zones, in the order the layout string stores them. */
+    public static final int ZONE_COUNT = 3;
+
+    /**
+     * Splits a layout into its three sections, each an ordered id list.
+     *
+     * <p>Never returns null and never throws: a corrupt or missing layout decodes to
+     * {@link #EMPTY_LAYOUT}. Unlike the old packed encodings there is no "corrupt" state
+     * worth rejecting wholesale - an unreadable section is simply empty, so one damaged
+     * zone cannot take the other two with it.
+     */
+    public static int[][] decodeLayout(String layout) {
+        final int[][] out = new int[ZONE_COUNT][];
+        if (layout == null || layout.isEmpty()) {
+            for (int z = 0; z < ZONE_COUNT; z++) {
+                out[z] = new int[0];
+            }
+            return out;
+        }
+        final String[] sections = layout.split("\\|", -1);
+        for (int z = 0; z < ZONE_COUNT; z++) {
+            out[z] = decodeSection(z < sections.length ? sections[z] : "");
+        }
+        return out;
+    }
+
+    /** One section of {@link #KEY_RING_LAYOUT}: a comma-separated id list, deduplicated. */
+    private static int[] decodeSection(String section) {
+        if (section == null || section.isEmpty()) {
+            return new int[0];
+        }
+        final java.util.List<Integer> ids = new java.util.ArrayList<>();
+        for (String piece : section.split(",", -1)) {
+            final String trimmed = piece.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            final int id;
+            try {
+                id = Integer.parseInt(trimmed);
+            } catch (NumberFormatException malformed) {
+                continue;
+            }
+            if (id <= PART_NONE || id > PART_MAX) {
+                continue;
+            }
+            // A piece can only be in a zone once; a duplicate would draw the same thing
+            // twice and make the priority list ambiguous about which copy wins.
+            if (!ids.contains(id)) {
+                ids.add(id);
+            }
+        }
+        final int[] out = new int[ids.size()];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = ids.get(i);
+        }
+        return out;
+    }
+
+    /** The inverse of {@link #decodeLayout}, with the same tolerance for gaps. */
+    public static String encodeLayout(int[][] zones) {
+        final StringBuilder sb = new StringBuilder();
+        for (int z = 0; z < ZONE_COUNT; z++) {
+            if (z > 0) {
+                sb.append('|');
+            }
+            final int[] ids = zones != null && z < zones.length ? zones[z] : null;
+            if (ids == null) {
+                continue;
+            }
+            boolean first = true;
+            for (int id : ids) {
+                if (id <= PART_NONE || id > PART_MAX) {
+                    continue;
+                }
+                if (!first) {
+                    sb.append(',');
+                }
+                sb.append(id);
+                first = false;
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Converts a layout written by the retired one-piece-per-zone encodings.
+     *
+     * <p>Four-bit first, then the original three-bit, exactly as
+     * {@code TrioSettings.readLayout} consults them. Each stored id becomes a
+     * single-entry priority list, so an existing install keeps every piece where it was
+     * and simply gains the ability to add more behind it.
+     *
+     * <p>Returns {@link #EMPTY_LAYOUT} for anything unreadable, including the {@code -1}
+     * an even older automatic layout stored.
+     */
+    public static String migrateLayout(String v2, String legacy) {
+        final Integer fourBit = parseIntOrNull(v2);
+        if (fourBit != null) {
+            return fromPacked(fourBit, RING_PART_BITS);
+        }
+        final Integer threeBit = parseIntOrNull(legacy);
+        if (threeBit != null) {
+            return fromPacked(threeBit, 3);
+        }
+        return EMPTY_LAYOUT;
+    }
+
+    private static Integer parseIntOrNull(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException malformed) {
+            return null;
+        }
+    }
+
+    /**
+     * Unpacks a zone id from an old encoding into a one-piece priority list.
+     *
+     * <p>The two widths differ (four bits, and three before it), so the shift is a
+     * parameter rather than a constant: reading a three-bit value with four-bit shifts
+     * would scatter the user's pieces into the wrong zones, which is the defect the
+     * migration exists to avoid.
+     */
+    private static String fromPacked(int packed, int bits) {
+        final int mask = (1 << bits) - 1;
+        final int[][] zones = new int[ZONE_COUNT][];
+        for (int z = 0; z < ZONE_COUNT; z++) {
+            final int id = (packed >> (z * bits)) & mask;
+            zones[z] = id > PART_NONE && id <= PART_MAX ? new int[] { id } : new int[0];
+        }
+        return encodeLayout(zones);
+    }
+
+    /** Bits per zone in {@link #KEY_RING_SLOTS_V2}; three zones fit in twelve. */
+    public static final int RING_PART_BITS = 4;
+    private static final int RING_PART_MASK = (1 << RING_PART_BITS) - 1;
+    /** The largest value a three-zone, four-bit layout can hold. */
+    public static final int RING_SLOTS_MAX = (1 << (3 * RING_PART_BITS)) - 1;
+
+    /**
+     * The first piece of one zone of a packed layout.
+     *
+     * <p>Kept because the packed value is still what the migration reads and what several
+     * harness assertions describe. New code asks {@link #decodeLayout(String)} instead -
+     * a packed int can only ever name one piece per zone, which is exactly the limitation
+     * the priority lists remove.
+     */
+    public static int ringPart(int slots, int zone) {
+        if (slots < 0 || slots > RING_SLOTS_MAX) {
+            return PART_NONE;
+        }
+        return (slots >> (zone * RING_PART_BITS)) & RING_PART_MASK;
+    }
+
+    /**
+     * Packs three parts into one value, for the migration and for test fixtures.
+     *
+     * <p>This is the one place the shift amounts live, so the packing follows
+     * {@link #RING_PART_BITS} rather than a literal that a width change would miss.
+     */
+    public static int packRingParts(int top, int middle, int bottom) {
+        return top | (middle << RING_PART_BITS) | (bottom << (2 * RING_PART_BITS));
+    }
+
+    /**
+     * The layout a fresh install used to start from, kept for the migration tests.
+     *
+     * <p>The live default is now {@link #EMPTY_LAYOUT}: with priority lists there is no
+     * single arrangement to ship, and an empty ring says "add something" instead of
+     * guessing.
+     */
+    public static int RING_DEFAULT_SLOTS() {
+        return packRingParts(PART_VALUE, PART_WIFI, PART_MOBILE);
+    }
+
+    /**
+     * Rejects corrupt packed layouts and drops duplicate pieces.
+     *
+     * <p>Returns the old shipped layout for anything unreadable, so the migration has a
+     * defined answer. Not used for the live layout any more - that is a string.
+     */
+    public static int normalizeRingSlots(int slots) {
+        if (slots < 0 || slots > RING_SLOTS_MAX) return RING_DEFAULT_SLOTS();
+        int result = 0, seen = 0;
+        for (int zone = 0; zone < 3; zone++) {
+            int part = (slots >> (zone * RING_PART_BITS)) & RING_PART_MASK;
+            if (part > PART_MAX) return RING_DEFAULT_SLOTS();
+            if (part != PART_NONE && (seen & (1 << part)) == 0) {
+                result |= part << (zone * RING_PART_BITS);
+                seen |= 1 << part;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Converts a packed layout into the priority-list form.
+     *
+     * <p>Each piece becomes the sole entry of its zone's list, so an existing install
+     * keeps everything where it was. Delegates to {@link #migrateLayout(String, String)}
+     * after stringifying, which is where the width rules live.
+     */
+    public static String migratePackedLayout(int oldSlots) {
+        return fromPacked(oldSlots, RING_PART_BITS);
+    }
+
+    /**
+     * Converts the original three-bit layout straight to a packed four-bit value.
+     *
+     * <p>Kept for the migration fixtures, which describe the width change in isolation.
+     * The live path does not need the intermediate form: it goes from three-bit to a
+     * priority list in one step via {@link #migrateLayout(String, String)}.
+     *
+     * <p>An old value naming {@code 7} was never producible - the three-bit encoder
+     * capped at {@link #PART_CLOCK} - so it is treated as corrupt rather than promoted to
+     * SIM 1.
+     */
+    public static int migrateRingSlots(int oldSlots) {
+        if (oldSlots < 0 || oldSlots > 511) return RING_DEFAULT_SLOTS();
+        final int top = oldSlots & 7;
+        final int middle = (oldSlots >> 3) & 7;
+        final int bottom = (oldSlots >> 6) & 7;
+        if (top > PART_CLOCK || middle > PART_CLOCK || bottom > PART_CLOCK) {
+            return RING_DEFAULT_SLOTS();
+        }
+        return normalizeRingSlots(packRingParts(top, middle, bottom));
+    }
+    /**
      * Draws the mobile level as two rows of four dots - one SIM each - instead of
      * the single row of the current data SIM.
      *
@@ -135,6 +427,27 @@ public final class Prefs {
      * written with - see the note on {@link #KEY_MOBILE_TYPE_MODE}.
      */
     public static final String KEY_DUAL_SIM = "dual_sim_signal";
+    /**
+     * Draws SIM 1's own row of four dots, as a component the user places in the
+     * ring like any other.
+     *
+     * <p>Independent of {@link #KEY_DUAL_SIM} and of its SIM 2 twin. The dual
+     * switch describes the <em>aggregate</em> meter and its two-row shape; these
+     * two describe the cards themselves, and the reason they are separate is that
+     * the placed rows are arranged by the user rather than by a rule: SIM 1 can
+     * sit in the notch while SIM 2 sits at the bottom, which one switch could not
+     * express.
+     *
+     * <p>Off by default, and the shipped look is unchanged: with both off the
+     * glyph draws the aggregate meter exactly as before. On a single-SIM device
+     * SIM 2 has no reading, so its row draws nothing - which is what an empty
+     * reading should look like, rather than a full one.
+     *
+     * <p>A brand-new key with a brand-new name.
+     */
+    public static final String KEY_SHOW_SIM_1 = "show_sim_1";
+    /** Draws SIM 2's own row of four dots; see {@link #KEY_SHOW_SIM_1}. */
+    public static final String KEY_SHOW_SIM_2 = "show_sim_2";
     /**
      * Where the mobile signal is drawn: inside the glyph, or as a status-bar view
      * outside it.
@@ -446,7 +759,7 @@ public final class Prefs {
      * the network state in the top slot between them, an enlarged percentage
      * below, and a full-width battery bar along the bottom. There is no ring.
      */
-    public static final int STYLE_RECT = 1;
+    public static final int STYLE_RECT = 1; // Retired storage ID; never reuse for another style.
     /**
      * The capsule arrangement: a wide stadium outline whose stroke is the battery
      * gauge, broken at the top and bottom centre by two four-dot rows, with the
@@ -459,6 +772,11 @@ public final class Prefs {
      * containing a gauge.
      */
     public static final int STYLE_CAPSULE = 2;
+
+    /** Keep capsule's stored ID; retired rectangular configurations return to the ring. */
+    public static int normalizeTrioStyle(int style) {
+        return style == STYLE_CAPSULE ? STYLE_CAPSULE : STYLE_RING;
+    }
     /**
      * The ring, for every install that has never chosen.
      *
@@ -523,6 +841,14 @@ public final class Prefs {
      * SIM, and the second row is an opt-in reading for a dual-SIM device.
      */
     public static final boolean DEF_DUAL_SIM = false;
+    /**
+     * Off by default: the per-card rows are an opt-in reading. With both off, the
+     * aggregate meter draws exactly what it always drew, so an install that never
+     * opens these switches sees no change at all.
+     */
+    public static final boolean DEF_SHOW_SIM_1 = false;
+    /** Off by default; see {@link #DEF_SHOW_SIM_1}. */
+    public static final boolean DEF_SHOW_SIM_2 = false;
 
     public static final boolean DEF_ROLE_COLORS = true;
     public static final int DEF_COLOR_CRITICAL_ON_DARK = 0xFFFF3B30;
@@ -615,7 +941,46 @@ public final class Prefs {
     public static final int MIN_ARC_STROKE = 3;
     public static final int MAX_ARC_STROKE = 16;
     public static final int MIN_VALUE_SIZE = 16;
+    /**
+     * The percentage's size span.
+     *
+     * <p>44 stays the ceiling for the arrangements that have a fixed slot to fill - the
+     * capsule's right-hand reading and the rectangle's centre - because their geometry
+     * already decides how much room there is, and a larger setting could only be clipped.
+     *
+     * <p>The <b>ring</b> is different: a placed reading is sized by the third it sits in,
+     * and the middle third is the ring's interior, which accepts far more than 44 units of
+     * ink. That is what {@link #MAX_RING_VALUE_SIZE} is for; the slot fit clamps to it on
+     * its own. Keeping the two numbers apart is the point - raising this one would let the
+     * capsule and rectangle ask for a size they cannot draw, which is a setting that
+     * silently does nothing.
+     */
     public static final int MAX_VALUE_SIZE = 44;
+    /**
+     * The percentage's ceiling when it is <em>placed in a ring slot</em>.
+     *
+     * <p>56: at the ring's interior the height cap is about 90pt and the width cap about 74,
+     * so 56 is comfortably reachable, and 44 - the old ceiling - filled only about a third
+     * of the inner diameter, which read as slightly small beside the reference. Past about
+     * 60 the digits look as if they touch the arc even though they measure inside it.
+     *
+     * <p>Not a stored setting of its own: the slider's range stays
+     * {@code MIN_VALUE_SIZE..MAX_VALUE_SIZE} in the arrangements with a fixed slot, and the
+     * ring's own slot fit is what lets a value up to this be drawn.
+     */
+    public static final int MAX_RING_VALUE_SIZE = 56;
+
+    /**
+     * The percentage ceiling for {@code trioStyle}.
+     *
+     * <p>One place for the rule, so the stored read, the broadcast read and the slider's
+     * range cannot disagree about how large a reading may be: the ring's slots size a piece
+     * by the third it sits in and accept {@link #MAX_RING_VALUE_SIZE}; the capsule and the
+     * rectangle have fixed slots and stop at {@link #MAX_VALUE_SIZE}.
+     */
+    public static int maxValueSize(int trioStyle) {
+        return trioStyle == STYLE_RING ? MAX_RING_VALUE_SIZE : MAX_VALUE_SIZE;
+    }
     public static final int MIN_VALUE_WEIGHT = 100;
     public static final int MAX_VALUE_WEIGHT = 900;
     /** The time's own size span. Wider at the top than the value's: "19:41" is the longer string and the left slot is the one with room to spare. */

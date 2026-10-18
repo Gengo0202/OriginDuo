@@ -31,7 +31,7 @@
 gradle :app:assembleDebug :app:assembleRelease --offline --no-daemon --console=plain
 ```
 
-九个脚本的受测范围：
+十二个脚本的受测范围（含后续 OS4 定向修复与自由圆环）：
 
 | 脚本 | 范围 |
 | --- | --- |
@@ -44,6 +44,9 @@ gradle :app:assembleDebug :app:assembleRelease --offline --no-daemon --console=p
 | capsule-zones | 左时钟/右读数的真实像素、区域命中、固定时钟、清空、独立 SIM 读数 |
 | drawing-zones | 保留的圆环/矩形像素边界和求解性质 |
 | issue-regressions | 信号刷新、tint、四帧清空、时钟 setter 失败重试与隐藏/恢复 |
+| os4-layout | 生产外置带布局/预留方法、空间压缩、RTL、岛边界及恢复 |
+| ring-slots | 自由圆环的配置传输、当前预览迁移、任意部件位置、显示归属和像素边界 |
+| ring-handoff | 生产图标隐藏/交还方法、延迟回调、锁屏屏蔽表及岛态刷新 |
 
 合并后的真机复核重点：三种样式切换与宽度恢复、原生时钟隐藏/恢复、真实时间跳分钟、设置页时间
 预览、时间独立尺寸、胶囊各区域的点击/长按、充电/无 Wi-Fi 的覆盖提示、退出模块后的原生图标恢复。
@@ -51,3 +54,6 @@ gradle :app:assembleDebug :app:assembleRelease --offline --no-daemon --console=p
 
 `docs/validation/drawing-2026-10-16/source-manifest.json` 是合并前的历史快照，继续用于旧版复现。
 验证当前版本时以实际 main 提交与源码 SHA-256 为基准，记录 APK 哈希并核对安装产物。
+
+后续 OS4 代码修复及验收范围见 [HyperOS 4 验证记录](validation/hyperos4-code-2026-10-17.md)。
+自由圆环的最终验证、原生电池样式边界及当前产物见 [自由三槽验证记录](validation/ring-free-2026-10-17.md)。

@@ -99,9 +99,11 @@ foreach($term in @('perf\.getVisibility\(\)','contentEquals','getTextSize','getL
 # whenever the reading changes - about once a second while charging. perfWidth
 # answers for the widest form the text could take instead. The strip is the only
 # consumer, so the lock is on that call site.
-$strip=[regex]::Match($hooks,'(?s)if \(perfOn\) \{.*?\n        \}').Value
-if(-not $strip){throw 'could not read the reading branch out of reserveOutRingStrip'}
-if(-not [regex]::IsMatch($strip,'perfWidth\(perf,')){throw 'the reserved strip is not measured through perfWidth'}
+$strip=[regex]::Match($hooks,'(?s)private static OutRingLayout.Plan outRingPlan\(ViewGroup container, View icons\) \{.*?\n    \}').Value
+if(-not $strip){throw 'could not read the shared strip plan'}
+if(-not [regex]::IsMatch($strip,'outRingSlotWidth\(views\[i\]\)')){throw 'the strip does not share the placement slot width'}
+$slotWidth=[regex]::Match($hooks,'(?s)private static int outRingSlotWidth\(View view\) \{.*?\n    \}').Value
+if(-not [regex]::IsMatch($slotWidth,'perfWidth\(perf,')){throw 'performance slot is not measured through perfWidth'}
 if([regex]::IsMatch($strip,'perf\.getMeasuredWidth\(\)')){throw 'the reserved strip still follows the live text width'}
 # perfWidth itself must widen every digit and split on the line break: measuring
 # the whole string in one call adds the two lines together and reserves the
@@ -660,9 +662,18 @@ public class PerfLayoutTest {
         final float roundSize = perfTextSize(pair, container, box(84, 1000));
         ok("both arrangements are off the floor here",
                 rectSize > base * PERF_MIN_SIZE_RATIO && roundSize > base * PERF_MIN_SIZE_RATIO);
-        ok("the rect arrangement's shorter box fits a smaller reading", rectSize < roundSize);
+        // Each arrangement is fitted against ITS OWN box, and the readout's size follows the
+        // box's HEIGHT (perfTextSize: icon = inkH * fit), not its width. So the taller box
+        // yields the larger reading - and the ring's square (119) is taller than the
+        // rectangle's (114.4).
+        //
+        // This is the term that flipped when the ring's box became a square centred on the
+        // ring; the comment above it, which spoke about widths, was describing an older fit.
         ok("the two ink boxes are actually different",
-                TrioGeometry.INK_H != TrioGeometry.RECT_INK_H && TrioGeometry.INK_W != TrioGeometry.RECT_INK_W);
+                TrioGeometry.INK_H != TrioGeometry.RECT_INK_H
+                        || TrioGeometry.INK_W != TrioGeometry.RECT_INK_W);
+        ok("the taller box fits the larger reading",
+                (TrioGeometry.INK_H > TrioGeometry.RECT_INK_H) == (roundSize > rectSize));
 
         // ---- the leading: only a stack is squeezed, and only as far as the floor.
         final TextView perf = new TextView();

@@ -102,8 +102,42 @@ public class Paint {
         return total;
     }
 
-    public FontMetrics getFontMetrics() {
+    /**
+     * Android's ink box for {@code text}, written into {@code out}.
+     *
+     * <p>Same signature as the platform, deliberately: the only overload that takes
+     * a box is {@code getTextBounds(String, int, int, Rect)} and it works in whole
+     * pixels. This shim previously declared a {@code RectF} variant, which does not
+     * exist on the device - the harness compiled against it happily while the real
+     * SDK build failed, so the shim was hiding a signature error rather than
+     * standing in for the platform.
+     *
+     * <p>Reports the real drawn extent rather than the font metrics, which is what
+     * the renderer needs to centre a reading on the slot it sits in: the metrics
+     * carry leading above the capitals that a digits-only string never draws.
+     */
+    public void getTextBounds(String text, int start, int end, Rect out) {
+        if (out == null) {
+            return;
+        }
+        if (text == null || start < 0 || end > text.length() || start >= end) {
+            out.setEmpty();
+            return;
+        }
+        final String slice = text.substring(start, end);
         java.awt.Canvas probe = new java.awt.Canvas();
+        final java.awt.Font font = font();
+        final java.awt.geom.Rectangle2D bounds = font.createGlyphVector(
+                probe.getFontMetrics(font).getFontRenderContext(), slice).getVisualBounds();
+        // The platform reports integer bounds relative to the baseline; round the same
+        // way it does rather than truncating toward zero.
+        out.left = (int) Math.floor(bounds.getX());
+        out.top = (int) Math.floor(bounds.getY());
+        out.right = out.left + (int) Math.ceil(measureText(slice));
+        out.bottom = out.top + (int) Math.ceil(bounds.getHeight());
+    }
+
+    public FontMetrics getFontMetrics() {        java.awt.Canvas probe = new java.awt.Canvas();
         java.awt.FontMetrics fm = probe.getFontMetrics(font());
         FontMetrics out = new FontMetrics();
         out.ascent = fm.getAscent();

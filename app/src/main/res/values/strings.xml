@@ -3,9 +3,6 @@
     <string name="app_name">HyperDuo</string>
     <string name="xposed_description">把状态栏的 Wi-Fi、移动信号与电池合并为一个仿 iPhone Duo 的三合一体图标。</string>
 
-    <string name="group_appearance">外观</string>
-    <string name="group_geometry">尺寸</string>
-    <string name="group_colors">颜色</string>
 
     <string name="group_stroke">描边</string>
     <string name="group_scale">整体尺寸</string>
@@ -14,13 +11,61 @@
     <string name="group_out_signal">环外信号</string>
     <string name="group_track">底纹</string>
 
-    <string name="tab_general">常规</string>
     <string name="tab_drawing">绘制</string>
 
     <string name="drawing_title">点按图标上要改的部位</string>
     <string name="drawing_summary">点一个部位，从列表里挑一个组件换上去；长按直接改它的大小与颜色。</string>
-    <string name="drawing_zone_change">更换…</string>
     <string name="drawing_zone_edit">调整…</string>
+    <string name="drawing_zone_add">添加…</string>
+    <string name="drawing_zone_manage">管理…</string>
+    <string name="drawing_priority_title">%1$s 的显示顺序</string>
+    <string name="drawing_priority_summary">从上到下依次尝试：上面那个画不出来时（比如没连 Wi-Fi、没在充电），自动换下一个。拖动左侧把手调整顺序，长按一行可移除。</string>
+    <string name="drawing_priority_empty_summary">这一处还没有组件，点下面的「添加组件」</string>
+    <string name="drawing_priority_first">第 %1$d 位 · 优先显示</string>
+    <string name="drawing_priority_fallback">第 %1$d 位 · 上面画不出来时顶上</string>
+    <string name="drawing_priority_move_up">上移</string>
+    <string name="drawing_priority_move_down">下移</string>
+    <string name="drawing_priority_remove">移除</string>
+    <string name="drawing_priority_showing">第 1 位 · 正在显示</string>
+    <string name="drawing_pick_in_zone">已在环内</string>
+    <string name="drawing_pick_elsewhere">在别处</string>
+    <string name="drawing_pick_showing_now">正在显示这个组件。</string>
+    <string name="drawing_pick_promote_summary">已在环内，点它会挪到第一位。</string>
+    <string name="drawing_pick_move_summary">目前在%1$s，点它会移到这一处，%1$s 将空出。</string>
+    <string name="drawing_priority_add">添加组件</string>
+    <string name="drawing_priority_done">完成</string>
+    <string name="show_sim_1_title">显示卡一信号点</string>
+    <string name="show_sim_1_summary">把卡一自己的信号画成一行四点；放在环内哪一处由优先级列表决定。</string>
+    <string name="show_sim_2_title">显示卡二信号点</string>
+    <string name="show_sim_2_summary">把卡二自己的信号画成一行四点；放在环内哪一处由优先级列表决定。</string>
+    <string name="ring_value_summary">电量数字放在环内哪一处，由该处的优先级列表决定；没放在环内时，百分比交回系统样式。</string>
+    <string name="ring_bolt_summary">充电闪电只在充电时出现，与其他组件一样由所在那一处的优先级列表决定。</string>
+    <string name="ring_position_wifi">Wi-Fi 弧形的位置</string>
+    <string name="ring_position_mobile">移动信号的位置</string>
+    <string name="ring_position_sim_1">卡一信号点的位置</string>
+    <string name="ring_position_sim_2">卡二信号点的位置</string>
+    <string name="ring_position_value">电量数字的位置</string>
+    <string name="ring_position_bolt">充电闪电的位置</string>
+    <string name="ring_position_type">网络类型的位置</string>
+    <string name="ring_position_clock">时钟的位置</string>
+    <string name="ring_position_native">不放进环内（归还系统）</string>
+    <string name="ring_position_summary">选一处就把它放进那一处的优先级列表最前面；选「不放进环内」则交回系统显示。</string>
+    <string name="ring_signal_position_summary">放环内就画成信号点；不放进环内时交回系统图标。</string>
+    <string name="drawing_occupant_sim_1">卡一信号点</string>
+    <string name="drawing_occupant_sim_2">卡二信号点</string>
+    <string name="drawing_outside_title">环外显示</string>
+    <string name="drawing_part_appearance">外观</string>
+    <string name="drawing_part_battery">电池</string>
+    <string name="drawing_part_readouts">读数组</string>
+    <string name="drawing_part_ring">环内组件</string>
+    <string name="drawing_parts_summary">点一处进入它的显示顺序；长按图标上的组件可直接改大小与颜色。</string>
+    <string name="drawing_parts_title">组件</string>
+    <string name="drawing_power_preview_hint">充电时这里显示功率</string>
+    <string name="drawing_preview_hidden">预览已隐藏</string>
+    <string name="drawing_readout_sample_summary">环外读数组的示例，实际内容随状态变化。</string>
+    <string name="drawing_theme_dark">深色</string>
+    <string name="drawing_theme_light">浅色</string>
+    <string name="drawing_theme_system">跟随系统</string>
     <string name="drawing_occupant_clock">时间</string>
     <string name="drawing_hint_clock">左侧时间</string>
     <string name="drawing_hint_reading">右侧读数</string>
@@ -49,7 +94,6 @@
     <string name="drawing_occupant_bolt">充电闪电</string>
     <string name="drawing_occupant_wifi">Wi-Fi 弧</string>
     <string name="drawing_occupant_mobile">移动信号点</string>
-    <string name="drawing_occupant_dual">双卡两排点</string>
     <string name="drawing_occupant_type">网络类型</string>
     <string name="drawing_master_off">已关闭总开关，预览按你选的样式照画，但状态栏不会显示。</string>
     <string name="drawing_settings_title">「%1$s」的设置</string>
@@ -62,7 +106,6 @@
     <string name="trio_style_title">三合一样式</string>
     <string name="trio_style_summary">圆环是默认样式；矩形用两列信号点夹住中间内容；胶囊用轮廓本身表示电量。</string>
     <string name="trio_style_ring">圆环</string>
-    <string name="trio_style_rect">矩形</string>
     <string name="trio_style_capsule">胶囊</string>
 
     <string name="show_wifi_title">显示 Wi-Fi 弧</string>
@@ -71,8 +114,6 @@
     <string name="show_mobile_title">显示移动信号点</string>
     <string name="show_mobile_summary">底部绘制四个电平点表示移动信号强度。</string>
 
-    <string name="dual_sim_title">双卡信号</string>
-    <string name="dual_sim_summary">改画上下两排信号点：上排卡一，下排卡二。只在双卡时生效。</string>
 
     <string name="show_value_title">显示电量数字</string>
     <string name="show_value_summary">环内显示电量百分比，充电时改为闪电图标。</string>
@@ -86,22 +127,12 @@
     <string name="mobile_type_inside">环内</string>
     <string name="mobile_type_outside">环外</string>
 
-    <string name="signal_mode_title">信号位置</string>
-    <string name="signal_mode_summary">移动信号读数的位置：环内沿用底部电平点，环外挪到电池图标旁。</string>
-    <string name="signal_mode_inside">环内</string>
-    <string name="signal_mode_outside">环外</string>
 
-    <string name="stacked_signal_title">堆叠信号</string>
-    <string name="stacked_signal_summary">环外时自己绘制读数：柱表示一张卡，圆点表示另一张。</string>
 
     <string name="data_sim_only_title">仅显示上网卡</string>
     <string name="data_sim_only_summary">双卡时只绘制当前上网卡的读数。</string>
 
-    <string name="out_signal_size_title">环外信号大小</string>
-    <string name="out_signal_size_summary">环外读数的高度，单位 dp。默认 15dp（与原生信号图标同高），可调 6–20dp。带不带下方圆点排都按同一大小绘制。</string>
 
-    <string name="out_signal_margin_title">环外信号间距</string>
-    <string name="out_signal_margin_summary">环外读数与电池图标之间的空隙，单位 dp。默认 2dp，可调 0–16dp。这条边距会被占位：调大时原生图标让出同样宽度，读数不会压到图标上。</string>
 
     <string name="perf_power_title">充电功率</string>
     <string name="perf_power_summary">电池图标旁显示充电功率，取自电池自身电流与电压，不足 10W 保留一位小数。</string>
@@ -119,8 +150,6 @@
 
     <string name="perf_pair_title">充电功率与电池温度</string>
 
-    <string name="value_centre_title">电量数字居中</string>
-    <string name="value_centre_summary">电量数字放大到圆环中间，顶部缺口按双卡 → Wi-Fi 弧 → 环内类型依次占用。</string>
 
     <string name="color_role_title">状态颜色</string>
     <string name="color_role_summary">分别为低电量、充电与危险电量指定颜色。</string>

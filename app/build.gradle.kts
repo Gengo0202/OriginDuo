@@ -104,6 +104,15 @@ dependencies {
     // declared here to be on the compile classpath.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
+    // Backdrop and squircle shapes. These are NOT Miuix: they are kyant0's libraries, and
+    // they are what gives the frosted-glass surfaces their moving, layered look -
+    // Miuix's own miuix-blur is the lower-level primitive that `textureBlur` wraps.
+    //
+    // Sampled from HyperChanger, which is where the visual reference came from. Its pins
+    // are older (backdrop 2.0.0, shapes 1.2.0); these are the current releases of the same
+    // libraries, and both still publish under io.github.kyant0.
+    implementation("io.github.kyant0:backdrop:2.0.1")
+    implementation("io.github.kyant0:shapes:1.2.1")
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.4")

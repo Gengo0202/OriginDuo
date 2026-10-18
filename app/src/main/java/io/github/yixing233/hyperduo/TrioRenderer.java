@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.view.View;
@@ -33,11 +34,78 @@ final class TrioRenderer {
     private static final Path CAPSULE = new Path();
     private static final RectF RECT_RECT = new RectF();
     /**
+     * Scratch for the ink box {@link #textInkHeight} measures; never kept.
+     *
+     * <p>An {@link Rect}, not a {@code RectF}: the platform's only
+     * {@code getTextBounds} overload that takes a box is
+     * {@code getTextBounds(String, int, int, Rect)}, and it reports whole pixels.
+     * The desktop shim used to declare a {@code RectF} variant, which made a
+     * signature that does not exist on the device compile happily in the harness -
+     * it built there and failed only against the real SDK.
+     */
+    private static final Rect TEXT_INK = new Rect();
+    /**
      * Corner radii of the lit bar segment: rounded on the left so it follows the
      * track's capsule, square on the right so the level ends on a clean vertical
      * edge. Order is the {@link Path#addRoundRect} order - TL, TR, BR, BL.
      */
     private static final float[] RECT_RADII = new float[8];
+
+    /**
+     * The height of the ink {@code text} actually paints at {@code size}, in the
+     * same units.
+     *
+     * <p>Deliberately not {@code ascent + descent}. Those bounds describe the line
+     * box a typesetter reserves - leading above the capitals, room below for
+     * descenders - and a digits-only reading draws none of it. At 36pt the metrics
+     * are 45 units against 26.3 units of ink, so using them to decide whether a line
+     * fits makes every string look about 1.7x taller than it is, and the fit shrinks
+     * it accordingly.
+     *
+     * <p>{@code getTextBounds} reports the real drawn extent, which is what "does
+     * this fit in that slot" should be asking.
+     */
+    private static float textInkHeight(String text, float size) {
+        TEXT.setTextSize(size);
+        TEXT.getTextBounds(text, 0, text.length(), TEXT_INK);
+        return TEXT_INK.bottom - TEXT_INK.top;
+    }
+
+    /**
+     * A baseline that centres the drawn ink on the slot, given the one the font
+     * metrics produce.
+     *
+     * <p>The metrics version puts the middle of {@code ascent..descent} on the slot
+     * centre, but those bounds include the leading a face reserves above its
+     * capitals and below its descenders. A digits-only reading draws none of that,
+     * so its ink sits high - enough that a line fitted to its third still reached
+     * into the arc above it.
+     *
+     * <p>{@code getTextBounds} reports the real ink box relative to the baseline,
+     * which is the same space the font metrics use, so the correction is the
+     * difference between the two centres. <b>Both are negative above the
+     * baseline</b>: mixing in their absolute values, as an earlier version of this
+     * did, adds {@code ascent + descent} instead of subtracting it and pushes the
+     * baseline most of a line below the slot.
+     */
+    private static float inkCentredBaseline(String text, float size, float slotCentre) {
+        if (text == null || text.isEmpty() || size <= 0f) {
+            return slotCentre;
+        }
+        TEXT.setTextSize(size);
+        TEXT.getTextBounds(text, 0, text.length(), TEXT_INK);
+        final Paint.FontMetrics fm = TEXT.getFontMetrics();
+        // Both boxes are measured in the same space: y grows downward and the
+        // baseline is 0, so `top`/`ascent` are negative. Their centres are therefore
+        // comparable directly, and the baseline that centres the ink is the slot
+        // centre minus that centre.
+        //
+        // The previous version mixed the metrics' (ascent + descent) with a baseline
+        // built from (ascent - descent), i.e. two different reference points, which
+        // pushed every string about 35 units - most of a line - below its slot.
+        final float inkCentre = (TEXT_INK.top + TEXT_INK.bottom) * 0.5f;
+        return slotCentre - inkCentre;
+    }
 
     /**
      * The weight currently installed on {@link #TEXT}; -1 until first applied.
@@ -181,59 +249,215 @@ final class TrioRenderer {
     }
 
     /**
-     * The ring arrangement: the battery arc, then whichever pieces claim the ring
-     * centre and the 12 o'clock notch.
+     * The ring arrangement.
      *
-     * <p>The canvas is already scaled into the design space and positioned on the
-     * ink box, so everything here is plain design-unit drawing.
+     * <p>The canvas is already scaled into the design space and positioned on the ink
+     * box, so everything here is plain design-unit drawing.
      *
-     * <p>Which piece goes where is not decided here - {@link TrioAppearance.Ring}
-     * already resolved it from the user's switches. This method only draws.
+     * <p>Which piece goes where is not decided here - {@link TrioAppearance.Ring} has
+     * already resolved the three slots. This method only draws.
      */
     private static void drawRingLayout(Canvas canvas, int level, boolean charging,
                                        boolean quickCharging, int wifiLevel, int mobileLevel,
                                        int[] slotLevels, int sims, String mobileType, int role,
                                        int fg, TrioAppearance a) {
         final TrioAppearance.Ring r = a.ring(level, charging, wifiLevel, mobileType, sims);
-        // The 12 o'clock mouth is picked by what fills it. The bolt wants the
-        // narrower charging mouth; the digits and the arcs need all the room the
-        // idle mouth gives them; the two dot rows want the wide mouth, because
-        // the top row reaches the arc's radius and a narrow mouth would run the
-        // rounded stroke end straight into the outer dot. An empty mouth just
-        // breaks the ring, so it closes instead.
-        final boolean dualGap = r.dual;
-        final float gapStart = !r.gapUsed
-                ? TrioGeometry.GAP_NONE
-                : dualGap ? TrioGeometry.GAP_START_DUAL
-                : r.bolt ? TrioGeometry.GAP_START_CHARGE
-                : TrioGeometry.GAP_START_IDLE;
-        final float gapEnd = !r.gapUsed
-                ? TrioGeometry.GAP_NONE
-                : dualGap ? TrioGeometry.GAP_END_DUAL
-                : r.bolt ? TrioGeometry.GAP_END_CHARGE
-                : TrioGeometry.GAP_END_IDLE;
+        drawFreeRing(canvas, level, quickCharging, wifiLevel, mobileLevel,
+                slotLevels, mobileType, role, fg, a, r);
+    }
 
-        drawBattery(canvas, level, role, fg, a, gapStart, gapEnd);
-        // When the percentage is centred the arcs only ever appear in the notch,
-        // so a bolt that has taken the notch suppresses them outright rather than
-        // letting them fall back onto the digits at the centre.
-        if (r.drawWifi) {
-            drawWifi(canvas, wifiLevel, fg, a, r.wifiInGap);
+    /** Explicit slots share the editor's thirds and fit ink on BOTH axes. */
+    private static void drawFreeRing(Canvas c, int level, boolean quickCharging, int wifiLevel,
+                                     int mobileLevel, int[] levels, String type, int role, int fg,
+                                     TrioAppearance a, TrioAppearance.Ring r) {
+        drawBattery(c, level, role, fg, a, r.gapStart(), r.gapEnd());
+        for (int z = 0; z < 3; z++) {
+            final int part = r.parts[z];
+            if (part == Prefs.PART_NONE) continue;
+            final float cx = TrioGeometry.B_CX;
+            final float cy = TrioGeometry.ZONE_CY[z];
+            final float width = 78f - a.ringStroke;
+            final float height = z == 0 ? TrioGeometry.DOT_BOX_TOP
+                    : z == 1 ? TrioGeometry.DOT_BOX_CENTRE : TrioGeometry.DOT_BOX_BOTTOM;
+            final int save = c.save();
+            c.translate(cx, cy);
+            if (part == Prefs.PART_WIFI) {
+                // The reference bounds include the default stroke. Extra thickness
+                // must count before scaling, otherwise the arcs escape their slot.
+                final float extra = Math.max(0f, a.arcStroke - TrioGeometry.W_STROKE);
+                final float scale = Math.min(width / (TrioGeometry.W_INK_W + extra),
+                        height / (TrioGeometry.W_INK_H + extra));
+                c.scale(scale, scale);
+                c.translate(-TrioGeometry.W_CX, -TrioGeometry.W_INK_CY);
+                drawWifiArcs(c, wifiLevel, fg, a);
+            } else if (part == Prefs.PART_BOLT) {
+                final float scale = Math.min(width / 15f, height / TrioGeometry.BOLT_INK_H);
+                c.scale(scale, scale);
+                c.translate(-TrioGeometry.BOLT_CX_REF, -TrioGeometry.BOLT_INK_CY);
+                FILL.setColor(quickCharging ? TrioGeometry.QUICK_CHARGE : fg);
+                c.drawPath(BOLT, FILL);
+            } else if (part == Prefs.PART_MOBILE
+                    || part == Prefs.PART_SIM_1 || part == Prefs.PART_SIM_2) {
+                // All three are the same drawing: one row of four level beads. They
+                // differ only in which reading feeds them - PART_MOBILE is the aggregate
+                // meter, the two SIM parts are the individual cards.
+                //
+                // The row is drawn by ONE routine regardless of which part it is, and
+                // that routine already shapes itself by the third it sits in: beads
+                // threaded onto the ring's opening at the top and bottom, a compact
+                // horizontal row in the middle. Drawing PART_MOBILE through a separate
+                // straight-line path was what made "move the signal to the top" turn
+                // into a flat row inside a round ring.
+                final int rowLevel = part == Prefs.PART_MOBILE
+                        ? mobileLevel
+                        : (levels == null ? -1 : levels[part == Prefs.PART_SIM_1 ? 0 : 1]);
+                final int active = rowLevel < 0 ? 0 : Math.min(4, rowLevel);
+                drawArcDotRow(c, active, z,
+                        TrioGeometry.arcRowDotR(z, a.ringStroke, width), fg, a);
+            } else {
+                final String text = part == Prefs.PART_VALUE ? String.valueOf(level)
+                        : part == Prefs.PART_TYPE ? type : TrioState.sClockText;
+                if (text != null && !text.isEmpty()) {
+                    final int weight = part == Prefs.PART_VALUE ? a.valueWeight
+                            : part == Prefs.PART_TYPE ? a.typeWeight : a.clockWeight;
+                    final float requested = part == Prefs.PART_VALUE ? a.valueSize
+                            : part == Prefs.PART_TYPE ? a.typeSize : a.clockSize;
+                    applyWeight(weight);
+                    TEXT.setTextSize(requested);
+                    // Type is fitted to the THIRD it sits in, not to the small
+                    // placement box that positions a drawn figure (28/44/20 units).
+                    //
+                    // The height term measures the INK, not ascent + descent. That
+                    // distinction is the whole bug the size setting had: the metrics
+                    // reserve leading above the capitals and below the descenders that
+                    // a reading never draws - at 36pt they are 45 units against 26.3
+                    // units of actual ink - so dividing by them capped every line at
+                    // about 58% of the room it really had, and the bottom third came
+                    // out around a third of the size asked for.
+                    final float room = TrioGeometry.zoneTextRoomH(z);
+                    final int suffixScale = part == Prefs.PART_TYPE ? a.typeSuffixScale : 100;
+                    // The height cap is a straight ratio at the requested size.
+                    final float inkAtRequested = Math.max(1f, textInkHeight(text, requested));
+                    final float maxByHeight = requested * room / inkAtRequested;
+                    // The width cap is NOT independent of the answer: the budget is the
+                    // narrowest chord the line spans, which depends on how tall the line
+                    // ends up - and that depends on the size being solved for. Iterate
+                    // to a fixed point instead of guessing once. (The first attempt at
+                    // this multiplied the ink height by fitted/requested as well, which
+                    // scaled it twice and never converged.)
+                    float fitted = maxByHeight;
+                    for (int pass = 0; pass < 4; pass++) {
+                        final float inkH = Math.max(1f, textInkHeight(text, fitted));
+                        final float maxByWidth = fitSize(text, requested,
+                                TrioGeometry.zoneTextRoomW(z, a.ringStroke, inkH), suffixScale);
+                        final float next = Math.min(maxByHeight, maxByWidth);
+                        if (Math.abs(next - fitted) < 0.05f) {
+                            fitted = next;
+                            break;
+                        }
+                        fitted = next;
+                    }
+                    final float inkH = Math.max(1f, textInkHeight(text, requested));
+                    // Centred in the band, and on its INK rather than its metrics: the
+                    // metrics reserve leading above the capitals that a digits-only
+                    // string never draws, so a metrics-centred line sits high enough to
+                    // touch the arc it was fitted to clear.
+                    //
+                    // The canvas is already translated to the zone's centre by the
+                    // caller, so what the baseline helper wants is that local centre -
+                    // 0 - not an absolute design-space y.
+                    final float slotCentre = TrioGeometry.zoneTextCy(z, a.ringStroke)
+                            - TrioGeometry.ZONE_CY[z];
+                    final float baseline = inkCentredBaseline(text, fitted, slotCentre);
+                    if (part == Prefs.PART_TYPE) drawType(c, text, 0f, baseline, fitted, fg, a);
+                    else {
+                        TEXT.setTextAlign(Paint.Align.CENTER);
+                        TEXT.setTextSize(fitted);
+                        TEXT.setColor(fg);
+                        c.drawText(text, 0f, baseline, TEXT);
+                    }
+                }
+            }
+            c.restoreToCount(save);
         }
-        if (a.signalDots()) {
-            drawLevelDots(canvas, mobileLevel, slotLevels, r.dual, fg, a);
+    }
+
+    /**
+     * One card's four level dots, laid along the ring's own curve.
+     *
+     * <p>Drawn on the arc that passes through the slot, concentric with the battery
+     * ring, rather than on a horizontal line. The shipped level dots already bend
+     * ({@link TrioGeometry#DOTS} is 104.2, 111.2, 111.7, 105.8 - lowest in the
+     * middle), and a placed card that drew a straight row would read as a foreign
+     * shape inside a round glyph.
+     *
+     * <p>Which way the curve bends depends on where the third sits. A row in the
+     * bottom third belongs to the ring's lower opening and bows <em>downward</em>,
+     * matching {@code DOTS}; a row in the top third belongs to the 12 o'clock
+     * opening and bows the other way, so it stays concentric instead of dipping
+     * toward the ring centre. The middle third has no opening of its own, so its row
+     * follows the ring's side curvature and bows toward the centre.
+     *
+     * <p>The sagitta is derived from the arc's radius rather than picked: for a chord
+     * of half-width {@code w} on a circle of radius {@code R}, the rise is
+     * {@code R - sqrt(R^2 - w^2)}. That way the row is always a genuine arc - widen
+     * it and it bends more, shrink it and it flattens - exactly as a real slice of
+     * the ring would.
+     *
+     * @param active   how many of the four dots are lit, 0..4
+     * @param zone     {@code 0} top, {@code 1} middle, {@code 2} bottom
+     * @param radius   dot radius, already fitted to the slot
+     */
+    private static void drawArcDotRow(Canvas c, int active, int zone, float radius,
+                                      int fg, TrioAppearance a) {
+        final int inactive = withAlpha(fg, a.trackAlpha);
+        if (zone == 1) {
+            // The middle third is not a notch: the ring runs past it on both sides, so
+            // there is no bare arc to thread beads onto. It keeps the row it has always
+            // had - four dots in a horizontal line, centred in the slot.
+            final float step = radius * 3f;
+            for (int dot = 0; dot < 4; dot++) {
+                FILL.setColor(dot < active ? fg : inactive);
+                c.drawCircle((dot - 1.5f) * step, 0f, radius, FILL);
+            }
+            return;
         }
-        if (r.typeInCentre) {
-            drawCentreType(canvas, mobileType, fg, a);
-        }
-        if (r.typeInGap) {
-            drawGapType(canvas, mobileType, fg, a);
-        }
-        if (r.bolt) {
-            drawBolt(canvas, quickCharging ? TrioGeometry.QUICK_CHARGE : fg);
-        }
-        if (r.drawValue) {
-            drawValue(canvas, level, fg, a, r.valueInCentre);
+        // In the top and bottom thirds the dots are threaded onto the arc's own centre
+        // line, inside the notch where the ring carries no ink - so a bead as thick as
+        // the ring reads as the outline cut into segments. Positioning them inside the
+        // glyph instead was the earlier mistake: it made the dots shrink as the stroke
+        // grew, which is backwards.
+        //
+        // Placed in the RING's frame, then converted back into this zone's local space
+        // (the caller has already translated to (B_CX, ZONE_CY[z])).
+        final float rho = TrioGeometry.B_R;
+        // The bare arc this row sits in: the 12 o'clock notch above, the ring's own
+        // opening below. Both are GAP_WIDTH_DEG wide.
+        final float openingRad = (float) Math.toRadians(TrioGeometry.GAP_WIDTH_DEG);
+        // Angular inset for the arc's cap plus the end bead's own radius, and a further
+        // unit so the two antialiased edges do not meet.
+        final float inset = (radius + a.ringStroke * 0.5f + 1f) / rho;
+        final float halfAngle = Math.max(0f, openingRad * 0.5f - inset);
+        // The row keeps its own span and does NOT grow with the opening: the notch is
+        // deliberately wider than the four beads need, so the arc's ends stand clear of
+        // them. Spreading the beads to fill whatever the opening allows would cancel
+        // that - the further the ends moved, the further the beads would follow, and the
+        // clearance would never change.
+        //
+        // BEAD_SPAN_DEG is the span the four beads occupy, independent of the notch.
+        final float beadHalfAngle = (float) Math.toRadians(TrioGeometry.BEAD_SPAN_DEG * 0.5f);
+        final float halfCentreAngle = Math.min(halfAngle, beadHalfAngle);
+        for (int dot = 0; dot < 4; dot++) {
+            final float t = (dot - 1.5f) / 1.5f;
+            final float angle = t * halfCentreAngle;
+            // Top third: the notch straddles 12 o'clock, above the ring centre.
+            // Bottom third: the opening straddles 6 o'clock, below it.
+            final float sign = zone == 2 ? 1f : -1f;
+            final float ringX = TrioGeometry.B_CX + rho * (float) Math.sin(angle);
+            final float ringY = TrioGeometry.B_CY + sign * rho * (float) Math.cos(angle);
+            FILL.setColor(dot < active ? fg : inactive);
+            c.drawCircle(ringX - TrioGeometry.B_CX,
+                    ringY - TrioGeometry.ZONE_CY[zone], radius, FILL);
         }
     }
 
@@ -341,8 +565,8 @@ final class TrioRenderer {
      * dot rows cross it.
      *
      * <p>Two open subpaths, because that is what the shape is once the rows
-     * interrupt it: top-centre-right → top-right run → right cap →
-     * bottom-right run → bottom-centre-right, and its mirror. Each cap is two
+     * interrupt it: top-centre-right 閳?top-right run 閳?right cap 閳?
+     * bottom-right run 閳?bottom-centre-right, and its mirror. Each cap is two
      * quarter-circle cubics, using the usual circle-to-Bezier constant.
      *
      * <p>With {@code reach} at zero the two subpaths meet on the centre line and
@@ -766,7 +990,7 @@ final class TrioRenderer {
      * of the full path: the two segments the mouth leaves behind divide the
      * level between them, so 50% ends exactly where the left segment does and
      * the mouth never consumes any of it. Measuring over the whole path instead
-     * made the level stand still across the entire width of the mouth — the
+     * made the level stand still across the entire width of the mouth 閳?the
      * right half did not start filling until the level had climbed past 67%.
      */
     private static void batteryRing(Canvas c, float from, float to, float gapStart, float gapEnd) {
@@ -811,23 +1035,6 @@ final class TrioRenderer {
 
     // -------------------------------------------------------------------- wifi
 
-    /**
-     * @param gap {@code true} when the centred-value setting has moved the arcs
-     *   up into the 12 o'clock notch. The whole group is then translated and
-     *   scaled on the canvas, which keeps one set of reference coordinates for
-     *   both slots - the same trick the bolt uses.
-     */
-    private static void drawWifi(Canvas c, int level, int fg, TrioAppearance a, boolean gap) {
-        final int save = gap ? c.save() : 0;
-        if (gap) {
-            c.translate(TrioGeometry.gapWifiOffsetX(), TrioGeometry.gapWifiOffsetY(a.arcStroke));
-            c.scale(TrioGeometry.GAP_WIFI_SCALE, TrioGeometry.GAP_WIFI_SCALE);
-        }
-        drawWifiArcs(c, level, fg, a);
-        if (gap) {
-            c.restoreToCount(save);
-        }
-    }
 
     /**
      * The arcs and the dot at their reference coordinates, with no transform of
@@ -854,44 +1061,6 @@ final class TrioRenderer {
 
     // ------------------------------------------------------------- level dots
 
-    /**
-     * The signal meter: four steps, lit from the left.
-     *
-     * <p>Single row: one SIM's level, the current data SIM. The meter keeps MIUI's
-     * own {@code DOT_R} here, because a lone row has the whole ring to itself.
-     *
-     * <p>Dual reading: one row per SIM, SIM 1 above and SIM 2 below, each filled
-     * from its own level. Both rows use {@link TrioGeometry#DUAL_DOT_R}: they are
-     * symmetric about the ring's centre and have to read as one paired meter, so a
-     * row sized for a lone arc would look shrunken next to its twin. A slot with no
-     * reading lights nothing, which is how an empty slot reads as empty rather
-     * than as a second full-strength SIM.
-     *
-     * @param slotLevels per-SIM levels by slot, or {@code null} for one row
-     * @param dual whether the two rows are drawn instead of one
-     */
-    private static void drawLevelDots(Canvas c, int level, int[] slotLevels, boolean dual,
-                                     int fg, TrioAppearance a) {
-        final int inactive = withAlpha(fg, a.trackAlpha);
-        if (!dual || slotLevels == null) {
-            final int active = level < 0 ? 0 : Math.min(TrioGeometry.DOTS.length, level);
-            for (int i = 0; i < TrioGeometry.DOTS.length; i++) {
-                FILL.setColor(i < active ? fg : inactive);
-                c.drawCircle(TrioGeometry.DOTS[i][0], TrioGeometry.DOTS[i][1],
-                        TrioGeometry.DOT_R, FILL);
-            }
-            return;
-        }
-        final int row = TrioGeometry.DOTS.length;
-        for (int i = 0; i < TrioGeometry.DOTS_DUAL.length; i++) {
-            final int step = i % row;
-            final int slotLevel = slotLevels[i / row];
-            final int active = slotLevel < 0 ? 0 : Math.min(row, slotLevel);
-            FILL.setColor(step < active ? fg : inactive);
-            c.drawCircle(TrioGeometry.DOTS_DUAL[i][0], TrioGeometry.DOTS_DUAL[i][1],
-                    TrioGeometry.DUAL_DOT_R, FILL);
-        }
-    }
 
     // ------------------------------------------------- out-of-ring signal
 
@@ -1083,56 +1252,8 @@ final class TrioRenderer {
         sTextWeight = weight;
     }
 
-    /**
-     * Draws the value in whichever slot it belongs to.
-     *
-     * @param centre {@code true} to put the percentage in the middle of the ring,
-     *   {@code false} to keep it in the 12 o'clock gap next to the charging bolt.
-     */
-    private static void drawValue(Canvas c, int level, int fg, TrioAppearance a, boolean centre) {
-        final String text = String.valueOf(level);
-        final float requested = centre ? TrioGeometry.centreSize(a.valueSize) : a.valueSize;
-        final float clear = centre ? TrioGeometry.centreClearWidth(requested, a.ringStroke)
-                                   : TrioGeometry.gapClearWidth(a.ringStroke);
-        // The typeface has to be current before measuring: a heavier weight is
-        // wider, and fitSize decides whether the text still clears the gap.
-        applyWeight(a.valueWeight);
-        final float size = fitSize(text, requested, clear);
-        TEXT.setTextSize(size);
-        TEXT.setColor(fg);
-        c.drawText(text, TrioGeometry.VALUE_X,
-                centre ? TrioGeometry.centerBaseline(size)
-                       : TrioGeometry.gapBaseline(size),
-                TEXT);
-    }
 
-    /**
-     * Draws the mobile network type ("5G", "5GA", ...) in the middle of the ring.
-     *
-     * <p>Reached only when the percentage is not claiming the centre, so this
-     * never competes with the value for the same space.
-     */
-    private static void drawCentreType(Canvas c, String type, int fg, TrioAppearance a) {
-        final float requested = a.typeSize;
-        final float clear = TrioGeometry.centreClearWidth(requested, a.ringStroke);
-        applyWeight(a.typeWeight);
-        final float size = fitSize(type, requested, clear, a.typeSuffixScale);
-        drawType(c, type, TrioGeometry.VALUE_X, TrioGeometry.centerBaseline(size), size, fg, a);
-    }
 
-    /**
-     * Draws the mobile network type in the 12 o'clock gap. Used when the
-     * percentage has taken the ring centre, which is what the centred-value
-     * setting promises, and the notch is otherwise empty: the type is squeezed
-     * down to whatever the narrower slot affords rather than being dropped.
-     */
-    private static void drawGapType(Canvas c, String type, int fg, TrioAppearance a) {
-        final float requested = a.typeSize;
-        final float clear = TrioGeometry.gapClearWidth(a.ringStroke);
-        applyWeight(a.typeWeight);
-        final float size = fitSize(type, requested, clear, a.typeSuffixScale);
-        drawType(c, type, TrioGeometry.VALUE_X, TrioGeometry.gapBaseline(size), size, fg, a);
-    }
 
     /**
      * Draws the network type at {@code x} on {@code baseline}, shrinking the

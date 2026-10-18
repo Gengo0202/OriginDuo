@@ -1,0 +1,286 @@
+{
+  "generatedUtc": "2026-10-16T17:06:02.8042470Z",
+  "baseCommit": "db03d5ab0f82a647ec4aaac03755d3dfd775d67f",
+  "workingTreeChanges": true,
+  "scope": "HyperOS 4 code verification; no device verification",
+  "artifacts": [
+    {
+      "path": "app/build/outputs/apk/debug/app-debug.apk",
+      "sha256": "252b80df4b2c4c238023576d8bccdff1d47d401f029ceaf14e419f09f18276a2"
+    },
+    {
+      "path": "app/build/outputs/apk/release/app-release.apk",
+      "sha256": "94adbf67ed1edeb62aa3a714f7836cf528637dcd73105f3be19fe09306eb1f58"
+    }
+  ],
+  "files": [
+    {
+      "path": "app/build.gradle.kts",
+      "sha256": "2d43f738249150f851e68d610f933a16a0e54ab78918f3be58825595574df2c2"
+    },
+    {
+      "path": "app/proguard-rules.pro",
+      "sha256": "de03edcd087b060645e6af6fa3ff7a4b27eaa468cd9b46f4a2c0295a31b9fc5e"
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "sha256": "4eea5c1c9d748913f412e549c8743cecc16a2972bc5f201bc28fd839ee0ed3e4"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/BatteryPresence.java",
+      "sha256": "1957bcfc875a106cd9ba34dfe79cbb66c9534a9b385fc7806e71d724f387f95e"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ClockTicker.java",
+      "sha256": "50ba8c7937cf70f3be5c6c48cd56c5c331c55304c4175145e85789c8e3694bbb"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/GlyphDrawable.java",
+      "sha256": "32325c88625f6aaa6d171c5aa02dd82d03323a2b40e0ea0cdfaa0ac5d6c03d6a"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/HyperDuoApp.kt",
+      "sha256": "e28fecb5529418553d3d71067ac444b3176883bbafa4aa1c1193433d29e8c1eb"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/HyperDuoModule.java",
+      "sha256": "a03dff4d00aa6e65b25003440ab493b8816373792ac939dfdc6dda56d6a9f2ac"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/OutRingLayout.java",
+      "sha256": "6dfa59c494e67223d8e852fa5409c25b1a6b81b4cd5698a73acb3f74ea6501a1"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/Prefs.java",
+      "sha256": "52a460123aba830e430ea9d852b5d3c968cabb7ebfc801143ce9cb8c32438169"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/Refl.java",
+      "sha256": "0e78f271150567e3193213a4c39f371e856020f8ae783be46c5b8c110494f9f4"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioAppearance.java",
+      "sha256": "5bd6533a5bb37e53eb576e0d394c44f5713fc5342e0ab0fde1f81d5ca7bc2537"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioConfig.java",
+      "sha256": "45a5622b2a1446ccb2dba72fbea3ee0f96a693fb6f75db59d6b391b7157e3fbe"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioGeometry.java",
+      "sha256": "f06a4fdf37edc81f1340c30f362da4aafa53e388badd7307c9777d8032735405"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioHooks.java",
+      "sha256": "31ca365e4d5ac88de19e746fa9d5ef03ee1c91e66943d88f33ffb4ac3f0d8bdf"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioPreviewView.java",
+      "sha256": "aafac08f07adfb035c6494ee2e4aa0b1b6e40946a69b4623d89f1a67de35536a"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioRenderer.java",
+      "sha256": "ece8ba466e2b9e851c50d722ec25aae576b86ac6de19fdf5f9446ed5ff73165f"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioSettings.java",
+      "sha256": "ed206c30b349d2bf55dbf93bd776f5adbe3cafd6570d384c69f8e342d9261c19"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioState.java",
+      "sha256": "8326357ae2dfa0de8bdcc3de604cdea7cf0959f980b5cd19a21e457e1a442b2a"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioTint.java",
+      "sha256": "405e5096d07afd25d8c7ef319b3529da377de9b24d65c2eabb19fb00c09a3e75"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/TrioZones.java",
+      "sha256": "1095292a2ce93c1bdcf473dbdcfbe7c4b5ab6ed3caf244967b011372dc0dcf1b"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/DrawingScreen.kt",
+      "sha256": "a69b1bb82b881bc0c9770ceb45816acbf890cab3a1a67e4ece93b089961a9e7b"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/MainActivity.kt",
+      "sha256": "34edfc8f6dd039fcd6a144aa11b4af975866900f36a2dbba1bcbe4968b16a251"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/PartControls.kt",
+      "sha256": "c8906c62d5abe54dee666985d1b7de373f0056ab30160c12e624cfc385244ad2"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/RestartController.kt",
+      "sha256": "6596011422bd7c1bf17dd7adca0fe8692f994617f3634381875c85871e4ef95e"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsRepository.kt",
+      "sha256": "86ac22b4dbf63a2fd8c925c406e012435e347b90662307270a5f3abba1be3633"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/SettingsScreen.kt",
+      "sha256": "23c186c2e4748fee635feecad5b9661a44a713b6ee0c76fb44016c612a069862"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/ui/UpdateController.kt",
+      "sha256": "f4a48d6055287472a66f87608ef410b74bc5e408fc8125f3c00f55a1e3a30e9f"
+    },
+    {
+      "path": "app/src/main/java/io/github/yixing233/hyperduo/WifiPresence.java",
+      "sha256": "36ad4cfff0ad475b7a575c8b71f056804a88b73f2005235ed30c05b25669bf15"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_check_circle_outline.xml",
+      "sha256": "22a0e9e2cab120643daa5cdc22ed9814fed9814e07c7dae6c41fedc73addf838"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_launcher_foreground.xml",
+      "sha256": "f8637e07afcc5642d43d01618ed3f256b399468bffba619a70a10adee5fac0c5"
+    },
+    {
+      "path": "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "sha256": "32715ff646f6b9fef7c321138e4a14556c4a1f98a87b06070b56f41643dad718"
+    },
+    {
+      "path": "app/src/main/res/values-en/strings.xml",
+      "sha256": "aaf90f922ea7078f72344ffc9f5c0da15626e3ae75dbc62d285c7168e0b44f51"
+    },
+    {
+      "path": "app/src/main/res/values-night/themes.xml",
+      "sha256": "2b7eb673771a4fd490d6adea05235841855336f1d4d4cea9232dee1735cade12"
+    },
+    {
+      "path": "app/src/main/res/values/arrays.xml",
+      "sha256": "261155f54a21b2452ee5c90c02924a5c57e6d9d307422f1aa7e5a126153ecf60"
+    },
+    {
+      "path": "app/src/main/res/values/colors.xml",
+      "sha256": "f4843fb778b624ab1fcfd7d8749e7379e66fe9735abfd50daafbd9b59cd4ebc8"
+    },
+    {
+      "path": "app/src/main/res/values/strings.xml",
+      "sha256": "711d2b09a5ccc206231d5812de581b13aa65198d6300abbe1c007829af11882a"
+    },
+    {
+      "path": "app/src/main/res/values/themes.xml",
+      "sha256": "336573af6244877e31338bd0fbadc65b8e1da61615d89b3f09a55fbc7825ddd7"
+    },
+    {
+      "path": "app/src/main/res/xml/file_paths.xml",
+      "sha256": "48d8b62064b76f54ecb3657de947620b72495e39c4c72ce44241bd17068a1629"
+    },
+    {
+      "path": "app/src/main/resources/META-INF/xposed/java_init.list",
+      "sha256": "f33782ea392b3ff684ae9bf1283ba7c1f2cfd5739a833622a8c500ea0cbf29d3"
+    },
+    {
+      "path": "app/src/main/resources/META-INF/xposed/module.prop",
+      "sha256": "5edf6ee0bc30d6a16858937fe797c1f44a9b3cfceb2adb878d11f3675358d7aa"
+    },
+    {
+      "path": "app/src/main/resources/META-INF/xposed/scope.list",
+      "sha256": "f0abaf1feaaf182419f0b8cdd85fce26356e7a79caf88a6a01e170dea475d313"
+    },
+    {
+      "path": "build.gradle.kts",
+      "sha256": "e0e149cb4d6f17ddf9a10b7173ee6510cfc9c153e138d9c2b5716ce74724ec90"
+    },
+    {
+      "path": "gradle.properties",
+      "sha256": "ec093e115f9f321a878885c583e43be1b1c3bffc1036d1b76d5fb6caa196ce6b"
+    },
+    {
+      "path": "settings.gradle.kts",
+      "sha256": "2d18b3f1bd83ed5c7e5ac81952a27d3c547afc074f9ad93173692589f91f19ce"
+    },
+    {
+      "path": "tests/battery-presence.ps1",
+      "sha256": "248e0df6ca4f18066536bb250b57d60a5ed23d52a15929895e9998be74caf02f"
+    },
+    {
+      "path": "tests/capsule-zones.ps1",
+      "sha256": "cdd9dd1ff59607203cc565c6b43c8f349efe2c9885fd0754f5adc491641ec611"
+    },
+    {
+      "path": "tests/capsule.ps1",
+      "sha256": "d2dda970fea0304eaf62a98061f26dbfef3d51c5eafd16c08340caf3acbeb598"
+    },
+    {
+      "path": "tests/drawing-zones.ps1",
+      "sha256": "00196f4ac49427dc7538a9724c6eb881ac32d177e6e18596fecf16460f06110d"
+    },
+    {
+      "path": "tests/glyph-drawable.ps1",
+      "sha256": "7454f14e94e3ee874ab6b605b26d6495215fc98d276a2f88623aa7047e2d3273"
+    },
+    {
+      "path": "tests/glyph-scale.ps1",
+      "sha256": "1f35b9839953cdccba3a35c2f9642e3aa18e66cf696f6a4f7058d4ec18986032"
+    },
+    {
+      "path": "tests/issue-regressions.ps1",
+      "sha256": "6598421f5ba681d2635a4a68432049ac57e4789a76d14f4caf891306cc846a7e"
+    },
+    {
+      "path": "tests/os4-layout.ps1",
+      "sha256": "92352bbaaacbea11942d74ef93458be8dfa312b47c0c76719cb882b59ea68630"
+    },
+    {
+      "path": "tests/perf-layout.ps1",
+      "sha256": "bff1b08c47a8b489960fbcb0a2e2c6df16754d3812cbf1347d33aa4c235ff692"
+    },
+    {
+      "path": "tests/shims/android/content/SharedPreferences.java",
+      "sha256": "fc36d7d73e1b18a5ad3fd20e97d02d2dd37a1982e2290cf7bcfae6c79f690857"
+    },
+    {
+      "path": "tests/shims/android/graphics/Canvas.java",
+      "sha256": "e7204fbdce153fdbe62516aec339f9008a0adddaca015b39cac9b707175b1e69"
+    },
+    {
+      "path": "tests/shims/android/graphics/Color.java",
+      "sha256": "b29709c576ca0e7249a79ac7ef7a227b569bfcb4239687e1f3076d82416c3c4d"
+    },
+    {
+      "path": "tests/shims/android/graphics/Paint.java",
+      "sha256": "80c608dc2b7d62673310ad71dab66f5881afaf04532abbccfe4c6f7cb7dafe11"
+    },
+    {
+      "path": "tests/shims/android/graphics/Path.java",
+      "sha256": "1df5cdf6b7f8b56e85c800891c3f9fe28a7392313916edececf00f137811baad"
+    },
+    {
+      "path": "tests/shims/android/graphics/PorterDuff.java",
+      "sha256": "6d6530c21431a115859da8ea66f2acc41b5f39b28b50474689dea1bd84f591c5"
+    },
+    {
+      "path": "tests/shims/android/graphics/RectF.java",
+      "sha256": "ad2f269a76901a54034cf40a7017775b1a410742dbeab5580176a23fa5f7b75f"
+    },
+    {
+      "path": "tests/shims/android/graphics/Typeface.java",
+      "sha256": "084b4316769c0193c1fb6b909b59d5ba17fe02744a33e8c0e86402ff79e2741e"
+    },
+    {
+      "path": "tests/shims/android/os/Bundle.java",
+      "sha256": "281a8b8121ebc30c491ab0133d590ddcc03d4466bde56600e8a0293d5b0c9fa1"
+    },
+    {
+      "path": "tests/shims/android/view/View.java",
+      "sha256": "8a7dc7f3b6df6429bec086f45f73b473d3b919e8ce8c7922f5235ad359bcc77b"
+    },
+    {
+      "path": "tests/shims/io/github/yixing233/hyperduo/TrioConfig.java",
+      "sha256": "0f080c1ee5753fe1f7432839661c613544703e6e372968478ebdb61ab78d07ff"
+    },
+    {
+      "path": "tests/shims/io/github/yixing233/hyperduo/TrioState.java",
+      "sha256": "bc02f5dc0818936eb828de71ef1445dbb0b7a409cd69d4ce2fa6fd1610872c98"
+    },
+    {
+      "path": "tests/wifi-presence.ps1",
+      "sha256": "737a49c5020cff77e5dcbc91568365ff8fe7afb7c6e034d8392c0d83c8991892"
+    }
+  ]
+}

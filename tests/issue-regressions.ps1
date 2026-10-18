@@ -34,9 +34,10 @@ $refresh = Read-Method $state 'void refresh()'
 $poll = Read-Method $state 'private static void sampleSimsIfDue()'
 $foreground = Read-Method $state 'int foreground()'
 $meter = Read-Method $hooks 'private static int hookMeterTint(XposedModule module, ClassLoader cl)'
+$iconTint = Read-Method $hooks 'private static int hookIconTint(XposedModule module, ClassLoader cl)'
 $rowInk = Read-Method $hooks 'static int rowInk(View row)'
 $clockVisibility = Read-Method $hooks 'static void applyClockVisibility()'
-foreach ($name in @('TrioZones.java')) {
+foreach ($name in @('TrioZones.java','TrioTint.java')) {
     Write-Source "io/github/yixing233/hyperduo/$name" ([IO.File]::ReadAllText((Join-Path $SourceDirectory $name)))
 }
 foreach ($name in @('Prefs.java','TrioSettings.java','TrioAppearance.java','TrioGeometry.java')) {
@@ -71,7 +72,15 @@ package android.os;
 public class Handler { public Handler(Looper l){} public void postDelayed(Runnable r,long delay){} public void removeCallbacks(Runnable r){} }
 '@
 Write-Source 'android/graphics/Canvas.java' 'package android.graphics; public class Canvas {}'
-Write-Source 'android/graphics/Rect.java' 'package android.graphics; public class Rect {}'
+Write-Source 'android/graphics/Rect.java' @'
+package android.graphics;
+public class Rect {
+ public int left,top,right,bottom;
+ public Rect(){} public Rect(int l,int t,int r,int b){left=l;top=t;right=r;bottom=b;}
+ public Rect(Rect r){this(r.left,r.top,r.right,r.bottom);}
+ public boolean isEmpty(){return left>=right || top>=bottom;}
+}
+'@
 Write-Source 'android/graphics/PixelFormat.java' 'package android.graphics; public class PixelFormat { public static final int TRANSLUCENT=-3; }'
 Write-Source 'android/view/Gravity.java' 'package android.view; public class Gravity { public static final int TOP=48,LEFT=3; }'
 Write-Source 'android/view/ViewParent.java' 'package android.view; public interface ViewParent {}'
@@ -190,11 +199,13 @@ import java.lang.reflect.Method;
 final class XposedModule {}
 final class XposedInterface {
  interface Hooker {Object intercept(Chain c) throws Throwable;}
- interface Chain {Object proceed();Object getThisObject();Object getArg(int i);}
+ interface Chain {Object proceed();Object getThisObject();Object getArg(int i);default List<Object> getArgs(){return Collections.emptyList();}}
 }
 final class TrioHooks {
  static final int LOG_INFO=1,LOG_WARN=2;
  static final Map<View,Integer> ROW_INK=new WeakHashMap<>();
+ static final Map<View,TrioTint.Inputs> ROW_TINTS=new WeakHashMap<>();
+ static final Map<String,XposedInterface.Hooker> hooks=new HashMap<>();
  static XposedInterface.Hooker tintHook;
  static XposedModule sModule=new XposedModule();
  static View sStatusClock; static java.lang.reflect.Method sClockSetter; static boolean sClockHidden;
@@ -208,15 +219,27 @@ final class TrioHooks {
  static View rowOf(View v){return batteryContainerOf(v);}
  static View hostIn(ViewGroup row){return row.host;}
  static void applyOutRingInk(ViewGroup row,int ink){row.ink=ink;}
- static int hook(XposedModule m,Object method,String name,XposedInterface.Hooker h){tintHook=h;return 1;}
+ static int hook(XposedModule m,Object method,String name,XposedInterface.Hooker h){hooks.put(name,h);if(name.equals("hyperduo-meter-tint"))tintHook=h;return 1;}
  $rowInk
  $meter
+ $iconTint
  $clockVisibility
  static void tint(View meter,float intensity,boolean useTint,int tint)throws Throwable {
+  tint(meter,new ArrayList<>(),intensity,useTint,tint);
+ }
+ static void tint(View meter,ArrayList<android.graphics.Rect> areas,float intensity,boolean useTint,int tint)throws Throwable {
   if(tintHook==null)hookMeterTint(new XposedModule(),TrioHooks.class.getClassLoader());
-  Object[] args={new ArrayList<>(),intensity,tint,0xFFFFFFFF,0xFF000000,useTint};
+  Object[] args={areas,intensity,tint,0xFFFFFFFF,0xFF000000,useTint};
   tintHook.intercept(new XposedInterface.Chain(){
    public Object proceed(){return null;} public Object getThisObject(){return meter;} public Object getArg(int i){return args[i];}
+  });
+ }
+ static void iconTint(View icon,ArrayList<android.graphics.Rect> areas,int colour)throws Throwable {
+  hookIconTint(new XposedModule(),TrioHooks.class.getClassLoader());
+  List<Object> args=Arrays.asList(areas,0.5f,colour);
+  hooks.get("hyperduo-tint-dark").intercept(new XposedInterface.Chain(){
+   public Object proceed(){return null;}public Object getThisObject(){return icon;}
+   public Object getArg(int i){return args.get(i);}public List<Object> getArgs(){return args;}
   });
  }
 }
@@ -259,9 +282,41 @@ public class IssueRegressionTest {
   ok("interleaved row tint remains local",TrioHooks.rowInk(br)==0xFF654321 && TrioHooks.rowInk(ar)==0xFF123456);
   int before=a.invalidations;TrioHooks.tint(a,0f,true,0xFF123456);
   ok("unchanged tint avoids host redraw",a.invalidations==before);
+  java.util.ArrayList<android.graphics.Rect> areas=new java.util.ArrayList<>();
+  android.graphics.Rect area=new android.graphics.Rect(0,0,500,100);areas.add(area);
+  for(boolean use:new boolean[]{false,true}) {
+   TrioHooks.tint(a,areas,0.5f,use,0xFF123456);
+   ok("outside dark area stays light "+use,TrioHooks.rowInk(ar)==0xFFFFFFFF && ar.ink==0xFFFFFFFF);
+  }
+  area.left=850;area.right=1000;
+  TrioHooks.tint(a,areas,0.5f,true,0xFF123456);
+  ok("inside tint area uses tint",TrioHooks.rowInk(ar)==0xFF123456);
+  area.left=0;area.right=500;areas.clear();
+  ok("cached area owns a copy of list and rect",TrioHooks.rowInk(ar)==0xFF123456);
+  a.x=0;
+  ok("host movement re-evaluates cached area",TrioHooks.rowInk(ar)==0xFFFFFFFF);
+  TrioHooks.iconTint(a,new java.util.ArrayList<>(),0xFF000000);
+  ok("neighbour tint cannot overwrite meter area",TrioHooks.rowInk(ar)==0xFFFFFFFF);
+  View c=host(new Context());ViewGroup cr=(ViewGroup)c.parent;
+  areas.add(new android.graphics.Rect(0,0,500,100));
+  TrioHooks.iconTint(c,areas,0xFF000000);
+  ok("icon-only fallback respects battery area",TrioHooks.rowInk(cr)==0xFFFFFFFF);
+  TrioHooks.tint(c,0.5f,true,0xFF654321);
+  TrioHooks.iconTint(c,areas,0xFF000000);
+  ok("meter dispatch wins in both callback orders",TrioHooks.rowInk(cr)==0xFF654321);
+  areas.clear();areas.add(new android.graphics.Rect(900,0,930,100));
+  TrioHooks.tint(c,areas,1f,true,0xFF000000);
+  ok("exactly half coverage stays light like native",TrioHooks.rowInk(cr)==0xFFFFFFFF);
+  areas.get(0).right=931;TrioHooks.tint(c,areas,1f,true,0xFF000000);
+  ok("more than half coverage uses tint",TrioHooks.rowInk(cr)==0xFF000000);
+  areas.get(0).top=1;TrioHooks.tint(c,areas,1f,true,0xFF000000);
+  ok("area below the bar does not tint",TrioHooks.rowInk(cr)==0xFFFFFFFF);
  }
  static void wifi() {
+  // A fresh install starts blank, so this places the arcs explicitly - the point of the
+  // case is the READING, not the default layout.
   TrioSettings s=TrioSettings.defaults();s.showValue=false;s.mobileTypeMode=Prefs.MOBILE_TYPE_OFF;s.dualSim=false;
+  s.ringZones=Prefs.decodeLayout("|1|");
   ok("no Wi-Fi reading leaves the middle empty",TrioZones.occupant(TrioZones.Zone.CENTRE,TrioAppearance.of(s),79,false,-1,"5G",2)==null);
   ok("a live Wi-Fi reading still names the arcs",TrioZones.occupant(TrioZones.Zone.CENTRE,TrioAppearance.of(s),79,false,3,"5G",2)==TrioZones.Part.WIFI);
   s.showWifi=false;
@@ -303,15 +358,40 @@ public class IssueRegressionTest {
   ok("clearing all four frames uses the smallest legal edit",solved!=null && solved.changes==minimum);
  }
  static void assignment() {
-  for(int style:new int[]{Prefs.STYLE_RING,Prefs.STYLE_RECT}) {
+  // Ring: placement is a priority list, so "clear" empties that zone's list and leaves the
+  // switch alone - the placement lives in the layout, not in the switch.
+  {
+   TrioSettings s=TrioSettings.defaults();s.trioStyle=Prefs.STYLE_RING;
+   s.mobileTypeMode=Prefs.MOBILE_TYPE_OUT_RING;
+   TrioSettings placed=TrioZones.withPiece(s,TrioZones.Zone.BOTTOM.ordinal(),TrioZones.Part.MOBILE);
+   ok("placing mobile leaves outside type unchanged",placed.mobileTypeMode==Prefs.MOBILE_TYPE_OUT_RING);
+   ok("the placed piece heads the zone's list",
+      placed.ringZones[TrioZones.Zone.BOTTOM.ordinal()][0]==Prefs.PART_MOBILE);
+   TrioSettings cleared=TrioZones.withPiece(placed,TrioZones.Zone.BOTTOM.ordinal(),null);
+   ok("clearing empties the zone, not the switch",
+      cleared.ringZones[TrioZones.Zone.BOTTOM.ordinal()].length==0 && cleared.showMobile);
+   // Dropping one entry is a different operation and reveals the candidate behind it.
+   TrioSettings two=TrioZones.withPiece(placed,TrioZones.Zone.BOTTOM.ordinal(),TrioZones.Part.WIFI);
+   ok("a second piece goes to the front",
+      two.ringZones[TrioZones.Zone.BOTTOM.ordinal()][0]==Prefs.PART_WIFI);
+   TrioSettings one=TrioZones.withoutAt(two,TrioZones.Zone.BOTTOM.ordinal(),0);
+   ok("dropping the head reveals the next candidate",
+      one.ringZones[TrioZones.Zone.BOTTOM.ordinal()][0]==Prefs.PART_MOBILE);
+  }
+  // Rectangle: still one switch per zone, and the solver still answers.
+  {
+   int style=Prefs.STYLE_RECT;
    TrioSettings s=TrioSettings.defaults();s.trioStyle=style;s.mobileTypeMode=Prefs.MOBILE_TYPE_OUT_RING;
-   TrioZones.Assignment a=TrioZones.assign(TrioZones.Zone.BOTTOM,style==Prefs.STYLE_RECT,TrioZones.Part.MOBILE,s,2);
-   ok("selecting existing mobile leaves outside type unchanged "+style,a!=null && a.changes==0 && a.settings.mobileTypeMode==Prefs.MOBILE_TYPE_OUT_RING);
-   a=TrioZones.assign(TrioZones.Zone.BOTTOM,style==Prefs.STYLE_RECT,null,s,2);
-   ok("clearing mobile preserves outside type "+style,a!=null && a.changes==1 && !a.settings.showMobile && a.settings.mobileTypeMode==Prefs.MOBILE_TYPE_OUT_RING);
+   TrioZones.Assignment a=TrioZones.assign(TrioZones.Zone.BOTTOM,true,TrioZones.Part.MOBILE,s,2);
+   ok("rect: selecting existing mobile leaves outside type unchanged",a!=null && a.changes==0 && a.settings.mobileTypeMode==Prefs.MOBILE_TYPE_OUT_RING);
+   a=TrioZones.assign(TrioZones.Zone.BOTTOM,true,null,s,2);
+   ok("rect: clearing mobile switches it off",a!=null && a.changes==1 && !a.settings.showMobile);
   }
   TrioSettings s=TrioSettings.defaults();s.dualSim=false;
-  ok("preview's two readings can enable dual rows",TrioZones.assign(TrioZones.Zone.TOP,false,TrioZones.Part.DUAL,s,2)!=null);
+  // Two cards are two placed pieces now, not a second row of the aggregate meter, so
+  // what has to be reachable is each card's own component.
+  ok("either card's row can be placed",TrioZones.assign(TrioZones.Zone.TOP,false,TrioZones.Part.SIM_1,s,2)!=null
+     && TrioZones.assign(TrioZones.Zone.TOP,false,TrioZones.Part.SIM_2,s,2)!=null);
  }
  public static class NativeClock extends View {
   int calls,value;boolean fail=true;
@@ -354,19 +434,43 @@ if ($drawing -notmatch 'val sims = scene\.previewSlots\.count \{ it >= 0 \}' -or
 Write-Output 'PASS: preview SIM wiring source contract'
 # These pins check the Compose bridge only; recogniser timing and dialog rendering
 # still require Android. The runtime occupant used here is executed in wifi/clear.
+#
+# The long press now has two branches, because the battery ring became its own
+# edit target: pressing the arc opens the ring's settings, pressing anything else
+# opens the component's. What the original pin was protecting is unchanged and is
+# still asserted here - the branch must read the CURRENT lambda, never one captured
+# at composition, or a long press would edit whatever was on screen several edits
+# ago. So the check is that the callback is read through rememberUpdatedState and
+# that every branch calls it through .value, rather than that the block has the one
+# exact shape it had before the ring became clickable.
 $glyph = [regex]::Match($drawing, '(?s)private fun DrawingGlyph\(.*?\n\}').Value
 if (!$glyph -or $glyph -notmatch 'currentEdit = rememberUpdatedState\(onEditZone\)' -or
-    $glyph -notmatch 'onLongPress = \{ offset -> zoneAt\(offset\)\?\.let \{ currentEdit\.value\(it\) \} \}') {
+    $glyph -notmatch '(?s)onLongPress = \{ offset ->.*?currentEdit\.value\(it\)') {
     throw 'A glyph long press must use the current edit callback'
+}
+if ($glyph -match 'onLongPress = \{ offset -> zoneAt\(offset\)') {
+    throw 'A glyph long press must not skip the battery-ring branch'
 }
 if ($drawing -notmatch '(?s)onEditZone = \{ zone ->.*?TrioZones\.occupant\(.*?if \(part == null\) \{\s*picking = zone\s*\} else \{\s*editing = TrioSettingsPart\.of\(part\)') {
     throw 'Long press must edit the visible component or pick one for an empty zone'
 }
-if ($drawing -notmatch 'applyZoneAssignment\(solved\.settings, r, settings\)' -or
+# The layout is a priority list now, so an edit is `withPiece` rather than a solved
+# one-piece assignment. What the contract pins is unchanged: the tap must APPLY the new
+# layout through the single-write path, must remember what was chosen, and must compare
+# that choice against the frame actually being drawn.
+if ($drawing -notmatch 'val next = TrioZones\.withPiece\(settings, pickZone\.ordinal, part\)' -or
+    $drawing -notmatch 'applyZoneAssignment\(next, r, settings\)' -or
     $drawing -notmatch 'lastSelection = part\?\.let \{ ZoneSelection\(pickZone, it\) \}' -or
     $drawing -notmatch 'PlacementFeedback\(selection, appearance, scene, sims\)' -or
     $drawing -notmatch 'if \(actual == selection\.part\) return') {
     throw 'Selection feedback must compare the applied choice with this preview frame'
+}
+if ($drawing -notmatch 'TrioZones\.withPiece\(settings, zone\.ordinal, null\)' -and
+    $drawing -notmatch 'TrioZones\.withoutAt\(settings, zone\.ordinal, index\)') {
+    throw 'Removing a piece must go through the layout rather than clearing a switch'
+}
+if ($drawing -notmatch 'TrioZones\.moveWithin\(settings, zone\.ordinal, index, delta\)') {
+    throw 'Reordering must go through the priority list'
 }
 foreach ($name in @('charging','bolt','wifi','other')) {
     if ($drawing -notmatch "R\.string\.drawing_feedback_$name") { throw "Missing preview feedback: $name" }

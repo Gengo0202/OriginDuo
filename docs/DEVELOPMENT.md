@@ -2,6 +2,34 @@
 
 面向二次开发与问题定位。用户向的安装、设置说明见 [README](../README.md)。
 
+2026-10-18 上中下改为「多选 + 优先级排序」：每处不再是一个槽位，而是一份**有序候选列表**。
+每次只画列表中第一个"本帧能画"的组件，因此列表是回退链（Wi-Fi 断线时电量数字顶上来），
+而不是叠放。存储从打包 int 改为字符串 `ring_layout`，形如 `"3,1|2|7,8"`（`|` 分三处，`,` 分优先级，
+空段表示该处为空）。新装默认**三处全空**，用户自行添加；旧配置经 `Prefs.migrateLayout` 自动转成
+每处一项的列表，外观不变。新增 `TrioZones.withPiece`（添加到队首/提升/跨处移动）、
+`withoutAt`（移除单项，露出后一位）、`moveWithin`（上移下移）。绘制页每处展开优先级列表，
+用 ↑/↓/× 调整。`ring_slots_v2` / `ring_slots` 降级为只读迁移来源。
+
+2026-10-18 修正环形墨迹盒：`INK_*` 改为由弧推导，且**按滑杆最粗描边**（16）而非参考描边（8）
+计算端帽——两者不同（默认描边是 14），按 8 算会让真实绘制溢出自己的适配框。同时把信号点珠子
+排除在墨迹盒之外：墨迹盒决定缩放，把随画面增减的珠子算进去会让整个字形随编辑跳动。
+
+2026-10-18 删除自动布局：圆环现在**只有**三槽一种布局。`Prefs.RING_AUTO`（`-1`）已删除，
+旧值经 `migrateRingSlots` 转为 `Prefs.RING_DEFAULT_SLOTS()`（上=电量、中=Wi-Fi、下=移动信号）。
+`TrioAppearance.Ring` 不再有开关推导的仲裁路径，`TrioZones.occupant(ring)` 只读槽位，
+`TrioRenderer.drawRingLayout` 直接转 `drawFreeRing`；随之删除 `drawWifi`/`drawLevelDots`/
+`drawValue`/`drawCentreType`/`drawGapType` 五个死方法。`Part.DUAL` 与「双卡信号」开关一并移除：
+一槽只放一件，双卡改用「卡一信号点」「卡二信号点」两个独立部件。
+同时上下缺口改为等宽（见 `GAP_WIDTH_DEG`）、信号点改为穿在环上的珠子、环形墨迹盒改为由弧与珠子
+推导（`checkInkBox` 在类加载时校验字面量未漂移）。`TrioZones.assign` 对圆环改为直接写槽。
+
+2026-10-17 自由圆环收尾：新增 `ring_slots` 独立配置，三位一组存储上/中/下的部件 ID，`-1` 保留自动布局。
+2026-10-17 环内分卡信号点：新增独立组件「卡一 / 卡二」（`PART_SIM_1` / `PART_SIM_2`），各画一行四点，可放进圆环任意槽位，开关各自独立、尺寸共用一份。九件部件装不进每槽 3 bit 的旧编码，因此布局改存
+新键 `ring_slots_v2`（4 bit/槽），`ring_slots` 降级为只读迁移来源（见「卡一 / 卡二」一节）。
+首次绘制编辑通过 `TrioZones.editableRingSettings` 保存当前预览的占用关系；临时缺信号/未充电不重排槽位。
+原生图标交接由 `TrioAppearance` 的 ownership 规则统一决定。验证入口、当前构建与真机检查见
+[自由三槽验证记录](validation/ring-free-2026-10-17.md)。下文早期固定区域与部件优先级描述仅适用于自动布局。
+
 ## 项目构成
 
 | 项 | 值 |
@@ -248,7 +276,8 @@ adb shell am start -n io.github.yixing233.hyperduo/.ui.MainActivity
 
 设置走 libxposed 的 remote preferences，组名 / 文件名同为 `Prefs.NAME = "hyperduo_settings"`；
 键与默认值集中在 `Prefs.java`，上下界也在那里（第十七轮后共 41 个 `KEY_*` 常量，其中
-`KEY_SHOW_MOBILE_TYPE` 与 `KEY_OUT_TYPE_SIZE` 是只读的迁移遗留键，实际读写的 39 个键见配置项参考）。
+`KEY_SHOW_MOBILE_TYPE`、`KEY_OUT_TYPE_SIZE` 与 `KEY_RING_SLOTS` 是只读的迁移遗留键；第四十轮加
+`KEY_SHOW_SIM_1` / `KEY_SHOW_SIM_2` 与 `KEY_RING_SLOTS_V2` 三个，实际读写的 41 个键见配置项参考）。
 
 - **写侧**（设置 App）：`HyperDuoApp.onServiceBind` 拿到 `XposedService`，之后每次改动都
   `getRemotePreferences(NAME).edit().putX(...).commit()`，并把同一份写进本应用的
@@ -995,18 +1024,22 @@ live host（宿主匹配只认状态栏那一行），于是它的容器什么�
 
 **槽不是永久归模块的，必须每帧重新确认**：MIUI 会从 `clearTint()`、暗色通道、资源重建里改写它，
 并在中间整个丢掉；每一次后面都跟一次绘制，而 `GlyphDrawable.install(...)` 是幂等的，所以下一帧会
-抢回来。`install` 的返回值只用于区分「这一帧刚抢到槽」——那一帧 MIUI 自己的电池已经画进同一个
-canvas，调用方必须再 `TrioRenderer.draw(...)` 覆盖一次，否则两个电池会交替闪现。
+抢回来。`install` 返回「这一帧是否需要直接绘制」：刚接管槽、缺槽、写入失败或 legacy 路径都返回
+true；正常槽已由原生调用时返回 false，避免同帧重复绘制。
 
-**一个 build 够不着**：`res\values\bools.xml` 的 `battery_meter_use_legacy_drawable` 为 `true` 时，
+**legacy 分支使用持续兜底**：`res\values\bools.xml` 的 `battery_meter_use_legacy_drawable` 为 `true` 时，
 `MiuiBatteryMeterIconView.onDraw` 走 legacy 分支（`super.onDraw` 后直接 return），tint 槽根本不会被
-画到，这个 drawable 永不被调用 —— 那种 ROM 上字形是**静默不出现**，而不是画错。本机该 bool 为
-`false`，实测槽路径正常。
+画到。因此 hook 在每一帧原生绘制结束后直接绘制字形；缺少可写槽时采用相同路径。可选字段的查找
+包括负结果均按宿主类缓存，失败提示按类去重。该兜底已有模拟宿主连续帧覆盖，尚待对应设备验收。
 
-**master 开关关闭时要把槽交回**：`GlyphDrawable.uninstall(View)` 调 `clearTint()` 让 MIUI 按电池此刻的
-状态重建槽（放回记住的 drawable 会把早已离开的状态画回来）；若该 build 没有 `clearTint`，退化为
+**master 开关关闭时要在原生 onDraw 之前把槽交回**：`GlyphDrawable.uninstall(View)` 成对调用
+`clearTint()`、`onDarkChangeInternal()`，让 MIUI 按电池当前状态及颜色重建槽；若该 build 缺少这些入口，退化为
 把槽置 null。槽的生命周期比任何一次重绘都长，不交回就会留下一个「模块已关闭、却仍盖着 MIUI 电池」
 的 drawable。
+
+2026-10-17 的 OS4 定向修复另见 [代码修复与验证](validation/hyperos4-code-2026-10-17.md)：整条外置读数带
+统一排布、缩放和预留，岛宽作为遮挡边界；按电池所在 tint area 取色。以下真机记录属于此前重构版，
+不作为这轮修改的设备验收结论。
 
 **真机确认（1.6.13 重构版，小米 14 / houji / HyperOS 4）**：桌面、应用内、锁屏、控制中心四态字形与
 读数都正常；桌面连续 5 帧里充电绿弧的像素包围盒**逐帧完全相同**（`1052,44..1111,86`，60×43，
@@ -1138,8 +1171,95 @@ hook `StatusBarIconView.onDarkChanged(ArrayList,float,int)`（AOSP 拼法）与
 `valueInGap` 会把数字送进同一位置，两排点与数字叠画；现在 `valueInCentre = hasValue &&
 (a.centreValue || dual || (!wifi && !type))`，数字让位到它本来该去的环心。
 
-**电平来源**：`MiuiStatusBarIconViewHelper.transformResId(int, boolean, boolean)` 是静态方法，
-**签名里没有 subId 也没有 slot**，而且实测渲染走的是 Compose 的 `stacked_mobile` 堆叠图标
+### 卡一 / 卡二：两张卡各自的独立组件
+
+上一节那张电平表是**合并的**：一个部件，双卡开关决定它画一排还是两排。`PART_SIM_1` 与
+`PART_SIM_2` 是它的反面——**每张卡各自一个部件**，各画一行四点，可以放进圆环的上、中、下任意
+槽位。需求是「环内信号点要能分别控制卡一卡二」，所以两者并存而不是替换：合并表回答「同一处
+画几排」，独立行回答「这张卡自己那一行摆在哪」。
+
+**三个键，互不牵连**：
+
+| 键 | 默认 | 作用 |
+| --- | --- | --- |
+| `show_sim_1` | `false` | 卡一那一行要不要出墨 |
+| `show_sim_2` | `false` | 卡二那一行要不要出墨 |
+| `dual_sim_signal` | `false` | 合并表画一排还是两排（不变） |
+
+「开关独立、尺寸共用一条」是按需求定的取舍：两条尺寸行会让同一套点径出现两个真源，所以
+`slidersForEditor` 把 `Sim1` / `Sim2` 都映射到 `TrioZones.Part.MOBILE` 那组滑杆，点径与底纹
+浓度只有一份。
+
+**信号点沿圆环弯曲，不是直排**。内置的 `DOTS` 本来就是弧形（104.2 / 111.2 / 111.7 / 105.8，
+中间最低），所以独立行也画在一段与圆环同心的弧上：弧高由半径导出——弦半宽 `w`、半径 `R` 时
+矢高为 `R - √(R²-w²)`——而不是写死的常数，于是行越宽弯得越多。圆心决定朝向：底部槽向下弯
+（与 `DOTS` 同向），顶部与中部朝环心弯。实现是 `TrioRenderer.drawArcDotRow`，半径取
+`B_R * ARC_ROW_RADIUS_RATIO`（0.82），留出端点不压环线。
+
+**文字尺寸按槽位分两套规则**（用户定义，2026-10-17）：
+
+| 槽位 | 上限依据 |
+| --- | --- |
+| 顶部 / 底部 | **信号点设计盒** `28` / `20`（`TrioGeometry.signalDotBoxH`） |
+| 中部 | **圆环内可用空间** `2*(B_R - ringStroke)` |
+
+理由是这两槽本身就是环上开口里那排点的位置，读数做了那里的"客人"就按点的尺度；中部才是
+读数的正位，给足环内空间。`drawFreeRing` 的盒子高度也改成读同一组常量
+（`DOT_BOX_TOP/CENTRE/BOTTOM`），两处不再各写一份 `28/44/20`。
+
+宽度则一律按**弦宽**：环是圆的，某一高度可用宽度就是那条弦，越靠上下越窄。文字最宽处在墨迹
+中部、而那里弦最宽，所以危险的是上下两缘——`zoneTextRoomW(z, stroke, inkH)` 取文字上下缘中
+离环心更远的那一行的弦。宽度与高度互相依赖（墨高由字号定、字号的宽度上限又由墨高定），所以
+渲染器里做了不动点迭代（4 轮，收敛阈值 0.05），一次猜一个必然过冲。
+
+**两个真 bug 记在这里，别再犯**：
+1. `drawFreeRing` 已经把画布平移到槽心，文字基线必须按**相对量**算；早期版本又加了一次绝对
+   槽心，导致文字下移整整一个槽心距（顶部读数画到了 y 47..57，而那是 0..40 的槽）。
+2. 墨迹居中修正式的方向：`getTextBounds` 与字体度量都相对基线且上方为负，两者相减即可；
+   早期版本混用了 `(ascent-descent)` 与 `(ascent+descent)` 两种参照，把每个字符串推下约
+   35 个单位。
+3. 高度约束当初拿**字体行高** `ascent+descent` 当除数，而落笔只有墨迹——36pt 时行高 45、
+   墨迹仅 26.3，等于把每一行字按 58% 判小，底部槽只画到约 11 单位。改用 `textInkHeight`
+   后同一设置画到 26.4（满额）。
+
+**只在自由圆环里成立，这不是省事而是必要条件**。独立行是**槽位占用者**，而只有自由圆环有槽位。
+`drawsSim1()` / `drawsSim2()` 因此都带 `freeRing && hasRingPart(...)`：
+
+```java
+public boolean drawsSim1() {
+    return showSim1 && mobile && signalInRing
+            && freeRing && hasRingPart(Prefs.PART_SIM_1);
+}
+```
+
+自动布局若也答「是」，模块就会折叠 `mobile` 槽（`foldsMobile()` 含 `drawsAnySimRow()`）却一行都
+画不出来——屏幕上直接少一个信号图标。**这个条件没有放宽的余地**：`work` 里没有对应工装，
+但 `tests/RingSlotsTest` 的 ownership 段有一条断言专门盯它（"automatic layouts keep the aggregate
+meter"）。
+
+**槽位保持，开关只管出墨**。`TrioAppearance.Ring` 的 `parts` 过滤里，这两项与 Wi-Fi、电量数字
+同构：开关关掉只是 `part = PART_NONE`（本帧不画），`ring_slots` 里那个位置照旧保留。所以关掉
+卡一不会把卡二顶到它的位置，重新打开也回到原处。
+
+**单卡设备不假装满格**：一行的电平取自 `levels[slot]`，`-1`（没读到）时 `active = 0`，整行落在
+底纹色里。这与合并表的单排处理一致，也是为什么这两行**不需要**双卡才成立的条件——卡二那一行
+在单卡机器上就是一行不亮的点，而不是一行满格。
+
+**`ring_slots` 的位宽**：九件部件（`PART_NONE` … `PART_SIM_2`）装不进原来每槽 3 bit 的编码
+（上限 `PART_CLOCK = 6`），所以新键 `ring_slots_v2` 用 **4 bit/槽**，旧键 `ring_slots` 降级为
+只读迁移来源。两种打包方式**不兼容**：`1 | 3 << 3 | 2 << 6` 是一个合法的三比特布局，按四比特
+读却是另一堆槽位关系，所以 `Prefs.migrateRingSlots(int)` 手写解码旧值再重新打包，而不是复用
+`ringPart`。旧编码产出不了 `7`，所以迁移时遇到 `7` 按损坏处理（回到自动布局），不会把它冒充
+成卡一。写入侧只有 `Prefs.packRingParts(...)` 一处拼装——原先 `parts[0] | parts[1] << 3 |
+parts[2] << 6` 散落在三个文件里，位宽一改必漏一处（这一轮**确实漏了** `TrioZones.
+editableRingSettings` 里的 `* 3`，被 `ring-slots` 的"first edit preserves the preview's visible
+occupants"抓出来）。
+
+**求解器**：`TrioZones.candidates()` 把两个开关**在每个槽位都变一变**（不像 `mobiles` 只在底部
+变），因为这两行本来就能放三个槽中的任意一个；同时 `distance()` / `hidden()` 都把两个开关计入，
+否则"把卡一关掉"会被当成零成本，最小改动的裁决就会偏向它而不是挪走一个还开着的部件。
+
+**电平来源**：`MiuiStatusBarIconViewHelper.transformResId(int, boolean, boolean)` 是静态方法，**签名里没有 subId 也没有 slot**，而且实测渲染走的是 Compose 的 `stacked_mobile` 堆叠图标
 （经典 `slot=mobile` 的 `ModernStatusBarMobileView` 是 alpha 0 的死实例），所以那一层拿不到分卡
 读数。模块直接问 `android.telephony`：`SubscriptionManager.getActiveSubscriptionInfoList()` 拿
 每个 `getSubscriptionId()` / `getSimSlotIndex()`（subId↔slot 的对应关系运行时解析，**不硬编码**），
@@ -1539,6 +1659,9 @@ hook 组 10 拦 `setIsHideBattery`，把值记进 `TrioState.sIslandHideBattery`
 | `enabled` | `true` | — |
 | `show_wifi` / `show_mobile` / `show_value` / `show_bolt` | `true` | — |
 | `dual_sim_signal` | `false` | —（无 Wi-Fi 且未充电时改画上下两排点，上排卡一、下排卡二；见「双卡信号」） |
+| `show_sim_1` | `false` | —（卡一自己的那一行四点，作为独立组件放进圆环任意槽位；只在自由圆环生效，见「卡一 / 卡二」） |
+| `show_sim_2` | `false` | —（卡二自己的那一行四点，同上；与卡一互不影响） |
+| `ring_slots_v2` | `-1` | `-1` 或 `0`–`4095`（三槽 × 4 bit 的部件 ID；**取代**每槽 3 bit 的旧键 `ring_slots`，见「卡一 / 卡二」） |
 | `signal_mode` | `0`（环内） | 0 – 1（环内 / 环外）；**选项顺序即存储值**；见「信号：环内与环外堆叠」 |
 | `stacked_signal` | `false` | —（环外时自绘柱+点；关闭则把 mobile 槽交还系统） |
 | `data_sim_only` | `false` | —（环外堆叠时只画上网卡；只在 `stacked_signal` 打开时有意义） |
@@ -1546,6 +1669,7 @@ hook 组 10 拦 `setIsHideBattery`，把值记进 `TrioState.sIslandHideBattery`
 | `show_mobile_type` | `false` | 已废弃，只读用于迁移 |
 | `swap_wifi_value` | `false` | 「电量数字居中」的存储键；名字是历史遗留，**冻结不改**（只对圆环样式有效） |
 | `trio_style` | `0`（圆环） | 0 – 1（圆环 / 矩形）；**选项顺序即存储值** |
+| `ring_slots` | `-1` | 已废弃，只读用于迁移（每槽 3 bit 的旧编码，经 `Prefs.migrateRingSlots` 重打包） |
 | `role_colors` | `true` | — |
 | `color_critical_on_dark` / `color_critical_on_light` | `0xFFFF3B30` | — |
 | `color_charging_on_dark` / `color_charging_on_light` | `0xFF34C759` / `0xFF1F8F3D` | — |

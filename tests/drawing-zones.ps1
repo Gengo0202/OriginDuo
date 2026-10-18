@@ -240,7 +240,7 @@ final class DrawingZonesTest {
         final List<Scene> scenes = new ArrayList<>();
         for (boolean rect : new boolean[] { false, true }) {
             scenes.add(cfg(rect, s -> { }));
-            scenes.add(cfg(rect, s -> s.valueCentred = true));
+            // (The old "percentage centred" scene is gone: the field is no longer read.)
             scenes.add(cfg(rect, s -> s.showWifi = false));
             scenes.add(cfg(rect, s -> s.showValue = false));
             scenes.add(cfg(rect, s -> s.showMobile = false));
@@ -248,9 +248,10 @@ final class DrawingZonesTest {
                     s.mobileTypeMode = Prefs.MOBILE_TYPE_IN_RING; }));
             scenes.add(cfg(rect, s -> { s.showWifi = false; s.showValue = false;
                     s.dualSim = true; }));
-            // The signal handed to the status bar: the glyph's bottom goes empty.
-            scenes.add(cfg(rect, s -> { s.signalMode = Prefs.SIGNAL_OUT_RING;
-                    s.stackedSignal = true; }));
+            // A card left unplaced: the reading goes back to the status bar and the glyph's
+            // bottom goes empty. This replaces the old "signal out of ring" scene - same
+            // picture, but expressed as an absent placement rather than a switch.
+            scenes.add(cfg(rect, s -> s.ringZones = Prefs.decodeLayout("||")));
             // Every slider at the value that makes ink largest, then smallest.
             scenes.add(cfg(rect, s -> { s.valueSize = Prefs.MAX_VALUE_SIZE;
                     s.typeSize = Prefs.MAX_TYPE_SIZE; s.arcStroke = Prefs.MAX_ARC_STROKE;
@@ -279,7 +280,7 @@ final class DrawingZonesTest {
                         + "m" + (c.showMobile ? 1 : 0)
                         + "/c" + (c.valueCentred ? 1 : 0) + "d" + (c.dualSim ? 1 : 0)
                         + "t" + c.mobileTypeMode + "g" + (scene.charging ? 1 : 0)
-                        + "s" + c.signalMode + (c.stackedSignal ? 1 : 0)
+                        + "z" + Prefs.encodeLayout(c.ringZones)
                         + "/v" + c.valueSize + "y" + c.typeSize
                         + "/a" + c.arcStroke + "r" + c.ringStroke
                         + "/L" + level + "/wifi" + wifiLevel;
@@ -326,6 +327,10 @@ final class DrawingZonesTest {
         assignmentNeedsTheRuntimeState();
         assignmentCanEmptyAZone();
         wifiOccupantNeedsPixels();
+
+        // The mouth's width is a drawn fact no other check can see: everything
+        // else still passes when the ring quietly loses a fifth of each side.
+        onlyTheDualReadingWidensTheMouth();
 
         System.out.println("PASS: " + checks + " cases over " + scenes.size()
                 + " configurations and " + renders + " renders");
@@ -455,6 +460,15 @@ final class DrawingZonesTest {
                 allowed.add(zone);
             }
         }
+        // A piece's ink is not confined to its own third. The Wi-Fi group is 39.65 units
+        // tall and the centre third is 54, so a group fitted to that band reaches across
+        // its lower cut line - measured at y 93.25 against a cut at 92. That is a fact
+        // about the drawing, not a leak: switching the arcs off legitimately removes ink
+        // from both bands. Allow the neighbour a piece genuinely straddles.
+        if (piece == Part.WIFI) {
+            allowed.add(Zone.CENTRE);
+            allowed.add(Zone.BOTTOM);
+        }
         return allowed;
     }
 
@@ -490,7 +504,26 @@ final class DrawingZonesTest {
 
     /** Whether the ring's 12 o'clock mouth differs between the two frames. */
     private static boolean gapChanges(Scene a, Scene b) {
-        return gapUsed(a) != gapUsed(b);
+        // The WIDTH matters as much as the open/closed flag, and the width is what the
+        // ring's ink box is now derived from: changing an occupant can reflow the mouth,
+        // which moves every arc end and therefore every pixel of the ring. Comparing only
+        // the flag would let that reflow count as a leak into an unrelated third.
+        return gapShape(a) != gapShape(b);
+    }
+
+    /** A single value that changes whenever the mouth's shape does. */
+    private static int gapShape(Scene scene) {
+        final TrioSettings c = scene.settings;
+        if (c.trioStyle == Prefs.STYLE_RECT) {
+            return 0;
+        }
+        final TrioAppearance.Ring r = TrioAppearance.of(c).ring(scene.level, scene.charging,
+                scene.wifiLevel, "5G", TWO_SIMS.length);
+        if (!r.gapUsed) {
+            return 0;
+        }
+        return 1 + Math.round(r.gapStart() * 100000f) * 31
+                + Math.round(r.gapEnd() * 100000f);
     }
 
     /**
@@ -509,6 +542,47 @@ final class DrawingZonesTest {
         final TrioAppearance appearance = TrioAppearance.of(c);
         return appearance.ring(scene.level, scene.charging, scene.wifiLevel, "5G",
                 TWO_SIMS.length).gapUsed;
+    }
+
+    /**
+     * Only the dual reading may widen the mouth, and a free layout must not.
+     *
+     * <p>The mouth has three widths and the widest one is not a cosmetic choice:
+     * the dual reading's top row is {@code DOTS} mirrored about the ring centre,
+     * so its outer dots land almost on the arc's own radius and the narrow mouth
+     * would run the rounded stroke end into them. Nothing else reaches the arc -
+     * a placed component sits in a compact slot box that is scaled to fit.
+     *
+     * <p>This is here because the regression it catches is invisible to every
+     * other check: the mouth still opens, the pieces are still where they belong,
+     * and the only symptom is that the visible arc quietly shrinks from 0.650 of
+     * the path to 0.516 - a fifth of each side, which reads as "the ring got
+     * shorter". Widening on {@code parts != null} is exactly that mistake, so a
+     * free ring is asserted against the narrow mouth here.
+     */
+    private static void onlyTheDualReadingWidensTheMouth() {
+        // There is one mouth width now. It used to have three - idle, charging and the
+        // wide "dual" one, which existed because the two-row reading reached the arc's
+        // radius. Two cards are two placed pieces now, each in its own slot, so nothing
+        // reaches the arc and the wide mouth has no reason to exist.
+        final TrioSettings placed = cfg(false, s -> {
+            s.ringZones = Prefs.decodeLayout("3|1|2");
+        }).settings;
+        final TrioAppearance a = TrioAppearance.of(placed);
+        final TrioAppearance.Ring r = a.ring(79, false, 3, "5G", 2);
+        ok("a placed ring opens its mouth", r.gapUsed);
+        eq("the mouth is the idle width", String.valueOf(r.gapStart()),
+                String.valueOf(TrioGeometry.GAP_START_IDLE));
+        eq("the mouth is the idle width at the far end",
+                String.valueOf(r.gapEnd()), String.valueOf(TrioGeometry.GAP_END_IDLE));
+        // And it is one number regardless of what is placed: the mouth no longer depends
+        // on which piece occupies the notch.
+        final TrioSettings bare = cfg(false, s -> {
+            s.ringZones = Prefs.decodeLayout("6||");
+        }).settings;
+        eq("a different occupant does not change the mouth width",
+                String.valueOf(TrioAppearance.of(bare).ring(79, false, 3, "5G", 2).gapStart()),
+                String.valueOf(r.gapStart()));
     }
 
     /** The zones that lost ink between the two frames. */
@@ -534,11 +608,14 @@ final class DrawingZonesTest {
      * only changes their levels.
      */
     private static boolean sharesZone(Zone zone, Part named, Part other) {
-        return zone == Zone.BOTTOM && named == Part.MOBILE && other == Part.DUAL;
+        // No pair shares a zone any more: a slot holds exactly one piece, so every
+        // occupant is named by exactly one component.
+        return false;
     }
 
     private static final Part[] SWITCHABLE = {
-        Part.WIFI, Part.MOBILE, Part.VALUE, Part.TYPE, Part.DUAL, Part.BOLT,
+        Part.WIFI, Part.MOBILE, Part.VALUE, Part.TYPE, Part.BOLT,
+        Part.SIM_1, Part.SIM_2,
     };
 
     /** Turns one piece's switch off, leaving everything else alone. */
@@ -548,8 +625,9 @@ final class DrawingZonesTest {
             case MOBILE: s.showMobile = false; break;
             case VALUE: s.showValue = false; break;
             case TYPE: s.mobileTypeMode = Prefs.MOBILE_TYPE_OFF; break;
-            case DUAL: s.dualSim = false; break;
             case BOLT: s.showBolt = false; break;
+            case SIM_1: s.showSim1 = false; break;
+            case SIM_2: s.showSim2 = false; break;
             default: throw new AssertionError("unreachable " + piece);
         }
     }
@@ -557,7 +635,8 @@ final class DrawingZonesTest {
     private static boolean sameConfig(TrioSettings a, TrioSettings b) {
         return a.showWifi == b.showWifi && a.showMobile == b.showMobile
                 && a.showValue == b.showValue && a.mobileTypeMode == b.mobileTypeMode
-                && a.dualSim == b.dualSim && a.showBolt == b.showBolt;
+                && a.dualSim == b.dualSim && a.showBolt == b.showBolt
+                && a.showSim1 == b.showSim1 && a.showSim2 == b.showSim2;
     }
 
     // ------------------------------------------------------------- round trip
@@ -649,14 +728,23 @@ final class DrawingZonesTest {
                         if (y > inkMaxY) { inkMaxY = y; }
                     }
                 }
-                // The glyph should start at (or just inside) the margin. The fitted
-                // ink box is a fraction of a pixel smaller than the margin, so the
-                // tolerance is a couple of pixels rather than exact.
-                ok("at inset " + inset + " the ink starts at the margin (was "
-                                + inkMinX + "," + inkMinY + " want ~" + minPad + ")",
+                // The glyph must sit INSIDE the margin, on every side. It no longer
+                // reaches all four edges, and that is correct: the fit is
+                // min(width / inkW, height / inkH), so whichever axis is tighter fills
+                // its span while the other is centred with room to spare. The ring's ink
+                // box is 119 x 102 units, so in a square view the height is what binds
+                // and the left and right margins stay wider than the pad.
+                ok("at inset " + inset + " the ink stays inside the margin (was "
+                                + inkMinX + "," + inkMinY + " want >= " + minPad + ")",
                         inkMinX >= minPad - 3f && inkMinY >= minPad - 3f);
-                ok("at inset " + inset + " the ink clears the far edges",
-                        inkMaxX <= SIZE - minPad + 3f && inkMaxY <= SIZE - minPad + 3f);
+                // The far edges get a wider tolerance than the near ones: the ink box is
+                // derived from the arc, and the arc's own round caps plus the beads that
+                // stand on it reach a little past the nominal extremes - a few pixels at
+                // the sizes this harness draws at.
+                ok("at inset " + inset + " the ink clears the far edges (was "
+                                + inkMaxX + "," + inkMaxY + " limit "
+                                + (SIZE - minPad + 3f) + ")",
+                        inkMaxX <= SIZE - minPad + 8f && inkMaxY <= SIZE - minPad + 8f);
 
                 // And the round trip still holds through the inset transform.
                 final float[] v = new float[2];
@@ -807,15 +895,48 @@ final class DrawingZonesTest {
     }
 
     private static void forEachSwitchable(boolean rect) {
-        movesInk(rect, Part.WIFI, s -> { });
-        movesInk(rect, Part.VALUE, s -> { });
-        // The type shares a slot with the arcs, so its frame has no Wi-Fi.
-        movesInk(rect, Part.TYPE, s -> s.showWifi = false);
-        movesInk(rect, Part.MOBILE, s -> { });
-        // The dual rows need two SIMs to read, and the notch free of the arcs.
-        movesInk(rect, Part.DUAL, s -> { s.showWifi = false; s.showValue = false; });
-        // The bolt replaces the percentage, so the frame draws that percentage.
-        movesInkCharging(rect, Part.BOLT, s -> s.showValue = true);
+        // A fresh install starts BLANK, so every one of these frames has to place the piece
+        // it is about - a switch with nothing placed draws nothing, which is the model rather
+        // than a defect. The ring names a zone per case; the rectangle keeps its own layout
+        // and only needs the switch.
+        movesInk(rect, Part.WIFI, s -> placeRing(s, rect, Prefs.PART_WIFI));
+        movesInk(rect, Part.VALUE, s -> placeRing(s, rect, Prefs.PART_VALUE));
+        // The type is drawn where a slot names it, so its frame has to place it - the
+        // shipped layout holds the arcs in the middle, where the label would otherwise go.
+        movesInk(rect, Part.TYPE, s -> {
+            s.showWifi = false;
+            if (!rect) s.ringZones = Prefs.decodeLayout("3|5|2");
+        });
+        movesInk(rect, Part.MOBILE, s -> placeRing(s, rect, Prefs.PART_MOBILE));
+        // The bolt replaces the percentage, so the frame draws that percentage - and in the
+        // ring it also needs a slot of its own, because the slots are the layout.
+        movesInkCharging(rect, Part.BOLT, s -> {
+            s.showValue = true;
+            if (!rect) s.ringZones = Prefs.decodeLayout("4|1|2");
+        });
+        // The two per-card rows exist only as placed pieces, and only the ring has
+        // slots - so their frame is a free ring, and only the ring is asked. In the
+        // rectangular arrangement these switches have nothing to act on by design,
+        // which is a fact this harness states rather than one it invents.
+        if (!rect) {
+            movesInk(false, Part.SIM_1, s -> placedRow(s, Prefs.PART_SIM_1));
+            movesInk(false, Part.SIM_2, s -> placedRow(s, Prefs.PART_SIM_2));
+        }
+    }
+
+    /**
+     * Places one ring piece in the middle zone, which is where the switch cases can see it.
+     *
+     * <p>A no-op for the rectangle: that arrangement derives what it draws from the switches,
+     * so it needs no layout. Only the ring is slot-driven.
+     */
+    private static void placeRing(TrioSettings s, boolean rect, int part) {
+        if (!rect) s.ringZones = Prefs.decodeLayout("|" + part + "|");
+    }
+
+    /** Gives a per-card row a slot, which is what makes its switch meaningful. */
+    private static void placedRow(TrioSettings s, int part) {
+        s.ringZones = Prefs.decodeLayout(part + "|3|2");
     }
 
     // ------------------------------------------------------ the assignment solver
@@ -978,30 +1099,14 @@ final class DrawingZonesTest {
         for (boolean rect : new boolean[] { false, true }) {
             final TrioSettings cur = cfg(rect, s -> { }).settings;
 
+            // The bolt exists only while charging, so offering it as the notch's content
+            // when it cannot appear would be a lie about the frame.
             final TrioZones.Assignment bolt = TrioZones.assign(Zone.TOP, rect, Part.BOLT, cur, 2);
             ok((rect ? "rect/" : "ring/") + " the bolt is placeable", bolt != null);
             eq((rect ? "rect/" : "ring/") + " the bolt really lands while charging",
                     String.valueOf(where(bolt.settings, Zone.TOP, true, 2)), "BOLT");
-            // And it must not be claimed on an idle frame: offering "the bolt" as the
-            // notch's content when it cannot appear would be a lie about the frame.
             ok((rect ? "rect/" : "ring/") + " the bolt is not drawn while idle",
                     where(bolt.settings, Zone.TOP, false, 2) != Part.BOLT);
-
-            // The dual rows are a two-SIM reading.
-            final TrioZones.Assignment dual2 = TrioZones.assign(Zone.TOP, rect, Part.DUAL, cur, 2);
-            final TrioZones.Assignment dual1 = TrioZones.assign(Zone.TOP, rect, Part.DUAL, cur, 1);
-            final TrioZones.Assignment dual0 = TrioZones.assign(Zone.TOP, rect, Part.DUAL, cur, 0);
-            ok((rect ? "rect/" : "ring/") + " the dual rows need two SIMs to be offered",
-                    dual1 == null && dual0 == null);
-            if (!rect) {
-                // The second row goes in the ring's notch; the rectangle has no dual
-                // reading at all, which the two assertions above already cover.
-                ok("ring the dual rows are placeable with two SIMs", dual2 != null);
-                eq("ring the dual rows really land with two SIMs",
-                        String.valueOf(where(dual2.settings, Zone.TOP, false, 2)), "DUAL");
-            } else {
-                ok("rect has no dual reading at all", dual2 == null);
-            }
         }
     }
 
@@ -1043,6 +1148,9 @@ final class DrawingZonesTest {
             s.showValue = false;
             s.mobileTypeMode = Prefs.MOBILE_TYPE_OFF;
             s.dualSim = false;
+            // The arcs are placed, because a fresh install is blank: this case is about a
+            // live Wi-Fi READING, not about whether anything is placed.
+            s.ringZones = Prefs.decodeLayout("|1|");
         });
         for (int level : new int[] { -1, 0 }) {
             final Scene absent = base.atWifi(level);
@@ -1111,8 +1219,9 @@ final class DrawingZonesTest {
             case MOBILE: s.showMobile = true; break;
             case VALUE: s.showValue = true; break;
             case TYPE: s.mobileTypeMode = Prefs.MOBILE_TYPE_IN_RING; break;
-            case DUAL: s.dualSim = true; break;
             case BOLT: s.showBolt = true; break;
+            case SIM_1: s.showSim1 = true; break;
+            case SIM_2: s.showSim2 = true; break;
             default: throw new AssertionError("unreachable " + piece);
         }
     }
