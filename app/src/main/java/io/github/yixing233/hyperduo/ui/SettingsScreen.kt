@@ -244,12 +244,34 @@ private sealed interface Route : NavKey {
  */
 private val SectionTransition: NavTransition = navGraphicsTransition(
     opaqueDepth = 1f,
-    // 220ms rather than the preset's 500ms: a section swap is a glance sideways,
-    // not a journey, and the default was tuned for a full page push.
-    motion = NavMotion(programmatic = NavSettleSpec.Tween(220, FastOutSlowInEasing)),
+    motion = NavMotion(programmatic = NavSettleSpec.Tween(280, FastOutSlowInEasing)),
 ) { scope ->
+    // Directional slide, sampled from HyperChanger's tab navigation. Three terms move
+    // together and each does a different job:
+    //
+    //   translation - the outgoing page leaves faster than the incoming one arrives
+    //                 (it/3 against it/7), so the two never overlap in the middle and the
+    //                 eye reads "away" and "toward" rather than a cross-fade;
+    //   alpha       - the incoming layer ramps up over the outgoing one, which is what
+    //                 lets the slide be small without the change looking abrupt;
+    //   scale       - the outgoing page shrinks (0.975) while the incoming grows from
+    //                 0.985, which is where the depth comes from - a flat slide reads as
+    //                 a carousel, a scaled one reads as pages on different planes.
+    //
+    // `direction` is taken from the tab order rather than from push/pop, so switching
+    // from Drawing to About always slides the same way whichever route got there.
     val d = scope.relativeDepth
-    alpha = if (d <= 0f) (1f + d).coerceIn(0f, 1f) else 1f
+    val direction = if (d <= 0f) 1f else -1f
+    // Entering layers have d == -1 at the start and 0 at rest; covered ones go the
+    // other way. Splitting on the sign keeps both halves monotonic, which avoids the
+    // "page tears in half" artefact the old comment warned about: that came from
+    // moving BOTH layers the same way, not from moving them at all.
+    val enter = (1f + d).coerceIn(0f, 1f)
+    translationX = direction * (1f - enter) * (scope.layoutSize.width / 7f)
+    alpha = if (d <= 0f) enter else 1f
+    val scale = 0.985f + 0.015f * enter
+    scaleX = if (d <= 0f) scale else 1f
+    scaleY = if (d <= 0f) scale else 1f
 }
 
 /**
