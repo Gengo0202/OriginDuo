@@ -72,6 +72,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
+import com.kyant.backdrop.drawPlainBackdrop
+import com.kyant.backdrop.effects.runtimeShaderEffect
+import androidx.compose.ui.layout.layout
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -420,38 +423,67 @@ fun SettingsScreen(repository: SettingsRepository) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = stringResource(R.string.app_name),
-                // The blur is drawn by the modifier, which the bar applies before
-                // its own background, so the background has to get out of the
-                // way for the effect to be visible at all.
-                modifier = if (barBlurSupported) {
-                    Modifier.textureBlur(
-                        backdrop = barBackdrop,
-                        // The bar is flush with the screen edges, so there is no
-                        // corner for a rounded shape to round off.
-                        shape = RectangleShape,
-                        blurRadius = BarBlurRadius,
+            Box {
+                // Two layers, following HyperChanger's toolbar. The plain pass blurs the
+                // strip evenly; the progressive pass below adds the same blur again with an
+                // alpha mask that fades it out toward the bottom of the bar, so the content
+                // scrolls under a blur that thins as it recedes instead of ending on a hard
+                // edge. Drawing the second layer is what makes the bar read as glass over a
+                // page rather than as a strip painted on top of one.
+                if (barBlurSupported) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .drawPlainBackdrop(
+                                backdrop = navBackdrop,
+                                shape = { RectangleShape },
+                                effects = { blur(6.dp.toPx()) },
+                                onDrawSurface = { drawRect(surfaceColor.copy(alpha = 0.55f)) },
+                            ),
                     )
-                } else {
-                    Modifier
-                },
-                color = if (barBlurSupported) Color.Transparent else surfaceColor,
-                largeTitle = stringResource(R.string.app_name),
-                scrollBehavior = scrollBehavior,
-                actions = {
-                    IconButton(
-                        // The dialog is the only place a kill can be started, so
-                        // a stale failure from last time must not greet the user.
-                        onClick = {
-                            restarter.reset()
-                            restarting = true
-                        },
-                    ) {
-                        Icon(imageVector = MiuixIcons.Refresh, contentDescription = restartTitle)
-                    }
-                },
-            )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            // The blur is drawn taller than the bar and clipped back to it by
+                            // the parent, because a mask that fades to nothing needs room to
+                            // fade INTO - without the expansion the gradient is cut off at the
+                            // bar's own bottom edge and never reaches zero.
+                            .expandDrawHeight(1.184625f)
+                            .drawPlainBackdrop(
+                                backdrop = navBackdrop,
+                                shape = { RectangleShape },
+                                effects = {
+                                    blur(16.dp.toPx())
+                                    runtimeShaderEffect(
+                                        key = "progressive-blur-alpha-mask",
+                                        shaderString = PROGRESSIVE_BLUR_ALPHA_MASK_SHADER,
+                                        uniformShaderName = "content",
+                                    ) { setFloatUniform("size", size.width, size.height) }
+                                },
+                            ),
+                    )
+                }
+                TopAppBar(
+                    title = stringResource(R.string.app_name),
+                    // The bar's own background gets out of the way: the two layers above are
+                    // the background, and an opaque one would hide both.
+                    color = if (barBlurSupported) Color.Transparent else surfaceColor,
+                    largeTitle = stringResource(R.string.app_name),
+                    scrollBehavior = scrollBehavior,
+                    actions = {
+                        IconButton(
+                            // The dialog is the only place a kill can be started, so a
+                            // stale failure from last time must not greet the user.
+                            onClick = {
+                                restarter.reset()
+                                restarting = true
+                            },
+                        ) {
+                            Icon(imageVector = MiuixIcons.Refresh, contentDescription = restartTitle)
+                        }
+                    },
+                )
+            }
         },
         bottomBar = {
             val darkTheme = isSystemInDarkTheme()
@@ -663,6 +695,39 @@ fun SettingsScreen(repository: SettingsRepository) {
             },
         )
     }
+}
+
+/**
+ * Vertical alpha mask for the top bar's progressive blur: opaque at the bar's top,
+ * fading to nothing by half its (expanded) height.
+ *
+ * <p>`smoothstep(size.y, size.y * 0.5, coord.y)` runs from 1 at `coord.y == size.y` to 0
+ * at half that, which is the direction that matters - the mask has to be DENSE where the
+ * bar meets the status bar and empty where the page continues, or the bar would end on a
+ * hard edge and read as a painted strip.
+ */
+private const val PROGRESSIVE_BLUR_ALPHA_MASK_SHADER = """
+uniform shader content;
+uniform float2 size;
+half4 main(float2 coord) {
+    float blurAlpha = smoothstep(size.y, size.y * 0.5, coord.y);
+    return content.eval(coord) * blurAlpha;
+}
+"""
+
+/**
+ * Measures a child TALLER than the space it is given, then reports the original height.
+ *
+ * <p>For the progressive blur: the mask fades over the expanded height, so there has to BE
+ * expanded height for it to fade across. Reporting the original height keeps the layout
+ * unchanged - only the drawing surface grew.
+ */
+private fun Modifier.expandDrawHeight(factor: Float) = layout { measurable, constraints ->
+    val expandedHeight = (constraints.maxHeight * factor).toInt()
+    val placeable = measurable.measure(
+        constraints.copy(minHeight = expandedHeight, maxHeight = expandedHeight),
+    )
+    layout(constraints.maxWidth, constraints.maxHeight) { placeable.placeRelative(0, 0) }
 }
 
 /**
