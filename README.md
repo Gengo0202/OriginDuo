@@ -368,6 +368,9 @@ adb logcat -v time -s LSPosedFramework:* | Select-String HyperDuo
 构建方式、模块架构、注入点、几何与配色实现、Hook 清单等技术细节都在
 [**docs/DEVELOPMENT.md**](docs/DEVELOPMENT.md)。
 
+其余文档（开关复盘、各轮验证记录、历次发版的 changelog）见
+[**docs/README.md**](docs/README.md) —— 那是文档目录的索引。
+
 ## 致谢
 
 设置界面基于 Compose + [Miuix](https://github.com/miuix-kotlin-multiplatform/miuix) 实现 MIUI 风格。

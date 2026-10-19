@@ -29,6 +29,24 @@ import java.util.Locale
 private const val REPO = "yixing233/HyperDuo"
 private const val API_LATEST = "https://api.github.com/repos/$REPO/releases/latest"
 
+/**
+ * A public GitHub mirror, tried before the origin.
+ *
+ * <p>Not because GitHub was rate limiting: the failure that prompted this was a phone whose
+ * network resolved `api.github.com` to `198.18.0.9` - a reserved benchmarking range that
+ * proxies use as a virtual gateway - so TLS never completed. Changing endpoint within
+ * `github.com` cannot help there, because every path to GitHub goes through the same
+ * interception; a different <em>host</em> can.
+ *
+ * <p>A bare GitHub URL is appended verbatim, and the mirror fetches it server-side. Tried
+ * first, the origin second: the mirror is a third party that can be slow or gone, while the
+ * origin cannot be (slower, but it is the source of truth).
+ */
+private const val MIRROR = "https://gh-proxy.com/"
+
+/** [url] routed through [MIRROR]; the origin needs no rewriting. */
+private fun mirrored(url: String): String = MIRROR + url
+
 /** Opened when the user wants the notes in full, or when a download is refused. */
 internal const val RELEASES_PAGE = "https://github.com/$REPO/releases"
 
@@ -83,10 +101,23 @@ internal data class UpdateInfo(
  * timeout. The asset API endpoint serves the identical bytes through
  * `api.github.com`, which answered 10 out of 10 attempts, so it is tried first
  * and the browser URL is kept only as a fallback.
+ *
+ * <p>Both are mirrored and both origins are kept, because the failure this list now also
+ * answers is a network that cannot reach GitHub at any address (see [MIRROR]). Mirror and
+ * origin are interleaved rather than grouped: the pair that differs in <em>which host</em> it
+ * talks to should be tried before the pair that differs only in path.
  */
 private fun UpdateInfo.downloadUrls(): List<String> = buildList {
-    if (assetId > 0L) add("https://api.github.com/repos/$REPO/releases/assets/$assetId")
-    if (apkUrl.isNotBlank()) add(apkUrl)
+    val asset = if (assetId > 0L) {
+        "https://api.github.com/repos/$REPO/releases/assets/$assetId"
+    } else {
+        null
+    }
+    val browser = apkUrl.takeIf { it.isNotBlank() }
+    if (asset != null) add(mirrored(asset))
+    if (browser != null) add(mirrored(browser))
+    if (asset != null) add(asset)
+    if (browser != null) add(browser)
 }.distinct()
 
 /** Everything the update card can be showing. */
@@ -306,9 +337,28 @@ private fun installedVersion(context: Context): String = runCatching {
     context.packageManager.getPackageInfo(context.packageName, 0).versionName
 }.getOrNull()?.takeIf { it.isNotBlank() } ?: "0"
 
-/** Queries the GitHub API for the newest release, or null when none is published. */
+/**
+ * Queries the GitHub API for the newest release, or null when none is published.
+ *
+ * <p>Tries the mirror first, then the origin - see [MIRROR] for why a different host is the
+ * only thing that helps when a network intercepts GitHub. The two attempts differ only in
+ * which URL they open, so a payload from either parses identically.
+ */
 private fun fetchLatest(): UpdateInfo? {
-    val connection = (URL(API_LATEST).openConnection() as HttpURLConnection).apply {
+    var last: Throwable? = null
+    for (url in listOf(mirrored(API_LATEST), API_LATEST)) {
+        try {
+            return fetchLatestFrom(url)
+        } catch (failure: Throwable) {
+            last = failure
+        }
+    }
+    throw last ?: IllegalStateException("no endpoint tried")
+}
+
+/** One attempt at [url]; null still means "no release published". */
+private fun fetchLatestFrom(url: String): UpdateInfo? {
+    val connection = (URL(url).openConnection() as HttpURLConnection).apply {
         requestMethod = "GET"
         connectTimeout = CONNECT_TIMEOUT_MS
         readTimeout = READ_TIMEOUT_MS

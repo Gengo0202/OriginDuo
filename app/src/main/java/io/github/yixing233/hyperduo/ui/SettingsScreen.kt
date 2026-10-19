@@ -30,6 +30,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
@@ -60,6 +61,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,6 +98,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.graphics.Brush
@@ -289,6 +293,13 @@ fun SettingsScreen(repository: SettingsRepository) {
     val context = LocalContext.current
     val updater = remember(context) { UpdateController(context.applicationContext) }
     DisposableEffect(updater) { onDispose { updater.dispose() } }
+
+    // Same reason as the updater itself: the "release notes" dialog is dismissed by the user,
+    // and scrolling the card out of view disposes the item that would otherwise hold that
+    // answer. Kept for the process lifetime, keyed by version - a newer release has a
+    // different version string, so its notes open again, which is the point: it is different
+    // news.
+    var dismissedUpdateVersion by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Same reasoning as the updater: the dialog can be dismissed mid-kill, and a
     // root prompt that outlives the dialog still has to land somewhere.
@@ -500,6 +511,21 @@ fun SettingsScreen(repository: SettingsRepository) {
                 onConfirm = {
                     update { it.resetRoleColors() }
                     resettingColors = false
+                },
+            )
+
+            // Hosted here, with the other dialogs, rather than inside UpdateCard: the card is
+            // a LazyColumn item, and a dialog owned by an item disappears when the item is
+            // recycled. It reads the state the check already produced, so it opens by itself
+            // the moment a release turns up.
+            val available = updater.state as? UpdateState.Available
+            UpdateNotesDialog(
+                info = available?.info?.takeIf { it.version != dismissedUpdateVersion },
+                current = available?.current.orEmpty(),
+                onDismiss = { dismissedUpdateVersion = available?.info?.version },
+                onDownload = { info ->
+                    dismissedUpdateVersion = info.version
+                    updater.download(info)
                 },
             )
         }
@@ -1288,6 +1314,81 @@ private fun LazyListScope.aboutTab(
 }
 
 /**
+ * The release notes in full, after a check turns one up.
+ *
+ * <p>The card can only show one elided line, and a release's notes are the only thing a user
+ * can weigh before committing to an install - so they get a dialog of their own rather than a
+ * two-line excerpt. Opened by the check itself, not by a second tap: the answer to "is there a
+ * new version" is the notes, and asking the user to go find them is the interruption, not the
+ * dialog.
+ *
+ * @param info the release that was found, or null when there is nothing to show. Passing null
+ *   rather than a separate `show` flag keeps the two from disagreeing.
+ */
+@Composable
+private fun UpdateNotesDialog(
+    info: UpdateInfo?,
+    current: String,
+    onDismiss: () -> Unit,
+    onDownload: (UpdateInfo) -> Unit,
+) {
+    if (info == null) {
+        return
+    }
+    OverlayDialog(
+        show = true,
+        title = stringResource(R.string.update_dialog_title, info.version),
+        summary = stringResource(
+            R.string.update_dialog_summary,
+            current,
+            formatSize(info.apkSize),
+        ),
+        onDismissRequest = onDismiss,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = stringResource(R.string.update_dialog_notes_title),
+                style = MiuixTheme.textStyles.subtitle,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+            // Scrollable and height-capped: release notes run to paragraphs, and an unbounded
+            // body would push the buttons off the bottom of the dialog.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 260.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                val notes = info.notes.trim()
+                Text(
+                    text = notes.ifEmpty { stringResource(R.string.update_dialog_no_notes) },
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TextButton(
+                    text = stringResource(R.string.update_dialog_later),
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    onClick = { onDownload(info) },
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(text = stringResource(R.string.update_download))
+                }
+            }
+        }
+    }
+}
+
+/**
  * The in-app updater.
  *
  * <p>The card is a short stack of Miuix preference rows, one per action the
@@ -1328,7 +1429,7 @@ private fun UpdateCard(updater: UpdateController, showMessage: (String) -> Unit)
         is UpdateState.Failed -> listOfNotNull(
             stringResource(R.string.update_failed),
             state.detail?.takeIf { it.isNotBlank() },
-        ).joinToString(" 路 ")
+        ).joinToString(" · ")
     }
 
     // A download reports itself under the row it belongs to, where the bar spans
@@ -1736,7 +1837,7 @@ private fun RestartDialog(
                     text = listOfNotNull(
                         stringResource(R.string.restart_failed),
                         state.detail?.takeIf { it.isNotBlank() },
-                    ).joinToString(" 路 "),
+                    ).joinToString(" · "),
                     style = MiuixTheme.textStyles.footnote1,
                     color = MiuixTheme.colorScheme.error,
                     textAlign = TextAlign.Center,
@@ -2029,7 +2130,7 @@ private fun readModuleInfo(context: Context): ModuleInfo {
     val systemVersion = listOf(Build.VERSION.INCREMENTAL, Build.DISPLAY)
         .filter { !it.isNullOrBlank() }
         .distinct()
-        .joinToString(" 路 ")
+        .joinToString(" · ")
     return ModuleInfo(
         moduleVersion = "$versionName ($versionCode)",
         systemVersion = systemVersion.ifBlank { "?" },

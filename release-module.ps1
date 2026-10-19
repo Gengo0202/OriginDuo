@@ -19,7 +19,7 @@
 #
 # Usage:
 #   .\release-module.ps1 -Version 1.4 -VersionCode 10400 `
-#       -Apk .\dist\HyperDuo-1.4.apk -NotesFile .\release-notes-1.4.md
+#       -Apk .\dist\HyperDuo-1.4.apk -NotesFile .\docs\release-notes\release-notes-1.4.md
 #   .\release-module.ps1 ... -DryRun     # validate badging only, create nothing
 #   .\release-module.ps1 ... -SkipReadme # do not touch the module repo README
 #

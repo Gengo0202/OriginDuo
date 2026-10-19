@@ -1,4 +1,4 @@
-﻿# 本地发布：构建 release APK 并直接上传到 GitHub Release。
+# 本地发布：构建 release APK 并直接上传到 GitHub Release。
 #
 # 用法：
 #   .\release.ps1 -Version 1.1
@@ -10,9 +10,9 @@
 #
 # ★ 这个脚本只推 tag，**不推分支**。所以完整的发布是两步：
 #     git push origin main
-#     .\release.ps1 -Version 1.1 -NotesFile .\release-notes-1.1.md
+#     .\release.ps1 -Version 1.1 -NotesFile .\docs\release-notes\release-notes-1.1.md
 # 只跑脚本的话，GitHub 上能下到包、能看到 tag，但默认分支上还没有对应的提交
-# —— v1.4 和 v1.6.12 都踩过这个坑（见 docs\DEVELOPMENT.md 与 1003-todo.md §31.2）。
+# —— v1.4 和 v1.6.12 都踩过这个坑（见 docs\DEVELOPMENT.md 与 docs\1003-todo.md §31.2）。
 #
 # 发布成功后会自动清理旧 release：Releases 页面只留刚发布的这一版。
 # 只删 release 记录，**tag 一律保留**（历史源码快照仍可用 tag 定位）。

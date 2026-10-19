@@ -237,6 +237,11 @@
     <string name="update_checking">Checking…</string>
     <string name="update_uptodate">Up to date — %1$s</string>
     <string name="update_available">Version %1$s is available</string>
+    <string name="update_dialog_title">Version %1$s is available</string>
+    <string name="update_dialog_summary">Installed %1$s · %2$s</string>
+    <string name="update_dialog_notes_title">What changed</string>
+    <string name="update_dialog_no_notes">This release has no notes.</string>
+    <string name="update_dialog_later">Not now</string>
     <string name="update_available_summary">Installed %1$s · %2$s</string>
     <string name="update_download">Download</string>
     <string name="update_downloading">Downloading %1$d%%</string>

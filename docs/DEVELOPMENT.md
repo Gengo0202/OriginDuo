@@ -163,13 +163,13 @@ release 开启 `isMinifyEnabled` + `isShrinkResources`，但 `proguard-rules.pro
 把同一个 APK、同一份说明发到 LSPosed 模块仓（模块页的下载链接走这里），两个仓库永远同版本：
 
 ```powershell
-.\release.ps1 -Version 1.0 -NotesFile .\release-notes-1.0.md
+.\release.ps1 -Version 1.0 -NotesFile .\docs\release-notes\release-notes-1.0.md
 .\release.ps1 -Version 1.0 -DryRun             # 只构建，不打 tag、不建 Release、不发模块仓
 .\release.ps1 -Version 1.0 -SkipModuleRepo     # 只发主仓，跳过模块仓
 
 # 模块仓那步失败（主仓已发出）时单独补齐；或手动重发/覆盖模块仓的某个版本
 .\release-module.ps1 -Version 1.0 -VersionCode 10000 `
-    -Apk .\dist\HyperDuo-1.0.apk -NotesFile .\release-notes-1.0.md
+    -Apk .\dist\HyperDuo-1.0.apk -NotesFile .\docs\release-notes\release-notes-1.0.md
 ```
 
 `release.ps1` 按顺序做六件事，任何一步失败都立刻停下：
@@ -203,10 +203,11 @@ release 开启 `isMinifyEnabled` + `isShrinkResources`，但 `proguard-rules.pro
 - 需要留旧版时加 `-KeepOldReleases`（两个脚本都有这个开关）。
 - **后果：旧版本的 changelog 也随之消失**。Release body 不是版本库里的文件，删了 Release
   就没有第二份副本。所以 `-NotesFile` 指向的笔记**是入库的**：`release-notes-<version>.md`
-  放在仓库根，和脚本并排。现存 `release-notes-1.1.md` / `release-notes-1.3.md` /
-  `release-notes-1.4.md` 三份（1.1 与 1.3 的 Release 已被清理删除，正文只剩这里这一份；
-  它们原先只在被忽略的 `work\notes-*.md` 里）。**发新版时把笔记写成
-  `release-notes-<version>.md` 再入库**，否则「只留最新版」等于把历史更新说明一起丢掉 ——
+  放在 `docs\release-notes\`，与文档收在一起（根目录只留两份 README）。现存
+  `release-notes-1.1.md` / `release-notes-1.3.md` / `release-notes-1.4.md` 等 17 份
+  （1.1 与 1.3 的 Release 已被清理删除，正文只剩这里这一份；它们原先只在被忽略的
+  `work\notes-*.md` 里）。**发新版时把笔记写成 `release-notes-<version>.md` 放进
+  `docs\release-notes\` 再入库**，否则「只留最新版」等于把历史更新说明一起丢掉 ——
   而 tag 只记录源码，不记录说明。
 
 **容易误判的一点**：删掉 Release 之后，`/releases/tag/v1.3` 这类地址**仍然返回 HTTP 200**
