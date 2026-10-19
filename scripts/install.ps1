@@ -1,9 +1,9 @@
-﻿# HyperDuo - install the signed APK on the connected device and watch the log.
+# HyperDuo - install the signed APK on the connected device and watch the log.
 #
 # Usage:
-#   & C:\code\HyperDuo\install.ps1              # install + enable in LSPosed + tail log
-#   & C:\code\HyperDuo\install.ps1 -InstallOnly
-#   & C:\code\HyperDuo\install.ps1 -LogOnly
+#   & C:\code\HyperDuo\scripts\install.ps1              # install + enable in LSPosed + tail log
+#   & C:\code\HyperDuo\scripts\install.ps1 -InstallOnly
+#   & C:\code\HyperDuo\scripts\install.ps1 -LogOnly
 #
 # Notes:
 #   * The device must be connected with USB debugging authorised.

@@ -17,11 +17,11 @@
 #   Release body  = the changelog
 #   asset         = the apk
 #
-# Usage:
-#   .\release-module.ps1 -Version 1.4 -VersionCode 10400 `
+# Usage (from the repository root; this script lives in scripts\):
+#   .\scripts\release-module.ps1 -Version 1.4 -VersionCode 10400 `
 #       -Apk .\dist\HyperDuo-1.4.apk -NotesFile .\docs\release-notes\release-notes-1.4.md
-#   .\release-module.ps1 ... -DryRun     # validate badging only, create nothing
-#   .\release-module.ps1 ... -SkipReadme # do not touch the module repo README
+#   .\scripts\release-module.ps1 ... -DryRun     # validate badging only, create nothing
+#   .\scripts\release-module.ps1 ... -SkipReadme # do not touch the module repo README
 #
 # After a successful publish this deletes every other release in the module repo,
 # so the repo always shows exactly one version -- the same "only the newest

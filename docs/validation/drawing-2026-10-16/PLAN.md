@@ -152,7 +152,7 @@ if ($LASTEXITCODE) { throw 'drawing-zones failed' }
     Tee-Object (Join-Path $evidence 'issue-regressions.log')
 if ($LASTEXITCODE) { throw 'issue-regressions failed' }
 
-. .\env.ps1
+. .\scripts\env.ps1
 gradle :app:assembleDebug :app:assembleRelease --offline --no-daemon --console=plain 2>&1 |
     Tee-Object (Join-Path $evidence 'build.log')
 if ($LASTEXITCODE) { throw 'APK build failed' }

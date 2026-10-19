@@ -34,7 +34,7 @@
 顺序运行 `tests/*.ps1`，再执行：
 
 ```powershell
-. .\env.ps1
+. .\scripts\env.ps1
 gradle :app:assembleDebug :app:assembleRelease --offline --no-daemon --console=plain
 ```
 

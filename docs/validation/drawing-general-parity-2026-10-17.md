@@ -47,7 +47,7 @@
 .\tests\capsule-zones.ps1
 .\tests\drawing-zones.ps1
 .\tests\issue-regressions.ps1
-. .\env.ps1
+. .\scripts\env.ps1
 gradle :app:assembleDebug :app:assembleRelease --offline --no-daemon --console=plain
 ```
 

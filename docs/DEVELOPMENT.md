@@ -2726,6 +2726,8 @@ SystemUI 进程会跑到它。它把真实的 `app\src\main\java\io\github\yixin
 - **R8 每次构建字节都不同，但 1.4 这次只差一处**：用 `release.ps1 -DryRun` 重建一份后与已上传的那份对比，**85 个 zip 条目、CRC、时间戳全部相同、体积相同**，却有 339 字节不同、哈希不同。逐字节定位（`.tmp\apkcmp.py`）后锁定唯一差异在 `META-INF/version-control-info.textproto` —— AGP 把构建时的 git 版本写进了 APK：旧的写 `revision: "3743845…"`（改名前的提交），重建的写 `revision: "a98053f…"`（本次发布提交）。另外 4 段差异全在签名块与中央目录（签名覆盖了那个文件，所以连签名一起变）。**结论：重建的那份才是与 tag 一致的正确产物**，已用它覆盖模块仓 asset（`release-module.ps1 -Force` 重传；主仓是首发，无需 `-Force`）。两处 asset 与本地 `dist\HyperDuo-1.4.apk` 现在**三者同一哈希** `0B95AF03…BE527`。
 - **PS 5.1 读 BOM-less UTF-8 脚本会按 ANSI（本机 `gb2312`）解码，直接 `& .\release.ps1` 必然解析失败**（报 `Missing expression after ','`、`The string is missing the terminator` 等一串错，且错误里中文全是乱码 —— 这是判据）。`release.ps1` / `install.ps1` / `.tmp\modrepo\release-module.ps1` 都是 BOM-less UTF-8 且含中文，所以在这台机器的 Windows PowerShell 5.1 下只有两条路：装 pwsh 7，或 `[scriptblock]::Create([System.IO.File]::ReadAllText($p,[Text.Encoding]::UTF8))` 后调用（脚本内硬编码 `$Root`、不用 `$PSScriptRoot`/`$script:`，所以这样调用安全）。本次用后者，两个脚本都以 `exit 0` 跑完。**要长期可用，应给这三个脚本加 UTF-8 BOM**（未做，属本次范围外）。
   > **后续（1.7.0 发布时）：** 机器已装 PowerShell 7.6.7，这条路不再需要——pwsh 7 默认按 UTF-8 读脚本，BOM 可有可无。脚本仍保持 BOM-less，因为加 BOM 会让 git 把整个文件显示为首行变更。发版请用 `pwsh` 执行，不要用 `powershell.exe`（5.1）。
+  >
+  > **路径也已变：** 上面那条记录写的是当初的位置（`.\release.ps1`，脚本当时在仓库根）。五个脚本后来移入 `scripts\`，所以现在是 `.\scripts\release.ps1`、`.\scripts\env.ps1`，`build.ps1` 归入 `scripts\legacy\`。本文其余处已按新路径书写，只有这类历史记录保留原样。
 - **LSPosed 模块仓首发 release**：模块仓 `Xposed-Modules-Repo/io.github.yixing233.hyperduo` 按仓库规格发 tag `10400-1.4`、title `1.4`、body 取 `.tmp\modrepo\notes-1.4.md`（首行是「安装前必读」的包名更换说明），asset `HyperDuo-1.4.apk` 3067544 B；`README.md` 同步更新到 1.4（`PUT contents` 带旧 sha → 新 sha `fab6b22eb153025b808a3ead27db6a4a5abae4fc`、commit `cb10135`），`SUMMARY` 未动。驱动脚本 `.tmp\modrepo\release-module.ps1`（只走 Releases API，模块仓不克隆到本地；`maintain` 角色不能改仓库设置但**能发 release**，已实测 `POST /releases` → 201）。
 - **模块仓「已上线但未收录」的唯一门禁 = 仓库 description 为空**：抽样 `Xposed-Modules-Repo` 24 个仓库逐个探 `https://modules.lsposed.org/module/<pkg>/`，结果是「描述空 + 404」4 个（含本项目）、「描述空 + 已收录」**0** 个、「描述非空 + 已收录」20 个。所以 release 发了、README 有了也仍 404（`io.github.yixing233.hyperduo` → 404，对照 `io.github.kvmy666.duostatusbar` → 200）。而 **description 目前无法由 API 设置**：`PATCH /repos/Xposed-Modules-Repo/…` → 404 Not Found；GraphQL `updateRepository` → `FORBIDDEN: yixing233 does not have the correct permissions to execute 'UpdateRepository'`（尽管 GitHub 角色表上 maintain 本应有 `Edit a repository's description`，且同 token 的 `PUT …/topics` → 200，证明 token 与路由都正常）。⇒ **只能在 GitHub 网页的 About 面板手填**，文案已备：description `HyperDuo · 仿 iPhone Duo 三合一状态栏图标`（`.tmp\modrepo\desc.txt`）、homepage `https://github.com/yixing233/HyperDuo`（`.tmp\modrepo\homepage.txt`）。**（这一项后来已由用户手填完成并成功收录，见本节末尾。）**
 
@@ -2749,7 +2751,7 @@ SystemUI 进程会跑到它。它把真实的 `app\src\main\java\io\github\yixin
   它原先落在 `.gitignore` 的 `/.tmp/` 里，而 `docs/DEVELOPMENT.md` 却在引用它 ——「每次发布
   都这样」的策略放在被忽略的目录里等于不可复现。现在它与 `release.ps1` 并排入库。**该文件
   刻意保持 ASCII-only 且无 BOM**（`nonASCII=0`、7702 B），所以 PS 5.1 按 ANSI 读也无害；
-  文件头注释已写明这条约束，**不要往里面加中文**。验证：`& .\release-module.ps1 -Version 1.4
+  文件头注释已写明这条约束，**不要往里面加中文**。验证：`& .\scripts\release-module.ps1 -Version 1.4
   -VersionCode 10400 -Apk .\dist\HyperDuo-1.4.apk -DryRun` → 版本三者全对、`exit 0`。
 - **包名更换（`a98053f`）曾把两个脚本的 UTF-8 BOM 弄丢，造成真实回归**：`release.ps1` 在
   `bcb7f9b`/`0cc4d5b`/`03b36b5` 三个历史版本里都是 `BOM=True (239,187,191)`，到 `a98053f`
