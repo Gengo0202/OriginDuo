@@ -25,7 +25,7 @@
 
 ```powershell
 git push origin main
-.\release.ps1 -Version 1.7 -NotesFile .\docs\release-notes\release-notes-1.7.md
+.\scripts\release.ps1 -Version 1.7 -NotesFile .\docs\release-notes\release-notes-1.7.md
 ```
 
 ## 验证与素材
@@ -40,6 +40,29 @@ git push origin main
 
 ## 相关但不在这里
 
+- `scripts/` — 构建、安装与发版脚本，说明见下。
 - `tests/` — 离线验证脚本（真值表、渲染探针），每个都能 `exit 0` 即为通过。
 - `work/` — 不入库的工作区，存放一次性的工装与中间产物。
 - `.ref/` — 参考实现与反编译源码，不入库。
+
+## scripts/
+
+| 脚本 | 用途 |
+| --- | --- |
+| `env.ps1` | 设置 `JAVA_HOME` / `ANDROID_HOME` / `GRADLE_HOME` 并加一个 `gradle` 函数。**先 source 它**：`. .\scripts\env.ps1` |
+| `install.ps1` | 装 debug APK 到设备、打开设置页、跟进日志。`-InstallOnly` / `-LogOnly` 可拆开用。 |
+| `release.ps1` | 发版主入口：构建 release APK、推 tag、建 GitHub Release，末尾自动调 `release-module.ps1`。 |
+| `release-module.ps1` | 把同一 APK 发到 LSPosed 模块仓。一般由 `release.ps1` 调用，主仓已发布时可单独补跑。 |
+| `legacy/build.ps1` | 早期手写的 javac/d8/aapt2 离线管线，**已弃用**——它编译不了 Kotlin/Compose 与 `res/`，保留仅供查阅。 |
+
+脚本内的仓库根路径是硬编码的 `C:\code\HyperDuo`，换目录需要一并改。
+
+### 发版
+
+```powershell
+. .\scripts\env.ps1
+git push origin main
+.\scripts\release.ps1 -Version 1.7.0 -NotesFile .\docs\release-notes\release-notes-1.7.md
+```
+
+发版脚本只推 tag，**不推分支**，所以 `git push` 要单独先做；否则 GitHub 上有包和 tag，但默认分支还没有对应提交。

@@ -1,6 +1,6 @@
 # Builds the module on GitHub's Linux runners.
 #
-# The repository's own pipeline (build.ps1) is deliberately offline: it drives a
+# The repository's own offline pipeline (scripts/legacy/build.ps1, retired) drove a
 # vendored JDK and Android SDK under .tools/, which is git-ignored because it is
 # ~2.4 GB. A runner has no such directory, so this workflow uses the Gradle build
 # the repository already declares - it needs nothing beyond the checkout, the

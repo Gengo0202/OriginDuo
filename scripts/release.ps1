@@ -1,16 +1,16 @@
 # 本地发布：构建 release APK 并直接上传到 GitHub Release。
 #
-# 用法：
-#   .\release.ps1 -Version 1.1
-#   .\release.ps1 -Version 1.1 -NotesFile .\work\notes.md
-#   .\release.ps1 -Version 1.1 -DryRun          # 只构建，不打 tag、不建 Release
+# 用法（在仓库根目录执行，脚本放在 scripts\ 下）：
+#   .\scripts\release.ps1 -Version 1.1
+#   .\scripts\release.ps1 -Version 1.1 -NotesFile .\work\notes.md
+#   .\scripts\release.ps1 -Version 1.1 -DryRun          # 只构建，不打 tag、不建 Release
 #
 # 版本号 -> versionCode 规则：major*10000 + minor*100 + patch（v1.0 -> 10000）。
 # 版本号可写 1、1.0 或 1.0.0，缺的段按 0 计；tag 名与所写的版本号一致。
 #
 # ★ 这个脚本只推 tag，**不推分支**。所以完整的发布是两步：
 #     git push origin main
-#     .\release.ps1 -Version 1.1 -NotesFile .\docs\release-notes\release-notes-1.1.md
+#     .\scripts\release.ps1 -Version 1.1 -NotesFile .\docs\release-notes\release-notes-1.1.md
 # 只跑脚本的话，GitHub 上能下到包、能看到 tag，但默认分支上还没有对应的提交
 # —— v1.4 和 v1.6.12 都踩过这个坑（见 docs\DEVELOPMENT.md 与 docs\1003-todo.md §31.2）。
 #
@@ -21,7 +21,7 @@
 # 主仓发布成功后还会接着调 release-module.ps1，把同一 APK、同一份说明发到 LSPosed 模块仓
 # （Xposed-Modules-Repo/io.github.yixing233.hyperduo）——两个仓库必须同版本，模块页的
 # 下载链接走模块仓的 Release。只发主仓加 -SkipModuleRepo；模块仓那步失败不会撤回主仓，
-# 直接重跑 release-module.ps1 补齐即可（用法见该文件头注释）。
+# 直接重跑 scripts\release-module.ps1 补齐即可（用法见该文件头注释）。
 
 [CmdletBinding()]
 param(

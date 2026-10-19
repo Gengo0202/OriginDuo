@@ -90,6 +90,13 @@ io.github.yixing233.hyperduo
 与依赖都放在 `.tools\`：
 
 ```powershell
+. .\scripts\env.ps1
+& $env:GRADLE_HOME\bin\gradle.bat --offline :app:assembleDebug
+```
+
+`scripts\env.ps1` 只是把下面这几个变量设好，等价于手动导出：
+
+```powershell
 $T='C:\code\HyperDuo\.tools'
 $env:JAVA_HOME="$T\jdk\jdk-21.0.12.1+1"
 $env:GRADLE_USER_HOME="$T\gradle-home"
@@ -163,12 +170,12 @@ release 开启 `isMinifyEnabled` + `isShrinkResources`，但 `proguard-rules.pro
 把同一个 APK、同一份说明发到 LSPosed 模块仓（模块页的下载链接走这里），两个仓库永远同版本：
 
 ```powershell
-.\release.ps1 -Version 1.0 -NotesFile .\docs\release-notes\release-notes-1.0.md
-.\release.ps1 -Version 1.0 -DryRun             # 只构建，不打 tag、不建 Release、不发模块仓
-.\release.ps1 -Version 1.0 -SkipModuleRepo     # 只发主仓，跳过模块仓
+.\scripts\release.ps1 -Version 1.0 -NotesFile .\docs\release-notes\release-notes-1.0.md
+.\scripts\release.ps1 -Version 1.0 -DryRun             # 只构建，不打 tag、不建 Release、不发模块仓
+.\scripts\release.ps1 -Version 1.0 -SkipModuleRepo     # 只发主仓，跳过模块仓
 
 # 模块仓那步失败（主仓已发出）时单独补齐；或手动重发/覆盖模块仓的某个版本
-.\release-module.ps1 -Version 1.0 -VersionCode 10000 `
+.\scripts\release-module.ps1 -Version 1.0 -VersionCode 10000 `
     -Apk .\dist\HyperDuo-1.0.apk -NotesFile .\docs\release-notes\release-notes-1.0.md
 ```
 
@@ -252,9 +259,9 @@ code 判成败 —— 调外部程序一律走它。
 ### 安装与观测
 
 ```powershell
-& C:\code\HyperDuo\install.ps1              # 安装 + 打开设置界面 + 提示重启 SystemUI
-& C:\code\HyperDuo\install.ps1 -InstallOnly
-& C:\code\HyperDuo\install.ps1 -LogOnly     # 只跟日志
+& C:\code\HyperDuo\scripts\install.ps1              # 安装 + 打开设置界面 + 提示重启 SystemUI
+& C:\code\HyperDuo\scripts\install.ps1 -InstallOnly
+& C:\code\HyperDuo\scripts\install.ps1 -LogOnly     # 只跟日志
 ```
 
 脚本内硬编码了 `$Root='C:\code\HyperDuo'`、`$Adb='C:\Program Files\UotanToolbox\Bin\platform-tools\adb.exe'`、
@@ -1749,11 +1756,14 @@ app\src\main\java\io\github\yixing233\hyperduo\ui\ 设置界面（Kotlin + Compo
 app\src\main\res\                      strings / themes / 图标
 app\src\main\res\xml\file_paths.xml    FileProvider 路径（更新器下载目录）
 app\src\main\resources\META-INF\xposed\  java_init.list / scope.list / module.prop
-release.ps1                            构建 release APK 并上传到 GitHub Release
+scripts\env.ps1                        工具链环境变量（source 后得到 JAVA_HOME / ANDROID_HOME / GRADLE_HOME）
+scripts\release.ps1                    构建 release APK 并上传到 GitHub Release（末尾自动调 release-module.ps1）
+scripts\release-module.ps1             把同一 APK 发到 LSPosed 模块仓
+scripts\install.ps1                    安装到设备 + 打开设置 + 跟进日志
+scripts\legacy\build.ps1               旧的手写离线构建（已弃用，保留查阅）
 docs\                                  开发文档与 README 配图
+docs\release-notes\                    历次发版的 changelog（Release 正文的唯一存档）
 build.gradle.kts / settings.gradle.kts / gradle.properties   构建配置
-install.ps1                            安装 + 打开设置 + 日志
-build.ps1                              旧离线构建（已弃用，保留查阅）
 work\jadx-out\                         MiuiSystemUI 反编译源（分析用，不入库）
 work\unpacked\                         MiuiSystemUI 解包资源（分析用，不入库）
 work\geocheck\                         离线段渲染与解析校验（不入库）
@@ -2715,6 +2725,7 @@ SystemUI 进程会跑到它。它把真实的 `app\src\main\java\io\github\yixin
 - **1.4 发布产物的离线核对**（无设备，上机验证仍缺）：`aapt2 dump badging` → `package: name='io.github.yixing233.hyperduo' versionCode='10400' versionName='1.4'`、targetSdk 36、ABI 四套；`apksigner verify --print-certs` → v2 方案 `true`、证书 `CN=HyperDuo, O=HyperDuo, C=CN`、SHA-256 `b4e3a12d…8c41f`（与设备上原装 APK 同一证书，所以除改名那一次外，同包名的后续版本仍可 `-r` 覆盖）。
 - **R8 每次构建字节都不同，但 1.4 这次只差一处**：用 `release.ps1 -DryRun` 重建一份后与已上传的那份对比，**85 个 zip 条目、CRC、时间戳全部相同、体积相同**，却有 339 字节不同、哈希不同。逐字节定位（`.tmp\apkcmp.py`）后锁定唯一差异在 `META-INF/version-control-info.textproto` —— AGP 把构建时的 git 版本写进了 APK：旧的写 `revision: "3743845…"`（改名前的提交），重建的写 `revision: "a98053f…"`（本次发布提交）。另外 4 段差异全在签名块与中央目录（签名覆盖了那个文件，所以连签名一起变）。**结论：重建的那份才是与 tag 一致的正确产物**，已用它覆盖模块仓 asset（`release-module.ps1 -Force` 重传；主仓是首发，无需 `-Force`）。两处 asset 与本地 `dist\HyperDuo-1.4.apk` 现在**三者同一哈希** `0B95AF03…BE527`。
 - **PS 5.1 读 BOM-less UTF-8 脚本会按 ANSI（本机 `gb2312`）解码，直接 `& .\release.ps1` 必然解析失败**（报 `Missing expression after ','`、`The string is missing the terminator` 等一串错，且错误里中文全是乱码 —— 这是判据）。`release.ps1` / `install.ps1` / `.tmp\modrepo\release-module.ps1` 都是 BOM-less UTF-8 且含中文，所以在这台机器的 Windows PowerShell 5.1 下只有两条路：装 pwsh 7，或 `[scriptblock]::Create([System.IO.File]::ReadAllText($p,[Text.Encoding]::UTF8))` 后调用（脚本内硬编码 `$Root`、不用 `$PSScriptRoot`/`$script:`，所以这样调用安全）。本次用后者，两个脚本都以 `exit 0` 跑完。**要长期可用，应给这三个脚本加 UTF-8 BOM**（未做，属本次范围外）。
+  > **后续（1.7.0 发布时）：** 机器已装 PowerShell 7.6.7，这条路不再需要——pwsh 7 默认按 UTF-8 读脚本，BOM 可有可无。脚本仍保持 BOM-less，因为加 BOM 会让 git 把整个文件显示为首行变更。发版请用 `pwsh` 执行，不要用 `powershell.exe`（5.1）。
 - **LSPosed 模块仓首发 release**：模块仓 `Xposed-Modules-Repo/io.github.yixing233.hyperduo` 按仓库规格发 tag `10400-1.4`、title `1.4`、body 取 `.tmp\modrepo\notes-1.4.md`（首行是「安装前必读」的包名更换说明），asset `HyperDuo-1.4.apk` 3067544 B；`README.md` 同步更新到 1.4（`PUT contents` 带旧 sha → 新 sha `fab6b22eb153025b808a3ead27db6a4a5abae4fc`、commit `cb10135`），`SUMMARY` 未动。驱动脚本 `.tmp\modrepo\release-module.ps1`（只走 Releases API，模块仓不克隆到本地；`maintain` 角色不能改仓库设置但**能发 release**，已实测 `POST /releases` → 201）。
 - **模块仓「已上线但未收录」的唯一门禁 = 仓库 description 为空**：抽样 `Xposed-Modules-Repo` 24 个仓库逐个探 `https://modules.lsposed.org/module/<pkg>/`，结果是「描述空 + 404」4 个（含本项目）、「描述空 + 已收录」**0** 个、「描述非空 + 已收录」20 个。所以 release 发了、README 有了也仍 404（`io.github.yixing233.hyperduo` → 404，对照 `io.github.kvmy666.duostatusbar` → 200）。而 **description 目前无法由 API 设置**：`PATCH /repos/Xposed-Modules-Repo/…` → 404 Not Found；GraphQL `updateRepository` → `FORBIDDEN: yixing233 does not have the correct permissions to execute 'UpdateRepository'`（尽管 GitHub 角色表上 maintain 本应有 `Edit a repository's description`，且同 token 的 `PUT …/topics` → 200，证明 token 与路由都正常）。⇒ **只能在 GitHub 网页的 About 面板手填**，文案已备：description `HyperDuo · 仿 iPhone Duo 三合一状态栏图标`（`.tmp\modrepo\desc.txt`）、homepage `https://github.com/yixing233/HyperDuo`（`.tmp\modrepo\homepage.txt`）。**（这一项后来已由用户手填完成并成功收录，见本节末尾。）**
 
