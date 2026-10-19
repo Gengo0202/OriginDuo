@@ -106,6 +106,7 @@ import top.yukonga.miuix.kmp.basic.TooltipBox
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberTopAppBarState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -614,12 +615,16 @@ fun SettingsScreen(repository: SettingsRepository) {
             backStack = nav.backStack,
             modifier = Modifier
                 .fillMaxSize()
-                // Both modifiers reach down into the display rather than
-                // sitting on a wrapper: the blur samples all of it, and the
-                // scroll listener has to be above the list — which lives one
-                // level down inside a destination — to hear the scroll that
-                // collapses the bar.
+                // Two layer backdrops, because two different consumers sample this page:
+                // the top bar through Miuix's `textureBlur` (`barBackdrop`) and the bars
+                // plus the bottom capsule through kyant's `drawBackdrop` (`navBackdrop`).
+                //
+                // A `rememberLayerBackdrop()` on its own records nothing - it is only a
+                // handle. The `.layerBackdrop(...)` modifier is what captures this subtree
+                // into it, and a glass surface that samples an uncaptured handle renders
+                // empty, which is exactly how a backdrop "not working" looks.
                 .layerBackdrop(barBackdrop)
+                .kyantLayerBackdrop(navBackdrop)
                 .nestedScroll(scrollBehavior.nestedScrollConnection),
             onBack = { nav.pop() },
             transition = SectionTransition,
