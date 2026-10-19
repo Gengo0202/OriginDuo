@@ -7,6 +7,8 @@ import io.github.yixing233.hyperduo.TrioAppearance
 import io.github.yixing233.hyperduo.TrioSettings
 import io.github.yixing233.hyperduo.TrioZones
 import io.github.yixing233.hyperduo.Prefs
+import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.TooltipBox
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
@@ -33,8 +35,25 @@ internal enum class ContentControl(val owner: TrioSettingsPart) {
     Style(TrioSettingsPart.Appearance),
     // --- per component: its own switch ----------------------------------------
     Wifi(TrioSettingsPart.Wifi),
+    /**
+     * The signal card: one switch for the aggregate meter, then one per card.
+     *
+     * <p>The two per-card rows are rows of THIS card rather than cards of their own.
+     * They were separate cards, and both sheets resolved to the same set of settings -
+     * two entries in the library that could only ever repeat each other. The ink is
+     * one kind of thing (a row of level dots); which reading it shows is a property of
+     * the row, not a second component.
+     */
     Mobile(TrioSettingsPart.Mobile),
     DataSim(TrioSettingsPart.Mobile),
+    /**
+     * The out-of-ring rendering: the module's own stacked reading, or MIUI's icon.
+     *
+     * <p>Owned by the signal card rather than being a piece of its own, because it is a
+     * property of where the signal is drawn, not a third reading. It sits directly under
+     * the position row it depends on.
+     */
+    Stacked(TrioSettingsPart.Mobile),
     Sim1(TrioSettingsPart.Mobile),
     Sim2(TrioSettingsPart.Mobile),
     Value(TrioSettingsPart.Value),
@@ -57,12 +76,10 @@ internal enum class ContentControl(val owner: TrioSettingsPart) {
 
 internal fun contentControlsFor(part: TrioSettingsPart): List<ContentControl> =
     ContentControl.entries.filter {
-        // The two per-card rows and the aggregate meter are one group of settings,
-        // so a dialog opened from any of the three shows all of them. That is the
-        // point of "one shared size row": the cards differ in placement and in
-        // switch, never in the ink their dots are drawn with.
-        it.owner == if (part == TrioSettingsPart.Sim1
-            || part == TrioSettingsPart.Sim2) TrioSettingsPart.Mobile else part
+        // One entry per card, so a card's sheet shows that card's rows and nothing
+        // else. The signal card is the one card that owns several rows, because its
+        // three switches are three readings of the same ink.
+        it.owner == part
     }
 
 @Composable
@@ -75,64 +92,202 @@ internal fun ContentControlRow(
     val a = TrioAppearance.of(settings)
     val master = listOf(a.glyph to R.string.master_title)
     val positioned = when (control) {
-        ContentControl.Wifi -> TrioZones.Part.WIFI
         ContentControl.Value -> TrioZones.Part.VALUE
         ContentControl.Bolt -> TrioZones.Part.BOLT
         ContentControl.Type -> TrioZones.Part.TYPE
         ContentControl.Clock -> TrioZones.Part.CLOCK
         else -> null
     }
+    // Wi-Fi is a position row rather than a switch plus a position row: "off" and "nowhere in
+    // the ring" are the same intention, so offering both made the user answer the same
+    // question twice and made the two controls able to disagree (switch on, nothing placed,
+    // no arcs). The row writes both facts in one go - see WifiPositionControl.
+    if (control == ContentControl.Wifi) {
+        WifiPositionControl(settings, ringSettings, update)
+        return
+    }
     if (a.ring && positioned != null) {
         RingPositionControl(positioned, ringSettings, update)
         if (control == ContentControl.Type || control == ContentControl.Clock) return
     }
-    if (control == ContentControl.Mobile && a.ring) {
-        RingPositionControl(TrioZones.Part.MOBILE, ringSettings, update)
+    // The signal's position applies to every arrangement, not just the ring. It used to be
+    // gated on `a.ring` along with the slot rows, which left the capsule and the rectangle
+    // with no way to move the signal out of the glyph at all - the switch simply was not
+    // drawn, so "outside" was unreachable in those two styles.
+    if (control == ContentControl.Mobile) {
+        // The signal is the one piece with a two-way position of its own. Drawn above the
+        // switches, so "where does it go" is answered before "is it on".
+        SignalPositionControl(settings, update)
+    }
+    // The per-card slot rows are ring-only: only the ring has thirds to put them in. In the
+    // other two styles the cards are not separately placeable, so a slot row would offer a
+    // choice that does not exist.
+    if (control == ContentControl.Sim1 && a.ring) {
+        SignalCardPositionControl(TrioZones.Part.SIM_1, settings, update, enabled = signalInsideRing(a))
+    }
+    if (control == ContentControl.Sim2 && a.ring) {
+        SignalCardPositionControl(TrioZones.Part.SIM_2, settings, update, enabled = signalInsideRing(a))
     }
     when (control) {
         ContentControl.Enabled -> ContentToggle(settings.enabled, R.string.master_title,
-            R.string.master_summary, emptyList()) { value -> update { it.setEnabled(value) } }
+            null, emptyList()) { value -> update { it.setEnabled(value) } }
         ContentControl.Style -> {
             val styles = listOf(Prefs.STYLE_RING, Prefs.STYLE_CAPSULE)
             ContentChoice(styles.indexOf(a.style).coerceAtLeast(0), R.string.trio_style_title,
-                R.string.trio_style_summary,
+                null,
                 listOf(R.string.trio_style_ring, R.string.trio_style_capsule),
                 master) { index -> update { it.setTrioStyle(styles[index]) } }
         }
-        ContentControl.Wifi -> ContentToggle(a.wifi, R.string.show_wifi_title,
-            R.string.show_wifi_summary, master) { value -> update { it.setShowWifi(value) } }
-        ContentControl.Mobile -> ContentToggle(a.mobile, R.string.show_mobile_title,
-            R.string.show_mobile_summary, master) { value -> update { it.setShowMobile(value) } }
-        ContentControl.Sim1 -> ContentToggle(a.showSim1, R.string.show_sim_1_title,
-            R.string.show_sim_1_summary, master + (a.mobile to R.string.show_mobile_title)) {
-            value -> update { it.setShowSim1(value) }
-        }
-        ContentControl.Sim2 -> ContentToggle(a.showSim2, R.string.show_sim_2_title,
-            R.string.show_sim_2_summary, master + (a.mobile to R.string.show_mobile_title)) {
-            value -> update { it.setShowSim2(value) }
-        }
+        ContentControl.Wifi -> Unit // Handled above by WifiPositionControl, which returns.
+        // The aggregate meter's own switch is gone with the aggregate meter: the signal
+        // is now always the two cards' rows, so "show mobile dots" would be a second
+        // name for something the cards already decide.
+        ContentControl.Mobile -> Unit
+        // Draw the module's own reading beside the battery instead of handing the icon
+        // back. Only meaningful out of ring, and gated on the position row rather than on
+        // its own value - a row that switches itself off could never be switched back on.
+        ContentControl.Stacked -> ContentToggle(
+            checked = a.stackedSignal,
+            title = R.string.stacked_signal_title,
+            summaryRes = R.string.stacked_signal_summary,
+            dependencies = master + (a.signalOutOfRing to R.string.ring_position_mobile),
+        ) { value -> update { it.setStackedSignal(value) } }
+        ContentControl.Sim1 -> ContentToggle(
+            checked = a.showSim1,
+            title = R.string.show_sim_1_title,
+            summaryRes = null,
+            dependencies = master + (a.mobile to R.string.show_mobile_title) +
+                (signalInsideRing(a) to R.string.ring_position_mobile),
+        ) { value -> update { it.setShowSim1(value) } }
+        ContentControl.Sim2 -> ContentToggle(
+            checked = a.showSim2,
+            title = R.string.show_sim_2_title,
+            summaryRes = null,
+            dependencies = master + (a.mobile to R.string.show_mobile_title) +
+                (signalInsideRing(a) to R.string.ring_position_mobile),
+        ) { value -> update { it.setShowSim2(value) } }
         ContentControl.Value -> ContentToggle(a.value, R.string.show_value_title,
-            R.string.ring_value_summary,
+            null,
             master) { value -> update { it.setShowValue(value) } }
         // The signal's position is no longer a switch: a card placed in a third is drawn
         // there, and a card that is not placed hands the reading back to MIUI. There is no
         // third state to choose between, so the old row is gone.
         ContentControl.DataSim -> ContentToggle(a.dataSimOnly, R.string.data_sim_only_title,
-            R.string.data_sim_only_summary, master) { value -> update { it.setDataSimOnly(value) } }
+            null, master) { value -> update { it.setDataSimOnly(value) } }
         ContentControl.Bolt -> ContentToggle(a.boltWanted, R.string.show_bolt_title,
-            R.string.ring_bolt_summary,
+            null,
             master) {
             value -> update { it.setShowBolt(value) }
         }
         ContentControl.Type -> ContentChoice(a.typeMode, R.string.show_mobile_type_title,
-            R.string.show_mobile_type_summary,
+            null,
             listOf(R.string.mobile_type_off, R.string.mobile_type_inside, R.string.mobile_type_outside),
             master) { value -> update { it.setMobileTypeMode(value) } }
         ContentControl.Power -> ContentToggle(settings.perfPower, R.string.perf_power_title,
-            R.string.perf_power_summary, master) { value -> update { it.setPerfPower(value) } }
+            null, master) { value -> update { it.setPerfPower(value) } }
         ContentControl.Temperature -> ContentToggle(settings.perfTemp, R.string.perf_temp_title,
-            R.string.perf_temp_summary, master) { value -> update { it.setPerfTemp(value) } }
+            null, master) { value -> update { it.setPerfTemp(value) } }
         ContentControl.Clock -> Unit // Capsule time has a fixed slot.
+    }
+}
+
+/**
+ * The signal's own two-way position: in the ring, or back to the system.
+ *
+ * <p>This is the one position row that is not a slot list, because the signal is the one
+ * piece drawn from per-card rows rather than from a single slot. "Outside the ring" here
+ * means exactly what "return it to the system" means on every other row - the glyph draws
+ * nothing and MIUI keeps its icon - so it is labelled 环外 to match where the reading then
+ * appears.
+ */
+@Composable
+private fun SignalPositionControl(
+    settings: TrioSettings,
+    update: ((SettingsRepository) -> Unit) -> Unit,
+) {
+    val outside = settings.signalMode == Prefs.SIGNAL_OUT_RING
+    ContentChoice(
+        selected = if (outside) 1 else 0,
+        title = R.string.ring_position_mobile,
+        summaryRes = null,
+        options = listOf(R.string.signal_mode_in_ring, R.string.signal_mode_out_ring),
+        dependencies = listOf(settings.enabled to R.string.master_title),
+        onChange = { value ->
+            update { it.setSignalMode(if (value == 1) Prefs.SIGNAL_OUT_RING else Prefs.SIGNAL_IN_RING) }
+        },
+    )
+}
+
+/** Whether the signal is drawn inside the ring, which is what enables the per-card rows. */
+private fun signalInsideRing(a: TrioAppearance): Boolean =
+    a.mobile && a.ring && !a.signalOutOfRing
+
+/**
+ * One card's third, with the thirds the other card holds disabled.
+ *
+ * <p>The two cards cannot share a third: two rows of four dots in one slot would overlap
+ * and the layout would have to pick one of them, so the second card's choice is expressed
+ * by disabling the option rather than by silently moving the first card. A disabled row
+ * that cannot be picked is also the honest presentation of "one of these is taken".
+ */
+@Composable
+private fun SignalCardPositionControl(
+    part: TrioZones.Part,
+    settings: TrioSettings,
+    update: ((SettingsRepository) -> Unit) -> Unit,
+    enabled: Boolean,
+) {
+    val id = TrioZones.encodePart(part)
+    val twin = if (part == TrioZones.Part.SIM_1) TrioZones.Part.SIM_2 else TrioZones.Part.SIM_1
+    val twinId = TrioZones.encodePart(twin)
+    val zones = settings.ringZones
+    val placedAt = zones.indexOfFirst { it.contains(id) } + 1
+    val takenByTwin = zones.indexOfFirst { it.contains(twinId) }
+
+    ContentChoice(
+        selected = placedAt,
+        title = if (part == TrioZones.Part.SIM_1) R.string.ring_position_sim_1
+        else R.string.ring_position_sim_2,
+        summaryRes = null,
+        options = listOf(R.string.ring_position_native, R.string.drawing_hint_top,
+            R.string.drawing_hint_centre, R.string.drawing_hint_bottom),
+        dependencies = listOf(settings.enabled to R.string.master_title),
+        enabled = enabled,
+        // Option 0 is "not placed" and is always allowed; 1..3 mirror the zones, so the one
+        // the twin holds is the one this card may not pick.
+        blockedIndices = if (takenByTwin >= 0) setOf(takenByTwin + 1) else emptySet(),
+        onChange = { value -> update { it.setRingPartPosition(part, value) } },
+    )
+}
+
+/**
+ * Wi-Fi's position, with "off" as one of the choices.
+ *
+ * <p>Wi-Fi is the one piece whose switch and position always changed together: switching it
+ * off and removing it from the ring produced the same picture, and switching it on with
+ * nothing placed produced none. Two rows for one decision invited the pair to disagree, so
+ * they are one row here - index 0 means off-and-unplaced, 1..3 mean on-and-in-that-third.
+ *
+ * <p>Both facts are written together through [SettingsRepository.setWifiPosition], because
+ * writing them separately would leave a frame in between where the switch and the layout
+ * disagree.
+ */
+@Composable
+private fun WifiPositionControl(
+    settings: TrioSettings,
+    ringSettings: TrioSettings,
+    update: ((SettingsRepository) -> Unit) -> Unit,
+) {
+    val id = TrioZones.encodePart(TrioZones.Part.WIFI)
+    val placedAt = ringSettings.ringZones.indexOfFirst { it.contains(id) } + 1
+    // Off wins over "placed somewhere": a switch that is off draws no arcs whatever the
+    // layout says, so reporting a slot here would name a place that produces nothing.
+    val selected = if (!settings.showWifi) 0 else placedAt
+    ContentChoice(selected, R.string.ring_position_wifi, null,
+        listOf(R.string.ring_position_native, R.string.drawing_hint_top,
+            R.string.drawing_hint_centre, R.string.drawing_hint_bottom),
+        listOf(settings.enabled to R.string.master_title)) { value ->
+        update { it.setWifiPosition(value) }
     }
 }
 
@@ -167,7 +322,7 @@ private fun RingPositionControl(
         TrioZones.Part.CLOCK -> R.string.ring_position_clock
     }
     ContentChoice(selected, title,
-        if (part == TrioZones.Part.MOBILE) R.string.ring_signal_position_summary else R.string.ring_position_summary,
+        null,
         listOf(R.string.ring_position_native, R.string.drawing_hint_top,
             R.string.drawing_hint_centre, R.string.drawing_hint_bottom) +
             if (part == TrioZones.Part.TYPE) listOf(R.string.mobile_type_outside) else emptyList(),
@@ -176,11 +331,19 @@ private fun RingPositionControl(
     }
 }
 
+/**
+ * A switch row, optionally with a description under its title.
+ *
+ * <p>[summaryRes] is null for the rows that explain themselves: the master switch
+ * (whose own title already says what it turns on) and the ring-position dropdown
+ * (whose options name the slots). Miuix drops the description line entirely when
+ * the summary is null, so the row is not left with an empty second line.
+ */
 @Composable
 private fun ContentToggle(
     checked: Boolean,
     title: Int,
-    summary: Int,
+    summaryRes: Int?,
     dependencies: List<Pair<Boolean, Int>>,
     onChange: (Boolean) -> Unit,
 ) {
@@ -188,7 +351,7 @@ private fun ContentToggle(
         SwitchPreference(
             checked = checked,
             title = stringResource(title),
-            summary = stringResource(summary),
+            summary = summaryRes?.let { stringResource(it) },
             insideMargin = SettingsItemMargin,
             enabled = dependencies.all { it.first },
             onCheckedChange = onChange,
@@ -196,25 +359,60 @@ private fun ContentToggle(
     }
 }
 
+/**
+ * A dropdown row, optionally with a description and with individual options disabled.
+ *
+ * <p>[blockedIndices] is for the options that exist but may not be chosen right now - the
+ * third already held by the other card. Disabling the entry rather than dropping it keeps
+ * the list the same length as the other cards' lists, so the numeric order the row writes
+ * stays the same everywhere.
+ *
+ * @param enabled a gate independent of [dependencies]: the row can be live while depending
+ *   on nothing, which is what the per-card rows need when the signal is outside the ring.
+ */
 @Composable
 private fun ContentChoice(
     selected: Int,
     title: Int,
-    summary: Int,
+    summaryRes: Int?,
     options: List<Int>,
     dependencies: List<Pair<Boolean, Int>>,
+    enabled: Boolean = true,
+    blockedIndices: Set<Int> = emptySet(),
     onChange: (Int) -> Unit,
 ) {
     ContentGate(dependencies) {
-        OverlayDropdownPreference(
-            items = options.map { stringResource(it) },
-            selectedIndex = selected,
-            title = stringResource(title),
-            summary = stringResource(summary),
-            insideMargin = SettingsItemMargin,
-            enabled = dependencies.all { it.first },
-            onSelectedIndexChange = onChange,
-        )
+        if (blockedIndices.isEmpty()) {
+            OverlayDropdownPreference(
+                items = options.map { stringResource(it) },
+                selectedIndex = selected,
+                title = stringResource(title),
+                summary = summaryRes?.let { stringResource(it) },
+                insideMargin = SettingsItemMargin,
+                enabled = enabled && dependencies.all { it.first },
+                onSelectedIndexChange = onChange,
+            )
+        } else {
+            OverlayDropdownPreference(
+                entry = DropdownEntry(
+                    items = options.mapIndexed { index, res ->
+                        DropdownItem(
+                            text = stringResource(res),
+                            enabled = index !in blockedIndices,
+                            selected = index == selected,
+                            // The list carries its own per-item state, so each entry has
+                            // to report its own choice back.
+                            onClick = { onChange(index) },
+                        )
+                    },
+                    enabled = enabled && dependencies.all { it.first },
+                ),
+                title = stringResource(title),
+                summary = summaryRes?.let { stringResource(it) },
+                insideMargin = SettingsItemMargin,
+                enabled = enabled && dependencies.all { it.first },
+            )
+        }
     }
 }
 

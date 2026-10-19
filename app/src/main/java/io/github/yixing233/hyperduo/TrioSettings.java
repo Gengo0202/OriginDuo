@@ -51,6 +51,10 @@ public final class TrioSettings {
      * {@link #ringStroke} as the outline's thickness. {@link TrioAppearance} is
      * where those differences are resolved, so nothing else has to know them.
      */
+    /** Bottom-bar material; see {@link Prefs#KEY_NAV_STYLE}. */
+    public int navStyle;
+    /** Bottom-bar label mode; see {@link Prefs#KEY_NAV_LABELS}. */
+    public int navLabels;
     public int trioStyle;
     /**
      * The ring layout: for each of the three zones, an ordered list of candidate pieces.
@@ -60,9 +64,11 @@ public final class TrioSettings {
      * ink: with nothing but Wi-Fi and the percentage, [percentage, arcs] draws the percentage
      * while it has a reading and the arcs when it does not.
      *
-     * <p>Empty by default - a fresh install starts with three empty zones, because with
-     * priority lists there is no single arrangement to ship. Index 0 is the top third, 1 the
-     * middle, 2 the bottom, matching {@code TrioGeometry.ZONE_CY}.
+     * <p>Empty by default - a fresh install starts with every zone empty, because with
+     * priority lists there is no single arrangement to ship. The first three indices are the
+     * ring's thirds (top, middle, bottom, matching {@code TrioGeometry.ZONE_CY}); the last
+     * two are the capsule's right column and its lower half, which the ring simply never
+     * reads.
      *
      * <p>Stored as the string {@link Prefs#KEY_RING_LAYOUT}; this is its decoded form.
      * Never null: every entry is a non-null array, possibly empty.
@@ -79,6 +85,28 @@ public final class TrioSettings {
      * {@link TrioAppearance#dualSimRows(boolean, boolean, int)}.
      */
     public boolean dualSim;
+    /**
+     * Where the mobile signal reading goes: the glyph's own thirds, or back to MIUI.
+     *
+     * <p>An int holding one of the {@code Prefs.SIGNAL_*} constants. Out of the ring the
+     * module draws no level dots at all and the native icon keeps its place - so this is
+     * the same "return it to the system" option the other pieces' position rows offer,
+     * which is why the settings screen calls it 环外.
+     *
+     * <p>It does <em>not</em> say which third a card sits in: that is the ring layout's
+     * job, as {@code Prefs.PART_SIM_1} / {@code PART_SIM_2}. Keeping the two apart is what
+     * lets "in the ring" stay a single choice while the two cards still each pick a slot.
+     */
+    public int signalMode;
+    /**
+     * Draws the module's own stacked reading while the signal is out of the ring.
+     *
+     * <p>Out of the ring there are two outcomes and the user picks between them: leave the
+     * native icon in place (this off), or draw the stacked bars-and-dots reading beside the
+     * battery (this on). Inside the ring it is not consulted - the glyph's own rows are the
+     * signal there - which is why the settings screen only enables the row out of ring.
+     */
+    public boolean stackedSignal;
     /**
      * Draws SIM 1's own row of four dots, as a placed component.
      *
@@ -157,6 +185,15 @@ public final class TrioSettings {
      * size. 100 means no shrink; the reference "5GA" is 65.
      */
     public int typeSuffixScale;
+    /**
+     * Size of the in-ring charging bolt, as a percentage of its reference size.
+     *
+     * <p>Percent rather than dp because the bolt is drawn in the glyph's 120x120 design
+     * space and scaled by the arrangement, not by the density: a dp value would have to
+     * be converted back into a design-unit factor everywhere it is used. 100 is the size
+     * the reference path implies, which is what every install had before this key existed.
+     */
+    public int boltScale;
     public int typeWeight;
     public int trackAlpha;
 
@@ -221,8 +258,12 @@ public final class TrioSettings {
         s.showBolt = Prefs.DEF_SHOW_BOLT;
         s.mobileTypeMode = Prefs.DEF_MOBILE_TYPE_MODE;
         s.valueCentred = Prefs.DEF_VALUE_CENTRED;
+        s.navStyle = Prefs.DEF_NAV_STYLE;
+        s.navLabels = Prefs.DEF_NAV_LABELS;
         s.trioStyle = Prefs.DEF_TRIO_STYLE;
         s.dualSim = Prefs.DEF_DUAL_SIM;
+        s.signalMode = Prefs.DEF_SIGNAL_MODE;
+        s.stackedSignal = Prefs.DEF_STACKED_SIGNAL;
         s.showSim1 = Prefs.DEF_SHOW_SIM_1;
         s.showSim2 = Prefs.DEF_SHOW_SIM_2;
         s.dataSimOnly = Prefs.DEF_DATA_SIM_ONLY;
@@ -254,6 +295,7 @@ public final class TrioSettings {
         s.outTypeMarginRight = Prefs.DEF_OUT_TYPE_MARGIN_RIGHT;
         s.outSignalMargin = Prefs.DEF_OUT_SIGNAL_MARGIN;
         s.typeSuffixScale = Prefs.DEF_TYPE_SUFFIX_SCALE;
+        s.boltScale = Prefs.DEF_BOLT_SCALE;
         s.typeWeight = Prefs.DEF_TYPE_WEIGHT;
         s.trackAlpha = Prefs.DEF_TRACK_ALPHA;
         s.debugLog = Prefs.DEF_DEBUG_LOG;
@@ -291,11 +333,26 @@ public final class TrioSettings {
         s.showBolt = p.getBoolean(Prefs.KEY_SHOW_BOLT, Prefs.DEF_SHOW_BOLT);
         s.mobileTypeMode = readMobileTypeMode(p);
         s.valueCentred = p.getBoolean(Prefs.KEY_VALUE_CENTRED, Prefs.DEF_VALUE_CENTRED);
+        s.navStyle = Prefs.normalizeNavStyle(p.getInt(Prefs.KEY_NAV_STYLE, Prefs.DEF_NAV_STYLE));
+        s.navLabels = Prefs.normalizeNavLabels(p.getInt(Prefs.KEY_NAV_LABELS, Prefs.DEF_NAV_LABELS));
         s.trioStyle = Prefs.normalizeTrioStyle(p.getInt(Prefs.KEY_TRIO_STYLE, Prefs.DEF_TRIO_STYLE));
         s.ringZones = Prefs.decodeLayout(readRingLayout(p));
         s.dualSim = p.getBoolean(Prefs.KEY_DUAL_SIM, Prefs.DEF_DUAL_SIM);
+        s.signalMode = Prefs.clamp(
+                p.getInt(Prefs.KEY_SIGNAL_MODE, Prefs.DEF_SIGNAL_MODE),
+                Prefs.MIN_SIGNAL_MODE, Prefs.MAX_SIGNAL_MODE);
+        s.stackedSignal = p.getBoolean(Prefs.KEY_STACKED_SIGNAL, Prefs.DEF_STACKED_SIGNAL);
         s.showSim1 = p.getBoolean(Prefs.KEY_SHOW_SIM_1, Prefs.DEF_SHOW_SIM_1);
         s.showSim2 = p.getBoolean(Prefs.KEY_SHOW_SIM_2, Prefs.DEF_SHOW_SIM_2);
+        // The stored layout may predate the retirement of the aggregate meter. Prefs
+        // migrates the id to SIM 1's row when it decodes, but that row also needs its
+        // switch - and the switch's default is off - so an upgrading install would see a
+        // zone that reserves room and draws nothing. Asking the RAW string (not the decoded
+        // layout, which can no longer contain the old id) keeps this to exactly those
+        // installs, and never re-enables a switch the user turned off afterwards.
+        if (Prefs.mentionsRetiredMeter(readRingLayout(p))) {
+            s.showSim1 = true;
+        }
         s.dataSimOnly = p.getBoolean(Prefs.KEY_DATA_SIM_ONLY, Prefs.DEF_DATA_SIM_ONLY);
         s.perfPower = p.getBoolean(Prefs.KEY_PERF_POWER, Prefs.DEF_PERF_POWER);
         s.perfTemp = p.getBoolean(Prefs.KEY_PERF_TEMP, Prefs.DEF_PERF_TEMP);
@@ -363,6 +420,9 @@ public final class TrioSettings {
         s.typeSuffixScale = Prefs.clamp(
                 p.getInt(Prefs.KEY_TYPE_SUFFIX_SCALE, Prefs.DEF_TYPE_SUFFIX_SCALE),
                 Prefs.MIN_TYPE_SUFFIX_SCALE, Prefs.MAX_TYPE_SUFFIX_SCALE);
+        s.boltScale = Prefs.clamp(
+                p.getInt(Prefs.KEY_BOLT_SCALE, Prefs.DEF_BOLT_SCALE),
+                Prefs.MIN_BOLT_SCALE, Prefs.MAX_BOLT_SCALE);
         s.typeWeight = Prefs.clamp(
                 p.getInt(Prefs.KEY_TYPE_WEIGHT, Prefs.DEF_TYPE_WEIGHT),
                 Prefs.MIN_TYPE_WEIGHT, Prefs.MAX_TYPE_WEIGHT);
@@ -517,9 +577,13 @@ public final class TrioSettings {
         s.showBolt = showBolt;
         s.mobileTypeMode = mobileTypeMode;
         s.valueCentred = valueCentred;
+        s.navStyle = navStyle;
+        s.navLabels = navLabels;
         s.trioStyle = trioStyle;
         s.ringZones = copyZones(ringZones);
         s.dualSim = dualSim;
+        s.signalMode = signalMode;
+        s.stackedSignal = stackedSignal;
         s.showSim1 = showSim1;
         s.showSim2 = showSim2;
         s.dataSimOnly = dataSimOnly;
@@ -551,6 +615,7 @@ public final class TrioSettings {
         s.outTypeMarginRight = outTypeMarginRight;
         s.outSignalMargin = outSignalMargin;
         s.typeSuffixScale = typeSuffixScale;
+        s.boltScale = boltScale;
         s.typeWeight = typeWeight;
         s.trackAlpha = trackAlpha;
 
@@ -583,9 +648,13 @@ public final class TrioSettings {
             case Prefs.KEY_SHOW_BOLT: showBolt = src.showBolt; return true;
             case Prefs.KEY_MOBILE_TYPE_MODE: mobileTypeMode = src.mobileTypeMode; return true;
             case Prefs.KEY_VALUE_CENTRED: valueCentred = src.valueCentred; return true;
+            case Prefs.KEY_NAV_STYLE: navStyle = Prefs.normalizeNavStyle(src.navStyle); return true;
+            case Prefs.KEY_NAV_LABELS: navLabels = Prefs.normalizeNavLabels(src.navLabels); return true;
             case Prefs.KEY_TRIO_STYLE: trioStyle = Prefs.normalizeTrioStyle(src.trioStyle); return true;
             case Prefs.KEY_RING_LAYOUT: ringZones = copyZones(src.ringZones); return true;
             case Prefs.KEY_DUAL_SIM: dualSim = src.dualSim; return true;
+            case Prefs.KEY_SIGNAL_MODE: signalMode = src.signalMode; return true;
+            case Prefs.KEY_STACKED_SIGNAL: stackedSignal = src.stackedSignal; return true;
             case Prefs.KEY_SHOW_SIM_1: showSim1 = src.showSim1; return true;
             case Prefs.KEY_SHOW_SIM_2: showSim2 = src.showSim2; return true;
             case Prefs.KEY_DATA_SIM_ONLY: dataSimOnly = src.dataSimOnly; return true;
@@ -615,6 +684,7 @@ public final class TrioSettings {
             case Prefs.KEY_OUT_TYPE_MARGIN_RIGHT: outTypeMarginRight = src.outTypeMarginRight; return true;
             case Prefs.KEY_OUT_SIGNAL_MARGIN: outSignalMargin = src.outSignalMargin; return true;
             case Prefs.KEY_TYPE_SUFFIX_SCALE: typeSuffixScale = src.typeSuffixScale; return true;
+            case Prefs.KEY_BOLT_SCALE: boltScale = src.boltScale; return true;
             case Prefs.KEY_TYPE_WEIGHT: typeWeight = src.typeWeight; return true;
             case Prefs.KEY_TRACK_ALPHA: trackAlpha = src.trackAlpha; return true;
             case Prefs.KEY_DEBUG_LOG: debugLog = src.debugLog; return true;
@@ -642,9 +712,15 @@ public final class TrioSettings {
         s.showBolt = bundle.getBoolean(Prefs.KEY_SHOW_BOLT, Prefs.DEF_SHOW_BOLT);
         s.mobileTypeMode = readMobileTypeMode(bundle);
         s.valueCentred = bundle.getBoolean(Prefs.KEY_VALUE_CENTRED, Prefs.DEF_VALUE_CENTRED);
+        s.navStyle = Prefs.normalizeNavStyle(bundle.getInt(Prefs.KEY_NAV_STYLE, Prefs.DEF_NAV_STYLE));
+        s.navLabels = Prefs.normalizeNavLabels(bundle.getInt(Prefs.KEY_NAV_LABELS, Prefs.DEF_NAV_LABELS));
         s.trioStyle = Prefs.normalizeTrioStyle(bundle.getInt(Prefs.KEY_TRIO_STYLE, Prefs.DEF_TRIO_STYLE));
         s.ringZones = Prefs.decodeLayout(readRingLayout(bundle));
         s.dualSim = bundle.getBoolean(Prefs.KEY_DUAL_SIM, Prefs.DEF_DUAL_SIM);
+        s.signalMode = Prefs.clamp(
+                bundle.getInt(Prefs.KEY_SIGNAL_MODE, Prefs.DEF_SIGNAL_MODE),
+                Prefs.MIN_SIGNAL_MODE, Prefs.MAX_SIGNAL_MODE);
+        s.stackedSignal = bundle.getBoolean(Prefs.KEY_STACKED_SIGNAL, Prefs.DEF_STACKED_SIGNAL);
         s.showSim1 = bundle.getBoolean(Prefs.KEY_SHOW_SIM_1, Prefs.DEF_SHOW_SIM_1);
         s.showSim2 = bundle.getBoolean(Prefs.KEY_SHOW_SIM_2, Prefs.DEF_SHOW_SIM_2);
         s.dataSimOnly = bundle.getBoolean(Prefs.KEY_DATA_SIM_ONLY, Prefs.DEF_DATA_SIM_ONLY);
@@ -713,6 +789,9 @@ public final class TrioSettings {
         s.typeSuffixScale = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_TYPE_SUFFIX_SCALE, Prefs.DEF_TYPE_SUFFIX_SCALE),
                 Prefs.MIN_TYPE_SUFFIX_SCALE, Prefs.MAX_TYPE_SUFFIX_SCALE);
+        s.boltScale = Prefs.clamp(
+                bundle.getInt(Prefs.KEY_BOLT_SCALE, Prefs.DEF_BOLT_SCALE),
+                Prefs.MIN_BOLT_SCALE, Prefs.MAX_BOLT_SCALE);
         s.typeWeight = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_TYPE_WEIGHT, Prefs.DEF_TYPE_WEIGHT),
                 Prefs.MIN_TYPE_WEIGHT, Prefs.MAX_TYPE_WEIGHT);
@@ -758,9 +837,14 @@ public final class TrioSettings {
         b.putBoolean(Prefs.KEY_SHOW_BOLT, showBolt);
         b.putInt(Prefs.KEY_MOBILE_TYPE_MODE, mobileTypeMode);
         b.putBoolean(Prefs.KEY_VALUE_CENTRED, valueCentred);
+        b.putInt(Prefs.KEY_NAV_STYLE, Prefs.normalizeNavStyle(navStyle));
+        b.putInt(Prefs.KEY_NAV_LABELS, Prefs.normalizeNavLabels(navLabels));
         b.putInt(Prefs.KEY_TRIO_STYLE, Prefs.normalizeTrioStyle(trioStyle));
         b.putString(Prefs.KEY_RING_LAYOUT, Prefs.encodeLayout(ringZones));
         b.putBoolean(Prefs.KEY_DUAL_SIM, dualSim);
+        b.putInt(Prefs.KEY_SIGNAL_MODE, Prefs.clamp(signalMode,
+                Prefs.MIN_SIGNAL_MODE, Prefs.MAX_SIGNAL_MODE));
+        b.putBoolean(Prefs.KEY_STACKED_SIGNAL, stackedSignal);
         b.putBoolean(Prefs.KEY_SHOW_SIM_1, showSim1);
         b.putBoolean(Prefs.KEY_SHOW_SIM_2, showSim2);
         b.putBoolean(Prefs.KEY_DATA_SIM_ONLY, dataSimOnly);
@@ -792,6 +876,7 @@ public final class TrioSettings {
         b.putInt(Prefs.KEY_OUT_TYPE_MARGIN_RIGHT, outTypeMarginRight);
         b.putInt(Prefs.KEY_OUT_SIGNAL_MARGIN, outSignalMargin);
         b.putInt(Prefs.KEY_TYPE_SUFFIX_SCALE, typeSuffixScale);
+        b.putInt(Prefs.KEY_BOLT_SCALE, boltScale);
         b.putInt(Prefs.KEY_TYPE_WEIGHT, typeWeight);
         b.putInt(Prefs.KEY_TRACK_ALPHA, trackAlpha);
 
@@ -821,9 +906,13 @@ public final class TrioSettings {
                 && showBolt == s.showBolt
                 && mobileTypeMode == s.mobileTypeMode
                 && valueCentred == s.valueCentred
+                && navStyle == s.navStyle
+                && navLabels == s.navLabels
                 && trioStyle == s.trioStyle
                 && java.util.Arrays.deepEquals(ringZones, s.ringZones)
                 && dualSim == s.dualSim
+                && signalMode == s.signalMode
+                && stackedSignal == s.stackedSignal
                 // Two switches of their own, and issue 25 applies: left out, a tap
                 // on either row would write a value the screen cannot see change.
                 && showSim1 == s.showSim1
@@ -870,6 +959,7 @@ public final class TrioSettings {
                 && outTypeMarginRight == s.outTypeMarginRight
                 && outSignalMargin == s.outSignalMargin
                 && typeSuffixScale == s.typeSuffixScale
+                && boltScale == s.boltScale
                 && typeWeight == s.typeWeight
                 && trackAlpha == s.trackAlpha
                 && debugLog == s.debugLog;

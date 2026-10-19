@@ -57,12 +57,30 @@ public final class TrioZones {
     }
 
     /** One of the glyph's three tappable thirds. */
+    /**
+     * The three placeable bands, shared by every arrangement.
+     *
+     * <p>Each arrangement maps them onto its own shape, because "top, middle, bottom" is the
+     * question the user is actually asking - where on the icon does this go - and the answer
+     * does not depend on whether the shape is a ring or a stadium:
+     *
+     * <ul>
+     *   <li><b>ring</b> - the 12 o'clock notch, the interior, the 6 o'clock opening;
+     *   <li><b>rectangle</b> - the top slot, the enlarged percentage, the dot columns and bar;
+     *   <li><b>capsule</b> - the top opening, the interior to the right of the fixed clock,
+     *       the bottom opening.
+     * </ul>
+     *
+     * <p>The capsule's clock is deliberately NOT a zone: it is fixed in the left column and
+     * is not something the user places, so exposing it here would offer a cell whose contents
+     * cannot be changed.
+     */
     public enum Zone {
-        /** The 12 o'clock notch of the ring, or the rectangle's top slot. */
+        /** The 12 o'clock notch, the rectangle's top slot, or the capsule's top opening. */
         TOP,
-        /** The ring interior, or the rectangle's enlarged percentage. */
+        /** The ring interior, the rectangle's percentage, or the capsule's right-hand interior. */
         CENTRE,
-        /** The level dots along the bottom, or the rectangle's dot columns and bar. */
+        /** The 6 o'clock opening, the rectangle's dot columns and bar, or the capsule's bottom opening. */
         BOTTOM
     }
 
@@ -221,7 +239,7 @@ public final class TrioZones {
         }
     }
 
-    /** Layout-aware regions, including the capsule's two readings and dot bands. */
+    /** Layout-aware regions, including the capsule's four cells and its dot bands. */
     public static float[][] boxes(Zone zone, TrioAppearance a) {
         if (!a.capsule) {
             return boxes(zone, a.rect);
@@ -236,16 +254,24 @@ public final class TrioZones {
         final float fringe = 1f;
         final float left = TrioGeometry.CAP_INK_X - fringe;
         final float right = TrioGeometry.CAP_INK_X + TrioGeometry.CAP_INK_W + fringe;
-        if (zone == Zone.TOP) {
-            return new float[][] { { left, top, split, bottom } };
+        switch (zone) {
+            case TOP:
+                // The top opening: where the two dot rows cross the outline at 12 o'clock.
+                // The clock keeps the left column and is not a zone, so this band is the
+                // whole width of the strip above the interior rather than a cell of it.
+                return new float[][] {
+                        { left, TrioGeometry.CAP_INK_Y - fringe, right, top } };
+            case CENTRE:
+                // The interior to the right of the fixed clock: the one cell of the body the
+                // user can put something in.
+                return new float[][] { { split, top, right, bottom } };
+            case BOTTOM:
+            default:
+                // The bottom opening, mirroring the top one.
+                return new float[][] {
+                        { left, bottom, right,
+                                TrioGeometry.CAP_INK_Y + TrioGeometry.CAP_INK_H + fringe } };
         }
-        if (zone == Zone.CENTRE) {
-            return new float[][] { { split, top, right, bottom } };
-        }
-        return new float[][] {
-                { left, TrioGeometry.CAP_INK_Y - fringe, right, top },
-                { left, bottom, right, TrioGeometry.CAP_INK_Y + TrioGeometry.CAP_INK_H + fringe }
-        };
     }
 
     /** The same shared inverse transform, with style-aware region boundaries. */
@@ -445,6 +471,19 @@ public final class TrioZones {
         }
     }
 
+    /** The same, for the capsule's three bands. */
+    public static Part occupant(Zone zone, TrioAppearance a, TrioAppearance.Capsule cap) {
+        if (a == null || cap == null) {
+            return null;
+        }
+        // The dot rows are not a placed piece: they belong to BOTTOM as a whole, and the
+        // switch decides whether they draw. TOP and CENTRE report their own slot.
+        if (zone == Zone.BOTTOM) {
+            return cap.dots ? Part.MOBILE : null;
+        }
+        return decodePart(cap.parts[zone.ordinal()]);
+    }
+
     /**
      * The occupant of {@code zone} for whichever arrangement {@code a} selects.
      *
@@ -457,13 +496,8 @@ public final class TrioZones {
             return null;
         }
         if (a.capsule) {
-            final TrioAppearance.Capsule c = a.capsule(level, charging, wifiLevel, mobileType, sims);
-            if (zone == Zone.TOP) { return Part.CLOCK; }
-            if (zone == Zone.BOTTOM) { return c.dots ? Part.MOBILE : null; }
-            if (c.bolt) { return Part.BOLT; }
-            if (c.wifi) { return Part.WIFI; }
-            if (c.value) { return Part.VALUE; }
-            return c.type ? Part.TYPE : null;
+            return occupant(zone, a,
+                    a.capsule(level, charging, wifiLevel, mobileType, sims));
         }
         return a.rect
                 ? occupant(zone, a, a.rect(level, charging, wifiLevel, mobileType, sims))
@@ -480,11 +514,16 @@ public final class TrioZones {
         double tolerance = Math.max(5f, a.ringStroke * .5f + 2f);
         if (Math.abs(Math.hypot(x, y) - TrioGeometry.B_R) > tolerance) return false;
         double cap = Math.toDegrees(Math.atan2(tolerance, TrioGeometry.B_R));
-        double angle = (Math.toDegrees(Math.atan2(y, x)) - TrioGeometry.B_START + 360) % 360;
+        // The sweep follows the arc actually drawn: with the bottom closed there is ink all
+        // the way round, so a tap down there has to land on the ring. The three ZONE bands
+        // stay where they are - this only decides "is this tap on the battery outline".
+        final float sweep = ring.sweep();
+        final float start = ring.arcStart();
+        double angle = (Math.toDegrees(Math.atan2(y, x)) - start + 360) % 360;
         if (angle > 360 - cap) angle -= 360;
-        if (angle < -cap || angle > TrioGeometry.B_SWEEP + cap) return false;
-        double progress = angle / TrioGeometry.B_SWEEP;
-        double pad = cap / TrioGeometry.B_SWEEP;
+        if (angle < -cap || angle > sweep + cap) return false;
+        double progress = angle / sweep;
+        double pad = cap / sweep;
         return ring.gapStart() == ring.gapEnd()
                 || progress <= ring.gapStart() + pad || progress >= ring.gapEnd() - pad;
     }
@@ -680,10 +719,31 @@ public final class TrioZones {
         return next;
     }
 
+    /**
+     * The pieces a zone can hold.
+     *
+     * <p>{@link Part#MOBILE} is deliberately excluded: the aggregate meter is no longer a
+     * piece of its own. The signal is the two cards' rows ({@link Part#SIM_1} /
+     * {@link Part#SIM_2}), which read the same ink but each show one card's level, and the
+     * settings screen decides between "in the ring" and "back to the system" once for both.
+     * Offering the aggregate row here would put three rows in the ring and give the user a
+     * switch that changes nothing the cards do not already decide.
+     */
     public static java.util.List<Part> placementChoices(Zone zone, TrioSettings current, int sims) {
         return current.trioStyle == Prefs.STYLE_RING
-                ? java.util.Arrays.asList(Part.values())
+                ? placeableParts()
                 : choices(zone, current.trioStyle == Prefs.STYLE_RECT, current, sims);
+    }
+
+    /** Every piece the ring may hold, in enum order, minus the retired aggregate meter. */
+    public static java.util.List<Part> placeableParts() {
+        final java.util.List<Part> out = new java.util.ArrayList<>();
+        for (Part p : Part.values()) {
+            if (p != Part.MOBILE) {
+                out.add(p);
+            }
+        }
+        return out;
     }
 
     /**
@@ -735,8 +795,11 @@ public final class TrioZones {
         if (current == null) {
             return null;
         }
-        if (current.trioStyle == Prefs.STYLE_CAPSULE && zone == Zone.TOP) {
-            return want == Part.CLOCK ? new Assignment(current.copy(), 0) : null;
+        // The capsule's clock is fixed in the left column and is not a zone, so the clock is
+        // never something a placement can move - and putting it in a band would hide the real
+        // clock rather than move it.
+        if (current.trioStyle == Prefs.STYLE_CAPSULE && want == Part.CLOCK) {
+            return null;
         }
         // The ring keeps ordered lists, so "put X in Z" appends or moves X to the FRONT of
         // Z's list: the newly chosen piece is the one that wins the zone, and the ones

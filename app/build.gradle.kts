@@ -116,6 +116,12 @@ dependencies {
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.4")
+    // Lucide's icon set, for the six glyphs the module shows as UI affordances (the two
+    // tab icons and the four row/action icons). Miuix ships its own icon font, but its
+    // set has no matching outline for every affordance and its `Tune`/`Info` pair is the
+    // only tab vocabulary it offers. Lucide is Apache-2.0, one artifact, and depends on
+    // nothing but the Compose version already here.
+    implementation("com.composables:icons-lucide-android:1.1.0")
     // Blurred top bar. The artifact declares minSdk 33, but every effect in it
     // is gated on isRuntimeShaderSupported() and degrades to plain drawing
     // below that, so the manifest override keeps our own minSdk at 29.

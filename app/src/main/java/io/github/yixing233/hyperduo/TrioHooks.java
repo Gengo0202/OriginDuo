@@ -182,15 +182,25 @@ final class TrioHooks {
     /**
      * Whether the module should be drawing the out-of-ring signal reading.
      *
-     * <p>One way in, now that "signal out of ring" is gone as a setting: the charging island
-     * took the glyph away while the user still has a card placed in the ring. The reading is
-     * the only place left to put it, so it is drawn beside the battery instead of vanishing.
-     * A user with no card placed has handed that reading back to MIUI, so the native icon
+     * <p>Two ways in, and they are different questions:
+     *
+     * <ol>
+     *   <li>the user put the signal out of ring AND asked for the stacked rendering. That
+     *       is the explicit choice, and {@link TrioAppearance#stackedOut()} is the
+     *       predicate for it;
+     *   <li>the charging island took the glyph away while cards are still placed in the
+     *       ring. There is nowhere left to draw them, so the reading moves beside the
+     *       battery instead of vanishing - that is the fallback, and it must not require
+     *       the switch, because the user's intent was "in the ring" and the island is what
+     *       changed.
+     * </ol>
+     *
+     * <p>A user in neither case has handed the reading back to MIUI, so the native icon
      * stays and this draws nothing.
      */
     private static boolean outSignalWanted() {
         final TrioAppearance a = TrioConfig.appearance();
-        return islandHideBattery() && a.foldsMobile();
+        return a.stackedOut() || (islandHideBattery() && a.foldsMobile());
     }
 
     /**
@@ -4232,7 +4242,6 @@ final class TrioHooks {
         final View[] views = {findOutSignal(container), findPerfLabel(container),
                 findOutTypeLabel(container)};
         final OutRingLayout.Plan plan = outRingPlan(container, icons);
-        final int[] widths = plan.widths;
         final boolean rtl = container.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
         final boolean ready = icons != null && icons.getWidth() > 0 && centre != null;
         final int[] saved = icons != null ? OUT_PAD_SAVED.get(icons) : null;
@@ -4247,7 +4256,14 @@ final class TrioHooks {
         }
         for (int i = 0; i < views.length; i++) {
             final View child = views[i];
-            if (child == null || widths[i] <= 0) {
+            if (child == null || plan.widths[i] <= 0) {
+                // Two different reasons a slot has no width, and they need different
+                // handling: nothing to draw (widths[i] <= 0 from the caller) needs no
+                // touch, but a slot the solver DROPPED has to be hidden or it would keep
+                // painting at its old frame.
+                if (child != null && plan.dropped[i]) {
+                    child.setAlpha(0f);
+                }
                 continue;
             }
             final float scale = ready ? plan.scale : 0f;

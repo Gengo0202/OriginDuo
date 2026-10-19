@@ -270,7 +270,7 @@ final class TrioRenderer {
     private static void drawFreeRing(Canvas c, int level, boolean quickCharging, int wifiLevel,
                                      int mobileLevel, int[] levels, String type, int role, int fg,
                                      TrioAppearance a, TrioAppearance.Ring r) {
-        drawBattery(c, level, role, fg, a, r.gapStart(), r.gapEnd());
+        drawBattery(c, level, role, fg, a, r.gapStart(), r.gapEnd(), r.sweep(), r.arcStart());
         for (int z = 0; z < 3; z++) {
             final int part = r.parts[z];
             if (part == Prefs.PART_NONE) continue;
@@ -291,7 +291,12 @@ final class TrioRenderer {
                 c.translate(-TrioGeometry.W_CX, -TrioGeometry.W_INK_CY);
                 drawWifiArcs(c, wifiLevel, fg, a);
             } else if (part == Prefs.PART_BOLT) {
-                final float scale = Math.min(width / 15f, height / TrioGeometry.BOLT_INK_H);
+                // The bolt is fitted to its slot, then multiplied by the user's size. The
+                // product is NOT re-clamped to the slot: a user asking for a bigger bolt
+                // wants it bigger, and the slot is a third of the ring rather than a hard
+                // edge. Only the ink centre stays pinned, so growing is symmetric.
+                final float fit = Math.min(width / 15f, height / TrioGeometry.BOLT_INK_H);
+                final float scale = fit * a.boltScaleFactor();
                 c.scale(scale, scale);
                 c.translate(-TrioGeometry.BOLT_CX_REF, -TrioGeometry.BOLT_INK_CY);
                 FILL.setColor(quickCharging ? TrioGeometry.QUICK_CHARGE : fg);
@@ -490,7 +495,7 @@ final class TrioRenderer {
         // the network type, which shares that slot rather than claiming a second
         // line of its own.
         if (r.bolt) {
-            drawRectBolt(canvas, quickCharging ? TrioGeometry.QUICK_CHARGE : fg);
+            drawRectBolt(canvas, quickCharging ? TrioGeometry.QUICK_CHARGE : fg, a);
         } else if (r.wifi) {
             drawRectWifi(canvas, wifiLevel, fg, a);
         } else if (r.type) {
@@ -548,15 +553,71 @@ final class TrioRenderer {
             drawCapsuleDots(canvas, mobileLevel, slotLevels, cap.dual, stroke, fg, a);
         }
 
-        drawCapsuleTime(canvas, stroke, fg, a);
-        if (cap.bolt) {
-            drawCapsuleBolt(canvas, stroke, quickCharging ? TrioGeometry.QUICK_CHARGE : fg, a);
-        } else if (cap.wifi) {
-            drawCapsuleWifi(canvas, stroke, wifiLevel, fg, a);
-        } else if (cap.value) {
-            drawCapsuleValue(canvas, stroke, level, fg, a);
-        } else if (cap.type) {
-            drawCapsuleType(canvas, stroke, mobileType, fg, a);
+        // The clock is fixed in the left column, so it is drawn unconditionally rather than
+        // dispatched from a cell.
+        drawCapsuleTime(canvas, stroke, fg, a,
+                TrioGeometry.capLeftCx(stroke), TrioGeometry.capInteriorCy(stroke));
+
+        // Three bands, the same three the ring has: the two openings and the interior.
+        drawCapsuleCell(canvas, stroke, TrioZones.Zone.TOP, cap, level, quickCharging,
+                wifiLevel, mobileType, fg, a);
+        drawCapsuleCell(canvas, stroke, TrioZones.Zone.CENTRE, cap, level, quickCharging,
+                wifiLevel, mobileType, fg, a);
+        drawCapsuleCell(canvas, stroke, TrioZones.Zone.BOTTOM, cap, level, quickCharging,
+                wifiLevel, mobileType, fg, a);
+    }
+
+    /**
+     * Draws whatever {@code band} holds, at that band's own centre.
+     *
+     * <p>The centre comes from the zone, not from the piece: a bolt and a percentage are laid
+     * out differently inside the capsule, but they agree about where each band is, which is
+     * the whole point of putting them in bands.
+     *
+     * <p>The capsule's openings are horizontal strips above and below the outline, and its
+     * interior is the right-hand part of the body - the left part belongs to the clock.
+     */
+    private static void drawCapsuleCell(Canvas c, float stroke, TrioZones.Zone band,
+                                        TrioAppearance.Capsule cap, int level,
+                                        boolean quickCharging, int wifiLevel, String type,
+                                        int fg, TrioAppearance a) {
+        final int part = cap.parts[band.ordinal()];
+        if (part == Prefs.PART_NONE) {
+            return;
+        }
+        final float cx = band == TrioZones.Zone.TOP || band == TrioZones.Zone.BOTTOM
+                ? (TrioGeometry.CAP_INK_X + TrioGeometry.CAP_INK_W * 0.5f)
+                : TrioGeometry.capRightCx(stroke);
+        final float cy;
+        switch (band) {
+            case TOP:
+                cy = TrioGeometry.CAP_TOP;
+                break;
+            case BOTTOM:
+                cy = TrioGeometry.CAP_BOTTOM;
+                break;
+            default:
+                cy = TrioGeometry.capInteriorCy(stroke);
+                break;
+        }
+        switch (part) {
+            case Prefs.PART_BOLT:
+                drawCapsuleBolt(c, stroke, quickCharging ? TrioGeometry.QUICK_CHARGE : fg, a, cx, cy);
+                break;
+            case Prefs.PART_WIFI:
+                drawCapsuleWifi(c, stroke, wifiLevel, fg, a, cx, cy);
+                break;
+            case Prefs.PART_VALUE:
+                drawCapsuleValue(c, stroke, level, fg, a, cx, cy);
+                break;
+            case Prefs.PART_TYPE:
+                drawCapsuleType(c, stroke, type, fg, a, cx, cy);
+                break;
+            case Prefs.PART_CLOCK:
+                drawCapsuleTime(c, stroke, fg, a, cx, cy);
+                break;
+            default:
+                break;
         }
     }
 
@@ -732,8 +793,9 @@ final class TrioRenderer {
         }
     }
 
-    /** The time of day, in the capsule's left-hand slot. */
-    private static void drawCapsuleTime(Canvas c, float stroke, int fg, TrioAppearance a) {
+    /** The time of day, in a capsule cell centred on {@code (cx, cy)}. */
+    private static void drawCapsuleTime(Canvas c, float stroke, int fg, TrioAppearance a,
+                                        float cx, float cy) {
         final String text = TrioState.sClockText;
         if (text == null || text.isEmpty()) {
             return;
@@ -750,12 +812,12 @@ final class TrioRenderer {
         TEXT.setTextSize(size);
         TEXT.setColor(fg);
         TEXT.setTextAlign(Paint.Align.CENTER);
-        c.drawText(text, TrioGeometry.capLeftCx(stroke), TrioGeometry.capTextBaseline(stroke, size), TEXT);
+        c.drawText(text, cx, cy + (size * TrioGeometry.CAP_HEIGHT_RATIO) * 0.5f, TEXT);
     }
 
-    /** The battery percentage, when the right-hand slot carries it. */
+    /** The battery percentage, when a capsule cell carries it. */
     private static void drawCapsuleValue(Canvas c, float stroke, int level, int fg,
-                                         TrioAppearance a) {
+                                         TrioAppearance a, float cx, float cy) {
         final String text = String.valueOf(level);
         applyWeight(a.valueWeight);
         final float size = capsuleTextSize(text, a.valueSize, stroke,
@@ -763,16 +825,16 @@ final class TrioRenderer {
         TEXT.setTextSize(size);
         TEXT.setColor(fg);
         TEXT.setTextAlign(Paint.Align.CENTER);
-        c.drawText(text, TrioGeometry.capRightCx(stroke), TrioGeometry.capTextBaseline(stroke, size), TEXT);
+        c.drawText(text, cx, cy + (size * TrioGeometry.CAP_HEIGHT_RATIO) * 0.5f, TEXT);
     }
 
-    /** The network type, when the right-hand slot carries it. */
+    /** The network type, when a capsule cell carries it. */
     private static void drawCapsuleType(Canvas c, float stroke, String type, int fg,
-                                        TrioAppearance a) {
+                                        TrioAppearance a, float cx, float cy) {
         applyWeight(a.typeWeight);
         final float size = capsuleTextSize(type, a.typeSize, stroke,
                 TrioGeometry.capValueSlotWidth(stroke), a.typeSuffixScale);
-        drawType(c, type, TrioGeometry.capRightCx(stroke), TrioGeometry.capTextBaseline(stroke, size),
+        drawType(c, type, cx, cy + (size * TrioGeometry.CAP_HEIGHT_RATIO) * 0.5f,
                 size, fg, a);
     }
 
@@ -799,23 +861,36 @@ final class TrioRenderer {
         return fitSize(text, requested, slotWidth, suffixPercent);
     }
 
-    /** The Wi-Fi group moved and scaled into the capsule's right-hand slot. */
+    /** The Wi-Fi group moved and scaled into a capsule cell centred on {@code (cx, cy)}. */
     private static void drawCapsuleWifi(Canvas c, float stroke, int level, int fg,
-                                        TrioAppearance a) {
+                                        TrioAppearance a, float cx, float cy) {
         final float scale = TrioGeometry.capWifiScale(stroke);
         final int save = c.save();
-        c.translate(TrioGeometry.capWifiOffsetX(stroke),
-                TrioGeometry.capWifiOffsetY(stroke));
+        // The group's own reference offset centres it on capRightCx/capInteriorCy; shifting
+        // by the difference between that pair and this cell keeps the drawn ink centred
+        // wherever the cell is.
+        c.translate(TrioGeometry.capWifiOffsetX(stroke) + (cx - TrioGeometry.capRightCx(stroke)),
+                TrioGeometry.capWifiOffsetY(stroke) + (cy - TrioGeometry.capInteriorCy(stroke)));
         c.scale(scale, scale);
         drawWifiArcs(c, level, fg, a);
         c.restoreToCount(save);
     }
 
-    /** The charging bolt, in the capsule's right-hand slot. */
-    private static void drawCapsuleBolt(Canvas c, float stroke, int color, TrioAppearance a) {
-        final float scale = TrioGeometry.capBoltScale(stroke);
+    /**
+     * The charging bolt, in a capsule cell centred on {@code (cx, cy)}.
+     *
+     * <p>The cell's own fit is the base; the user's size multiplies inside that room. The
+     * offsets are recomputed from the resulting scale rather than added to the existing
+     * pair, because {@code offset = centre - reference * scale} only keeps the ink centred
+     * while the scale it was derived from is the scale being drawn.
+     */
+    private static void drawCapsuleBolt(Canvas c, float stroke, int color, TrioAppearance a,
+                                        float cx, float cy) {
+        final float factor = a.boltScaleFactor();
+        final float scale = TrioGeometry.capBoltScale(stroke) * factor;
         final int save = c.save();
-        c.translate(TrioGeometry.capBoltOffsetX(stroke), TrioGeometry.capBoltOffsetY(stroke));
+        c.translate(cx - TrioGeometry.BOLT_CX_REF * scale,
+                cy - TrioGeometry.BOLT_INK_CY * scale);
         c.scale(scale, scale);
         FILL.setStyle(Paint.Style.FILL);
         FILL.setColor(color);
@@ -907,10 +982,11 @@ final class TrioRenderer {
         c.restoreToCount(save);
     }
 
-    private static void drawRectBolt(Canvas c, int color) {
+    private static void drawRectBolt(Canvas c, int color, TrioAppearance a) {
         final int save = c.save();
-        c.translate(TrioGeometry.rectBoltOffsetX(), TrioGeometry.rectBoltOffsetY());
-        c.scale(TrioGeometry.BOLT_SCALE, TrioGeometry.BOLT_SCALE);
+        final float factor = a.boltScaleFactor();
+        c.translate(TrioGeometry.rectBoltOffsetX(factor), TrioGeometry.rectBoltOffsetY(factor));
+        c.scale(TrioGeometry.BOLT_SCALE * factor, TrioGeometry.BOLT_SCALE * factor);
         FILL.setColor(color);
         c.drawPath(BOLT, FILL);
         c.restoreToCount(save);
@@ -970,15 +1046,16 @@ final class TrioRenderer {
     // ----------------------------------------------------------------- battery
 
     private static void drawBattery(Canvas c, int level, int role, int fg,
-                                    TrioAppearance a, float gapStart, float gapEnd) {
+                                    TrioAppearance a, float gapStart, float gapEnd,
+                                    float sweep, float start) {
         STROKE.setStrokeWidth(a.ringStroke);
 
         STROKE.setColor(withAlpha(fg, a.trackAlpha));
-        batteryRing(c, 0f, 1f, gapStart, gapEnd);
+        batteryRing(c, 0f, 1f, gapStart, gapEnd, sweep, start);
 
         if (level > 0) {
             STROKE.setColor(role);
-            batteryRing(c, 0f, Math.min(1f, level / 100f), gapStart, gapEnd);
+            batteryRing(c, 0f, Math.min(1f, level / 100f), gapStart, gapEnd, sweep, start);
         }
     }
 
@@ -990,10 +1067,15 @@ final class TrioRenderer {
      * of the full path: the two segments the mouth leaves behind divide the
      * level between them, so 50% ends exactly where the left segment does and
      * the mouth never consumes any of it. Measuring over the whole path instead
-     * made the level stand still across the entire width of the mouth 閳?the
+     * made the level stand still across the entire width of the mouth - the
      * right half did not start filling until the level had climbed past 67%.
+     *
+     * <p>{@code sweep}/{@code start} are passed in rather than read from
+     * {@link TrioGeometry}, because the arc's angular span depends on whether anything
+     * occupies the bottom of the ring this frame - see {@code bottomOpen}.
      */
-    private static void batteryRing(Canvas c, float from, float to, float gapStart, float gapEnd) {
+    private static void batteryRing(Canvas c, float from, float to, float gapStart, float gapEnd,
+                                    float sweep, float start) {
         from = clamp01(from);
         to = clamp01(to);
         if (to <= from) {
@@ -1012,20 +1094,19 @@ final class TrioRenderer {
         final float firstEnd = Math.min(visibleTo, mouthStart);
         if (firstEnd > visibleFrom) {
             arcByProgress(c, visibleFrom, firstEnd, TrioGeometry.B_CX, TrioGeometry.B_CY,
-                    TrioGeometry.B_R);
+                    TrioGeometry.B_R, sweep, start);
         }
         // Second segment: visible progress (mouthStart, drawn] is path (mouthEnd, 1].
         final float secondFrom = Math.max(visibleFrom, mouthStart);
         if (visibleTo > secondFrom) {
             arcByProgress(c, mouthEnd + secondFrom - mouthStart, mouthEnd + visibleTo - mouthStart,
-                    TrioGeometry.B_CX, TrioGeometry.B_CY, TrioGeometry.B_R);
+                    TrioGeometry.B_CX, TrioGeometry.B_CY, TrioGeometry.B_R, sweep, start);
         }
     }
 
-    private static void arcByProgress(Canvas c, float from, float to, float cx, float cy, float r) {
-        arc(c, cx, cy, r,
-                TrioGeometry.B_START + from * TrioGeometry.B_SWEEP,
-                (to - from) * TrioGeometry.B_SWEEP);
+    private static void arcByProgress(Canvas c, float from, float to, float cx, float cy, float r,
+                                      float sweep, float start) {
+        arc(c, cx, cy, r, start + from * sweep, (to - from) * sweep);
     }
 
     private static void arc(Canvas c, float cx, float cy, float r, float startDeg, float sweepDeg) {
@@ -1301,26 +1382,6 @@ final class TrioRenderer {
         // Restore the shared paint's centred default: every other text draw in
         // this renderer relies on it, and this method is not the last per frame.
         TEXT.setTextAlign(Paint.Align.CENTER);
-    }
-
-    /**
-     * Draws the charging bolt scaled up from its reference path. The transform is
-     * applied to the canvas rather than baked into the path so the reference
-     * coordinates stay readable, and it is saved/restored so nothing else moves.
-     *
-     * <p>The bolt lives in the 12 o'clock gap at the size the reference path
-     * implies. It is never enlarged into the ring centre: that slot belongs to
-     * the percentage, which is the point of the centred-value setting.
-     *
-     * @param color bolt fill; amber while the battery reports quick charge.
-     */
-    private static void drawBolt(Canvas c, int color) {
-        final int save = c.save();
-        c.translate(TrioGeometry.boltOffsetX(), TrioGeometry.boltOffsetY());
-        c.scale(TrioGeometry.BOLT_SCALE, TrioGeometry.BOLT_SCALE);
-        FILL.setColor(color);
-        c.drawPath(BOLT, FILL);
-        c.restoreToCount(save);
     }
 
     /**

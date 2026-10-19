@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="drawing_master_title">Master switch</string>
+    <string name="drawing_quick_edit_title">Quick edit</string>
+    <string name="drawing_order_title">Component order</string>
     <string name="app_name">HyperDuo</string>
     <string name="xposed_description">Merges Wi-Fi, mobile signal and battery into a single iPhone-Duo style trio glyph in the status bar.</string>
 
@@ -11,16 +14,14 @@
     <string name="group_out_signal">Out-of-ring signal</string>
     <string name="group_track">Track</string>
 
-    <string name="tab_drawing">Drawing</string>
+    <string name="tab_home">Home</string>
 
-    <string name="drawing_title">Tap the part of the icon you want to change</string>
-    <string name="drawing_summary">Tap a part and pick a component to put there; press and hold to change its size and colours.</string>
     <string name="drawing_zone_edit">Adjust…</string>
     <string name="drawing_zone_add">Add…</string>
     <string name="drawing_zone_manage">Manage…</string>
     <string name="drawing_priority_title">Show order for %1$s</string>
-    <string name="drawing_priority_summary">Tried top to bottom: when the first one has nothing to draw (no Wi-Fi, not charging), the next takes over. Drag the handle to reorder; long press a row to remove it.</string>
     <string name="drawing_priority_empty_summary">Nothing placed here yet. Use "Add component" below.</string>
+    <string name="drawing_signal_out_of_ring_notice">The mobile signal is set to "outside the ring", so its dots are not drawn inside it.</string>
     <string name="drawing_priority_first">#%1$d · shown first</string>
     <string name="drawing_priority_fallback">#%1$d · takes over if above cannot draw</string>
     <string name="drawing_priority_move_up">Move up</string>
@@ -32,12 +33,12 @@
     <string name="drawing_pick_showing_now">This is the one being shown.</string>
     <string name="drawing_pick_promote_summary">Already in this third; tapping moves it to the front.</string>
     <string name="drawing_pick_move_summary">Currently in %1$s; tapping moves it here and leaves %1$s empty.</string>
+    <string name="drawing_move_title">Move it here?</string>
+    <string name="drawing_move_summary">%1$s is currently in %2$s. Moving it here takes it out of %2$s.</string>
+    <string name="drawing_move_confirm">Move here</string>
     <string name="drawing_priority_add">Add component</string>
     <string name="drawing_priority_done">Done</string>
     <string name="drawing_occupant_clock">Time</string>
-    <string name="drawing_hint_clock">Left clock</string>
-    <string name="drawing_hint_reading">Right reading</string>
-    <string name="drawing_hint_signal">Signal rows</string>
     <string name="drawing_clock_fixed">The clock is fixed in the capsule; its size and weight can be adjusted.</string>
     <string name="drawing_pick_title">%1$s: currently %2$s</string>
     <string name="drawing_pick_none_summary">Remove optional components from this area; the ring and battery bar stay.</string>
@@ -50,7 +51,6 @@
     <string name="drawing_hint_centre">Middle</string>
     <string name="drawing_hint_bottom">Bottom</string>
     <string name="drawing_state_title">Preview state</string>
-    <string name="drawing_state_summary">Changes the battery and signal the preview shows, and the three areas follow.</string>
     <string name="drawing_scene_normal">Normal</string>
     <string name="drawing_scene_charging">Charging</string>
     <string name="drawing_scene_quick">Fast charging</string>
@@ -71,9 +71,8 @@
     <string name="drawing_close">Close</string>
     <string name="drawing_part_appearance">Overall appearance</string>
     <string name="drawing_part_readouts">Power and temperature</string>
-    <string name="drawing_parts_title">All components</string>
-    <string name="drawing_parts_summary">Open settings here even when a component is hidden or outside the icon.</string>
-    <string name="drawing_outside_title">Outside content samples · tap to adjust</string>
+    <string name="drawing_parts_title">Component appearance</string>
+    <string name="drawing_outside_title">Outside components</string>
     <string name="drawing_readout_sample_summary">Sample readings show content and weight; final sizing follows the status bar.</string>
     <string name="drawing_preview_hidden">Hidden outside</string>
     <string name="drawing_power_preview_hint">Select Charging to preview power</string>
@@ -82,10 +81,8 @@
     <string name="drawing_theme_dark">Dark background</string>
 
     <string name="master_title">Enable trio icon</string>
-    <string name="master_summary">Master switch; turn off to restore the stock battery and signal icons.</string>
 
     <string name="trio_style_title">Trio style</string>
-    <string name="trio_style_summary">Use the default ring, or a capsule with the time and readings inside its battery outline.</string>
     <string name="trio_style_ring">Ring</string>
     <string name="trio_style_capsule">Capsule</string>
 
@@ -97,18 +94,20 @@
 
 
     <string name="show_sim_1_title">SIM 1 dots</string>
-    <string name="show_sim_1_summary">Draw SIM 1\'s level as its own row of four dots, in any slot of the ring. Independent of SIM 2.</string>
+    <string name="show_sim_1_summary">Draw SIM 1\'s level as its own row of four dots.</string>
     <string name="show_sim_2_title">SIM 2 dots</string>
-    <string name="show_sim_2_summary">Draw SIM 2\'s level as its own row of four dots, in any slot of the ring. Independent of SIM 1.</string>
+    <string name="show_sim_2_summary">Draw SIM 2\'s level as its own row of four dots.</string>
 
     <string name="show_value_title">Show battery number</string>
-    <string name="show_value_summary">Show the battery percentage inside the ring; replaced by a bolt while charging.</string>
+    <string name="show_value_summary">Show the battery percentage inside the ring.</string>
 
     <string name="show_bolt_title">Bolt while charging</string>
-    <string name="show_bolt_summary">Turn off to drop the bolt from the ring and keep the system\'s own charging icon.</string>
+    <string name="bolt_scale_title">Charging bolt size</string>
+    <string name="bolt_scale_summary">The default is 100% and the slider covers 60–160%.</string>
+    <string name="show_bolt_summary">Show a bolt in the ring while charging.</string>
 
     <string name="show_mobile_type_title">Network type</string>
-    <string name="show_mobile_type_summary">Where the network type label goes: off, inside the ring, or drawn separately outside it.</string>
+    <string name="show_mobile_type_summary">The 3G/4G/5G label, inside the ring or outside it.</string>
     <string name="mobile_type_off">Off</string>
     <string name="mobile_type_inside">In the ring</string>
     <string name="mobile_type_outside">Outside the ring</string>
@@ -116,29 +115,27 @@
 
 
     <string name="data_sim_only_title">Data SIM only</string>
-    <string name="data_sim_only_summary">With two SIMs, draw only the reading of the SIM that carries data.</string>
 
 
 
     <string name="perf_power_title">Charging power</string>
-    <string name="perf_power_summary">Show live power beside the battery while charging.</string>
+    <string name="perf_power_summary">Show the charging power beside the battery icon.</string>
 
     <string name="perf_temp_title">Battery temperature</string>
-    <string name="perf_temp_summary">Show battery temperature in °C.</string>
+    <string name="perf_temp_summary">Show the battery temperature in °C beside the battery icon.</string>
 
     <string name="glyph_scale_title">Overall icon size</string>
-    <string name="glyph_scale_summary">The whole icon as a percentage of the box the status bar gives it; 100%% by default. That box is only about 20dp tall, so the slider can only shrink - 100%% means "as large as the system allows". Every stroke, arc and digit shrinks by the same factor, so the shape is unchanged.</string>
+    <string name="glyph_scale_summary">The default is 100% and the slider covers 60–100%.</string>
 
     <string name="perf_scale_title">Overall reading size</string>
-    <string name="perf_scale_summary">The two readings as a percentage on top of their adaptive size; 100%% by default. With one reading on that size is the out-of-ring type size; with both on it has already been brought down to one icon height, and this scales that answer up or down.</string>
+    <string name="perf_scale_summary">The default is 100% and the slider covers 60–150%.</string>
     <string name="perf_weight_title">Reading weight</string>
-    <string name="perf_weight_summary">How heavy the two readings are drawn; 700 by default, 100-900. A heavier face is taller, so the combined size is worked out again to keep the two lines inside one icon height.</string>
+    <string name="perf_weight_summary">The default is 700 and the slider covers 100–900.</string>
 
     <string name="perf_pair_title">Charging power and battery temperature</string>
 
 
     <string name="color_role_title">State colors</string>
-    <string name="color_role_summary">Pick colors for low battery, charging and critical battery.</string>
 
     <string name="color_low_title">Low battery color</string>
     <string name="color_charging_title">Charging color</string>
@@ -153,50 +150,59 @@
     <string name="color_reset_confirm">Reset</string>
 
     <string name="low_threshold_title">Low battery threshold</string>
-    <string name="low_threshold_summary">Switch to the low battery color below this percentage.</string>
+    <string name="low_threshold_summary">The default is 20% and the slider covers 5–50%.</string>
 
     <string name="stroke_title">Ring stroke</string>
-    <string name="stroke_summary">Stroke width of the battery ring.</string>
+    <string name="stroke_summary">The default is 14dp and the slider covers 4–16dp.</string>
     <string name="stroke_title_rect">Bar thickness</string>
-    <string name="stroke_summary_rect">Thickness of the battery bar along the bottom.</string>
+    <string name="stroke_summary_rect">The default is 14dp and the slider covers 4–16dp.</string>
 
     <string name="arc_stroke_title">Arc stroke</string>
-    <string name="arc_stroke_summary">Stroke width of the Wi-Fi arcs.</string>
-    <string name="arc_stroke_summary_rect">Stroke width of the Wi-Fi arcs, and the height of the group inside the top slot.</string>
+    <string name="arc_stroke_summary">The default is 12dp and the slider covers 3–16dp.</string>
+    <string name="arc_stroke_summary_rect">The default is 12dp and the slider covers 3–16dp.</string>
 
     <string name="value_size_title">Number size</string>
-    <string name="value_size_summary">Font size of the battery percentage. While centred it is enlarged at most 1.4x, so 38 and above no longer grow.</string>
+    <string name="value_size_summary">The default is 36 and the slider covers 16–44 (up to 56 when centred in the ring).</string>
 
     <string name="value_weight_title">Number weight</string>
-    <string name="value_weight_summary">Stroke weight of the battery number, 100 lightest to 900 heaviest.</string>
+    <string name="value_weight_summary">The default is 700 and the slider covers 100–900.</string>
 
     <string name="clock_size_title">Clock size</string>
-    <string name="clock_size_summary">Font size of the time in the capsule or free ring, independent of the battery number.</string>
+    <string name="clock_size_summary">The default is 36 and the slider covers 16–44.</string>
 
     <string name="clock_weight_title">Clock weight</string>
-    <string name="clock_weight_summary">Stroke weight of the time, 100 lightest to 900 heaviest.</string>
+    <string name="clock_weight_summary">The default is 700 and the slider covers 100–900.</string>
 
     <string name="type_size_title">Network type size</string>
-    <string name="type_size_summary">Font size of the 3G/4G/5G label in the ring centre.</string>
+    <string name="type_size_summary">The default is 32 and the slider covers 16–44.</string>
 
     <string name="out_type_size_title">Out-of-ring type size</string>
-    <string name="out_type_size_summary">Font size of the 3G/4G/5G label shown outside the ring, in dp; the default is 14dp and the slider covers 8–26dp. The preview cell below is its only reference.</string>
+    <string name="out_type_size_summary">The default is 14dp and the slider covers 8–26dp.</string>
 
     <string name="out_type_margin_left_title">Out-of-ring type margin, left</string>
-    <string name="out_type_margin_left_summary">The gap between the out-of-ring type label and its outer side, in dp. The default is 2dp and the slider covers 0–16dp. Under RTL the whole row mirrors.</string>
+    <string name="out_type_margin_left_summary">The default is 2dp and the slider covers 0–16dp.</string>
 
     <string name="out_type_margin_right_title">Out-of-ring type margin, right</string>
-    <string name="out_type_margin_right_summary">The gap between the out-of-ring type label and its inner side, in dp. The default is 2dp and the slider covers 0–16dp. It mirrors under RTL too.</string>
+    <string name="out_type_margin_right_summary">The default is 2dp and the slider covers 0–16dp.</string>
 
     <string name="type_suffix_scale_title">The A in 5GA</string>
-    <string name="type_suffix_scale_summary">When the network type ends in an A (such as 5GA), the size of that trailing A as a percentage of the main label\'s, sharing its baseline. The default is 65%% and the slider covers 50–100%%; 100%% stops the shrink. Applies both inside the ring and outside it.</string>
+    <string name="type_suffix_scale_summary">The default is 65% and the slider covers 50–100%.</string>
 
     <string name="type_weight_title">Network type weight</string>
-    <string name="type_weight_summary">Stroke weight of the network type, 100 lightest to 900 heaviest.</string>
+    <string name="type_weight_summary">The default is 700 and the slider covers 100–900.</string>
 
     <string name="track_alpha_title">Track opacity</string>
-    <string name="track_alpha_summary">Opacity of the unlit parts of the glyph.</string>
+    <string name="track_alpha_summary">The default is 56 and the slider covers 0–255.</string>
 
+    <string name="nav_section">Interface</string>
+    <string name="nav_style_title">Bottom bar style</string>
+    <string name="nav_style_docked">HyperOS bar</string>
+    <string name="nav_style_floating">HyperOS floating bar</string>
+    <string name="nav_style_liquid">Liquid glass bar</string>
+    <string name="nav_labels_title">Bottom bar labels</string>
+    <string name="nav_labels_both">Icon and text</string>
+    <string name="nav_labels_icon">Icon only</string>
+    <string name="nav_labels_text">Text only</string>
     <string name="debug_title">Debug log</string>
     <string name="debug_summary">Write verbose output to the LSPosed log. Enable only when diagnosing.</string>
 
@@ -256,9 +262,17 @@
 
     <!-- Tooltip on a row greyed out by another setting; %1$s is that setting's name. -->
     <string name="gate_hint">Turn on &quot;%1$s&quot; first</string>
-    <string name="ring_position_native">Return to system position</string>
+    <string name="ring_position_native">Hand back to system</string>
     <string name="ring_position_wifi">Wi-Fi arcs position</string>
     <string name="ring_position_mobile">Mobile signal position</string>
+    <string name="signal_mode_in_ring">In the ring</string>
+    <string name="signal_mode_out_ring">Outside the ring</string>
+    <string name="stacked_signal_title">Stacked signal</string>
+    <string name="stacked_signal_summary">Outside the ring, draw the module\'s own signal reading beside the battery instead of handing the icon back.</string>
+    <string name="out_signal_size_title">Stacked signal size</string>
+    <string name="out_signal_size_summary">The default is 15dp and the slider covers 6–20dp.</string>
+    <string name="out_signal_margin_title">Stacked signal spacing</string>
+    <string name="out_signal_margin_summary">The default is 2dp and the slider covers 0–16dp.</string>
     <string name="ring_position_sim_1">SIM 1 dots position</string>
     <string name="ring_position_sim_2">SIM 2 dots position</string>
     <string name="ring_position_value">Battery number position</string>
@@ -270,7 +284,6 @@
     <string name="ring_value_summary">Show the battery percentage in its reserved slot, including while charging. Outside the ring, the system percentage setting applies.</string>
     <string name="ring_slot_reserved">%1$s (currently hidden)</string>
     <string name="ring_bolt_summary">Show a bolt in its reserved slot while charging, independently of the percentage. When off, charging indication follows the system settings.</string>
-    <string name="ring_position_summary">Choose a ring slot. Outside the ring, the system position and display settings apply. Moving an existing component swaps slots; a new component replaces the destination.</string>
     <string name="ring_signal_position_summary">Reserves an inside slot independently of inside/outside signal mode. Outside mode keeps this reservation.</string>
     <string name="ring_layout_title">Ring layout</string>
     <string name="ring_layout_auto">Automatic</string>

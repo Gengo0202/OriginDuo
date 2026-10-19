@@ -11,16 +11,17 @@
     <string name="group_out_signal">环外信号</string>
     <string name="group_track">底纹</string>
 
-    <string name="tab_drawing">绘制</string>
+    <string name="tab_home">首页</string>
+    <string name="drawing_master_title">总开关</string>
+    <string name="drawing_quick_edit_title">快捷编辑</string>
+    <string name="drawing_order_title">组件排序</string>
 
-    <string name="drawing_title">点按图标上要改的部位</string>
-    <string name="drawing_summary">点一个部位，从列表里挑一个组件换上去；长按直接改它的大小与颜色。</string>
     <string name="drawing_zone_edit">调整…</string>
     <string name="drawing_zone_add">添加…</string>
     <string name="drawing_zone_manage">管理…</string>
     <string name="drawing_priority_title">%1$s 的显示顺序</string>
-    <string name="drawing_priority_summary">从上到下依次尝试：上面那个画不出来时（比如没连 Wi-Fi、没在充电），自动换下一个。拖动左侧把手调整顺序，长按一行可移除。</string>
     <string name="drawing_priority_empty_summary">这一处还没有组件，点下面的「添加组件」</string>
+    <string name="drawing_signal_out_of_ring_notice">移动信号已设为「环外」，信号点不会画在环内。</string>
     <string name="drawing_priority_first">第 %1$d 位 · 优先显示</string>
     <string name="drawing_priority_fallback">第 %1$d 位 · 上面画不出来时顶上</string>
     <string name="drawing_priority_move_up">上移</string>
@@ -32,34 +33,43 @@
     <string name="drawing_pick_showing_now">正在显示这个组件。</string>
     <string name="drawing_pick_promote_summary">已在环内，点它会挪到第一位。</string>
     <string name="drawing_pick_move_summary">目前在%1$s，点它会移到这一处，%1$s 将空出。</string>
+    <string name="drawing_move_title">移到这一处？</string>
+    <string name="drawing_move_summary">%1$s 目前在%2$s。移到这里后，%2$s 就不再有它了。</string>
+    <string name="drawing_move_confirm">移到这里</string>
     <string name="drawing_priority_add">添加组件</string>
     <string name="drawing_priority_done">完成</string>
     <string name="show_sim_1_title">显示卡一信号点</string>
-    <string name="show_sim_1_summary">把卡一自己的信号画成一行四点；放在环内哪一处由优先级列表决定。</string>
+    <string name="show_sim_1_summary">把卡一自己的信号画成一行四点。</string>
     <string name="show_sim_2_title">显示卡二信号点</string>
-    <string name="show_sim_2_summary">把卡二自己的信号画成一行四点；放在环内哪一处由优先级列表决定。</string>
-    <string name="ring_value_summary">电量数字放在环内哪一处，由该处的优先级列表决定；没放在环内时，百分比交回系统样式。</string>
-    <string name="ring_bolt_summary">充电闪电只在充电时出现，与其他组件一样由所在那一处的优先级列表决定。</string>
+    <string name="show_sim_2_summary">把卡二自己的信号画成一行四点。</string>
+    <string name="ring_value_summary">环内显示电量百分比。</string>
+    <string name="ring_bolt_summary">充电时环内改为闪电图标。</string>
     <string name="ring_position_wifi">Wi-Fi 弧形的位置</string>
     <string name="ring_position_mobile">移动信号的位置</string>
+    <string name="signal_mode_in_ring">环内</string>
+    <string name="signal_mode_out_ring">环外</string>
+    <string name="stacked_signal_title">堆叠信号</string>
+    <string name="stacked_signal_summary">环外时由模块在电池旁自己画一组信号读数，不再交回系统图标。</string>
+    <string name="out_signal_size_title">堆叠信号大小</string>
+    <string name="out_signal_size_summary">默认 15dp，可调 6–20dp。</string>
+    <string name="out_signal_margin_title">堆叠信号间距</string>
+    <string name="out_signal_margin_summary">默认 2dp，可调 0–16dp。</string>
     <string name="ring_position_sim_1">卡一信号点的位置</string>
     <string name="ring_position_sim_2">卡二信号点的位置</string>
     <string name="ring_position_value">电量数字的位置</string>
     <string name="ring_position_bolt">充电闪电的位置</string>
     <string name="ring_position_type">网络类型的位置</string>
     <string name="ring_position_clock">时钟的位置</string>
-    <string name="ring_position_native">不放进环内（归还系统）</string>
-    <string name="ring_position_summary">选一处就把它放进那一处的优先级列表最前面；选「不放进环内」则交回系统显示。</string>
+    <string name="ring_position_native">归还系统</string>
     <string name="ring_signal_position_summary">放环内就画成信号点；不放进环内时交回系统图标。</string>
     <string name="drawing_occupant_sim_1">卡一信号点</string>
     <string name="drawing_occupant_sim_2">卡二信号点</string>
-    <string name="drawing_outside_title">环外显示</string>
+    <string name="drawing_outside_title">环外组件</string>
     <string name="drawing_part_appearance">外观</string>
     <string name="drawing_part_battery">电池</string>
     <string name="drawing_part_readouts">读数组</string>
     <string name="drawing_part_ring">环内组件</string>
-    <string name="drawing_parts_summary">点一处进入它的显示顺序；长按图标上的组件可直接改大小与颜色。</string>
-    <string name="drawing_parts_title">组件</string>
+    <string name="drawing_parts_title">组件外观</string>
     <string name="drawing_power_preview_hint">充电时这里显示功率</string>
     <string name="drawing_preview_hidden">预览已隐藏</string>
     <string name="drawing_readout_sample_summary">环外读数组的示例，实际内容随状态变化。</string>
@@ -67,9 +77,6 @@
     <string name="drawing_theme_light">浅色</string>
     <string name="drawing_theme_system">跟随系统</string>
     <string name="drawing_occupant_clock">时间</string>
-    <string name="drawing_hint_clock">左侧时间</string>
-    <string name="drawing_hint_reading">右侧读数</string>
-    <string name="drawing_hint_signal">边界信号</string>
     <string name="drawing_clock_fixed">时间为胶囊固定内容，可调整字号与字重。</string>
     <string name="drawing_pick_title">%1$s：现在是%2$s</string>
     <string name="drawing_pick_none_summary">清除这一处的可选组件；圆环和电量条保留。</string>
@@ -82,7 +89,6 @@
     <string name="drawing_hint_centre">中部</string>
     <string name="drawing_hint_bottom">下部</string>
     <string name="drawing_state_title">预览状态</string>
-    <string name="drawing_state_summary">切换预览里显示的电量与信号，三处热区会跟着变。</string>
     <string name="drawing_scene_normal">正常</string>
     <string name="drawing_scene_charging">充电</string>
     <string name="drawing_scene_quick">快充</string>
@@ -101,10 +107,8 @@
     <string name="drawing_close">关闭</string>
 
     <string name="master_title">启用三合一图标</string>
-    <string name="master_summary">总开关，关闭后恢复系统原本的电池与信号图标。</string>
 
     <string name="trio_style_title">三合一样式</string>
-    <string name="trio_style_summary">圆环是默认样式；矩形用两列信号点夹住中间内容；胶囊用轮廓本身表示电量。</string>
     <string name="trio_style_ring">圆环</string>
     <string name="trio_style_capsule">胶囊</string>
 
@@ -116,13 +120,15 @@
 
 
     <string name="show_value_title">显示电量数字</string>
-    <string name="show_value_summary">环内显示电量百分比，充电时改为闪电图标。</string>
+    <string name="show_value_summary">环内显示电量百分比。</string>
 
     <string name="show_bolt_title">充电时显示闪电</string>
-    <string name="show_bolt_summary">关闭后环内不画闪电，交还系统原生图标。</string>
+    <string name="bolt_scale_title">充电闪电大小</string>
+    <string name="bolt_scale_summary">默认 100%，可调 60–160%。</string>
+    <string name="show_bolt_summary">充电时环内改为闪电图标。</string>
 
     <string name="show_mobile_type_title">网络类型</string>
-    <string name="show_mobile_type_summary">网络类型文字的位置：关闭、圆环内，或环外另画一个。</string>
+    <string name="show_mobile_type_summary">3G/4G/5G 等文字，可放在环内或环外。</string>
     <string name="mobile_type_off">关闭</string>
     <string name="mobile_type_inside">环内</string>
     <string name="mobile_type_outside">环外</string>
@@ -130,29 +136,25 @@
 
 
     <string name="data_sim_only_title">仅显示上网卡</string>
-    <string name="data_sim_only_summary">双卡时只绘制当前上网卡的读数。</string>
 
 
 
     <string name="perf_power_title">充电功率</string>
-    <string name="perf_power_summary">电池图标旁显示充电功率，取自电池自身电流与电压，不足 10W 保留一位小数。</string>
 
     <string name="perf_temp_title">电池温度</string>
-    <string name="perf_temp_summary">电池图标旁显示电池温度，单位摄氏度，取整显示，与充电功率上下两行排列。</string>
 
     <string name="glyph_scale_title">图标整体尺寸</string>
-    <string name="glyph_scale_summary">整个图标相对状态栏给定框的百分比，默认 100%%。状态栏的框只有约 20dp 高，所以只能缩小、不能放大；100%% 就是系统给多大画多大。缩小时描边、圆弧与文字按同一比例一起缩，形状不变。</string>
+    <string name="glyph_scale_summary">默认 100%，可调 60–100%。</string>
 
     <string name="perf_scale_title">读数整体尺寸</string>
-    <string name="perf_scale_summary">两项读数在自适应大小之上的百分比，默认 100%%。只开一项时是环外类型字号，两项都开时已经自动缩到两行合起来一个图标高，这里再整体放大或缩小。</string>
+    <string name="perf_scale_summary">默认 100%，可调 60–150%。</string>
     <string name="perf_weight_title">读数字重</string>
-    <string name="perf_weight_summary">两项读数文字的粗细，默认 700，可调 100–900。改粗会让字变高，组合态的自适应字号会跟着重算，两行仍合起来一个图标高。</string>
+    <string name="perf_weight_summary">默认 700，可调 100–900。</string>
 
     <string name="perf_pair_title">充电功率与电池温度</string>
 
 
     <string name="color_role_title">状态颜色</string>
-    <string name="color_role_summary">分别为低电量、充电与危险电量指定颜色。</string>
 
     <string name="color_low_title">低电量颜色</string>
     <string name="color_charging_title">充电颜色</string>
@@ -167,50 +169,59 @@
     <string name="color_reset_confirm">恢复</string>
 
     <string name="low_threshold_title">低电量阈值</string>
-    <string name="low_threshold_summary">电量低于该值时切换到低电量颜色。</string>
+    <string name="low_threshold_summary">默认 20%，可调 5–50%。</string>
 
     <string name="stroke_title">环线粗细</string>
-    <string name="stroke_summary">电池圆环的描边宽度。</string>
+    <string name="stroke_summary">默认 14dp，可调 4–16dp。</string>
     <string name="stroke_title_rect">电量条粗细</string>
-    <string name="stroke_summary_rect">底部电量条的厚度。</string>
+    <string name="stroke_summary_rect">默认 14dp，可调 4–16dp。</string>
 
     <string name="arc_stroke_title">弧线粗细</string>
-    <string name="arc_stroke_summary">Wi-Fi 弧线的描边宽度。</string>
-    <string name="arc_stroke_summary_rect">Wi-Fi 弧线的描边宽度，同时决定弧线在顶部槽位的高度。</string>
+    <string name="arc_stroke_summary">默认 12dp，可调 3–16dp。</string>
+    <string name="arc_stroke_summary_rect">默认 12dp，可调 3–16dp。</string>
 
     <string name="value_size_title">数字字号</string>
-    <string name="value_size_summary">电量百分比文字的大小。居中时最多放大 1.4 倍，原值 38 以上不再变大。</string>
+    <string name="value_size_summary">默认 36，可调 16–44（环内居中最大 56）。</string>
 
     <string name="value_weight_title">数字字重</string>
-    <string name="value_weight_summary">电量数字的笔画粗细，100 最细、900 最粗。</string>
+    <string name="value_weight_summary">默认 700，可调 100–900。</string>
 
     <string name="clock_size_title">时钟字号</string>
-    <string name="clock_size_summary">胶囊内左侧时间文字的大小，与右侧电量数字各自独立。</string>
+    <string name="clock_size_summary">默认 36，可调 16–44。</string>
 
     <string name="clock_weight_title">时钟字重</string>
-    <string name="clock_weight_summary">时间文字的笔画粗细，100 最细、900 最粗。</string>
+    <string name="clock_weight_summary">默认 700，可调 100–900。</string>
 
     <string name="type_size_title">网络类型字号</string>
-    <string name="type_size_summary">圆环中间 3G/4G/5G 等文字的大小。</string>
+    <string name="type_size_summary">默认 32，可调 16–44。</string>
 
     <string name="out_type_size_title">环外网络类型字号</string>
-    <string name="out_type_size_summary">状态栏中环外 3G/4G/5G 文字的大小，单位 dp，默认 14dp，可调 8–26dp。下方预览格是它唯一的参照。</string>
+    <string name="out_type_size_summary">默认 14dp，可调 8–26dp。</string>
 
-    <string name="out_type_margin_left_title">环外类型左边距</string>
-    <string name="out_type_margin_left_summary">环外类型标签与外侧（背对电池的一侧）之间的空隙，单位 dp。默认 2dp，可调 0–16dp。RTL 语言下整行镜像。</string>
+    <string name="out_type_margin_left_title">环外网络类型左边距</string>
+    <string name="out_type_margin_left_summary">默认 2dp，可调 0–16dp。</string>
 
-    <string name="out_type_margin_right_title">环外类型右边距</string>
-    <string name="out_type_margin_right_summary">环外类型标签与内侧（朝向电池与环外读数的一侧）之间的空隙，单位 dp。默认 2dp，可调 0–16dp。RTL 语言下同样镜像。</string>
+    <string name="out_type_margin_right_title">环外网络类型右边距</string>
+    <string name="out_type_margin_right_summary">默认 2dp，可调 0–16dp。</string>
 
     <string name="type_suffix_scale_title">5GA 中 A 的比例</string>
-    <string name="type_suffix_scale_summary">网络类型以 A 结尾时（如 5GA），末尾 A 相对主字号的百分比，与主字对齐。默认 65%%，可调 50–100%%。环内环外同时生效。</string>
+    <string name="type_suffix_scale_summary">默认 65%，可调 50–100%。</string>
 
     <string name="type_weight_title">网络类型字重</string>
-    <string name="type_weight_summary">网络类型的笔画粗细，100 最细、900 最粗。</string>
+    <string name="type_weight_summary">默认 700，可调 100–900。</string>
 
     <string name="track_alpha_title">底纹浓度</string>
-    <string name="track_alpha_summary">未点亮部分的透明度。</string>
+    <string name="track_alpha_summary">默认 56，可调 0–255。</string>
 
+    <string name="nav_section">界面</string>
+    <string name="nav_style_title">底栏样式</string>
+    <string name="nav_style_docked">HyperOS 底栏</string>
+    <string name="nav_style_floating">HyperOS 悬浮底栏</string>
+    <string name="nav_style_liquid">液态玻璃底栏</string>
+    <string name="nav_labels_title">底栏标签</string>
+    <string name="nav_labels_both">图标和文字</string>
+    <string name="nav_labels_icon">仅图标</string>
+    <string name="nav_labels_text">仅文字</string>
     <string name="debug_title">调试日志</string>
     <string name="debug_summary">把详细过程写入 LSPosed 日志，排查问题时开启。</string>
 

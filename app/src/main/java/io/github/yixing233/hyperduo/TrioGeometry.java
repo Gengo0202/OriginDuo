@@ -155,6 +155,22 @@ final class TrioGeometry {
         return BOLT_TOP - BOLT_TOP_REF * BOLT_SCALE;
     }
 
+    /**
+     * The same offset for a bolt scaled by {@code factor} about its ink centre.
+     *
+     * <p>{@code offset = target - reference * scale}, the shape every bolt offset here
+     * uses. Multiplying the existing offset instead would translate the bolt rather than
+     * grow it around {@link #BOLT_CX}/{@link #BOLT_TOP}, so a larger setting would drift up
+     * and to the left out of the notch.
+     */
+    static float boltOffsetX(float factor) {
+        return BOLT_CX - BOLT_CX_REF * (BOLT_SCALE * factor);
+    }
+
+    static float boltOffsetY(float factor) {
+        return BOLT_TOP - BOLT_TOP_REF * (BOLT_SCALE * factor);
+    }
+
     // ------------------------------------------------------------------- value
     static final float VALUE_X = 59.5f;
     static final float VALUE_BASELINE = 24f;
@@ -853,6 +869,15 @@ final class TrioGeometry {
 
     static float rectBoltOffsetY() {
         return boltOffsetY() + RECT_BOLT_DY;
+    }
+
+    /** The rectangle's bolt offset for a bolt scaled by {@code factor}; see {@link #boltOffsetX(float)}. */
+    static float rectBoltOffsetX(float factor) {
+        return boltOffsetX(factor) + RECT_BOLT_DX;
+    }
+
+    static float rectBoltOffsetY(float factor) {
+        return boltOffsetY(factor) + RECT_BOLT_DY;
     }
 
     // ------------------------------------------------------------------- frame

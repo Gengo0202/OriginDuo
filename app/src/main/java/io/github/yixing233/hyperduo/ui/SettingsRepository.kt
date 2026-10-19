@@ -60,6 +60,8 @@ class SettingsRepository(context: Context) {
     fun setMobileTypeMode(value: Int) = writeInt(Prefs.KEY_MOBILE_TYPE_MODE, value)
     /** Stored IDs stay 0 = ring and 2 = capsule; retired ID 1 returns to the ring. */
     fun setTrioStyle(value: Int) = writeInt(Prefs.KEY_TRIO_STYLE, Prefs.normalizeTrioStyle(value))
+    fun setNavStyle(value: Int) = writeInt(Prefs.KEY_NAV_STYLE, Prefs.normalizeNavStyle(value))
+    fun setNavLabels(value: Int) = writeInt(Prefs.KEY_NAV_LABELS, Prefs.normalizeNavLabels(value))
 
     /** Publish one layout edit as a single local/remote transaction and one broadcast. */
     fun applyRingAssignment(next: TrioSettings) {
@@ -108,7 +110,41 @@ class SettingsRepository(context: Context) {
             applyRingAssignment(next)
         }
     }
-    /** 0 = the signal readings stay inside the ring, 1 = they move outside it. */
+    /**
+     * Wi-Fi's switch and ring slot as one decision: {@code 0} turns the arcs off and takes
+     * them out of the layout, {@code 1..3} turn them on and put them in that third.
+     *
+     * <p>One call rather than two setters, because the pair has to move together: between a
+     * "switch off" write and a "remove from layout" write the module would be asked to draw
+     * arcs it has no slot for, or hold a slot it will not fill.
+     */
+    fun setWifiPosition(position: Int) {
+        val current = TrioSettings.from(preferences(), density)
+        if (position in 1..3) {
+            val next = io.github.yixing233.hyperduo.TrioZones.withPiece(
+                current, position - 1, io.github.yixing233.hyperduo.TrioZones.Part.WIFI)
+            next.showWifi = true
+            applyRingAssignment(next)
+        } else {
+            val next = current.copy()
+            next.showWifi = false
+            val id = io.github.yixing233.hyperduo.TrioZones.encodePart(
+                io.github.yixing233.hyperduo.TrioZones.Part.WIFI)
+            next.ringZones = TrioSettings.copyZones(current.ringZones)
+            for (zone in next.ringZones.indices) {
+                next.ringZones[zone] = next.ringZones[zone].filter { it != id }.toIntArray()
+            }
+            applyRingAssignment(next)
+        }
+    }
+
+    /** 0 = the signal readings stay inside the ring, 1 = they go back to the system (环外). */
+    fun setSignalMode(value: Int) = writeInt(Prefs.KEY_SIGNAL_MODE,
+        value.coerceIn(Prefs.MIN_SIGNAL_MODE, Prefs.MAX_SIGNAL_MODE))
+
+    /** Out of ring, draw the module's own reading rather than handing the icon back. */
+    fun setStackedSignal(value: Boolean) = writeBoolean(Prefs.KEY_STACKED_SIGNAL, value)
+
     fun setDataSimOnly(value: Boolean) = writeBoolean(Prefs.KEY_DATA_SIM_ONLY, value)
 
     // ------------------------------------------------------- performance readouts
@@ -121,6 +157,9 @@ class SettingsRepository(context: Context) {
     fun setPerfScale(value: Int) = writeInt(Prefs.KEY_PERF_SCALE, value)
     /** Weight of the two readouts - see [Prefs.KEY_PERF_WEIGHT]. */
     fun setPerfWeight(value: Int) = writeInt(Prefs.KEY_PERF_WEIGHT, value)
+
+    /** Size of the in-ring charging bolt, in percent - see [Prefs.KEY_BOLT_SCALE]. */
+    fun setBoltScale(value: Int) = writeInt(Prefs.KEY_BOLT_SCALE, value)
 
     // ----------------------------------------------------------------- colours
 
@@ -203,6 +242,8 @@ class SettingsRepository(context: Context) {
             prefs.putInt(Prefs.KEY_MOBILE_TYPE_MODE, snapshot.mobileTypeMode)
             prefs.putBoolean(Prefs.KEY_VALUE_CENTRED, snapshot.valueCentred)
             prefs.putInt(Prefs.KEY_TRIO_STYLE, snapshot.trioStyle)
+            prefs.putInt(Prefs.KEY_NAV_STYLE, snapshot.navStyle)
+            prefs.putInt(Prefs.KEY_NAV_LABELS, snapshot.navLabels)
             prefs.putString(Prefs.KEY_RING_LAYOUT, Prefs.encodeLayout(snapshot.ringZones))
             prefs.putBoolean(Prefs.KEY_DATA_SIM_ONLY, snapshot.dataSimOnly)
             prefs.putBoolean(Prefs.KEY_PERF_POWER, snapshot.perfPower)

@@ -38,19 +38,37 @@ internal enum class TrioSettingsPart(val part: TrioZones.Part?, val labelRes: In
     Battery(null, R.string.drawing_part_battery),
     Readouts(null, R.string.perf_pair_title),
     Wifi(TrioZones.Part.WIFI, R.string.show_wifi_title),
+    /**
+     * The signal card, and the one place a per-card row is chosen.
+     *
+     * <p>SIM 1 and SIM 2 used to be cards of their own, which meant two cards in the
+     * component library whose sheets were one shared set of settings - there was no
+     * second thing to set, so the second card could only repeat the first. The two
+     * cards are one kind of ink (a row of level dots, from one set of geometry
+     * constants); what differs between them is which reading they show. So they are
+     * rows inside this card instead: "show mobile dots" is the aggregate meter, and
+     * the two per-card rows sit under it.
+     */
     Mobile(TrioZones.Part.MOBILE, R.string.show_mobile_title),
     Value(TrioZones.Part.VALUE, R.string.show_value_title),
     Bolt(TrioZones.Part.BOLT, R.string.show_bolt_title),
     Type(TrioZones.Part.TYPE, R.string.show_mobile_type_title),
-    Sim1(TrioZones.Part.SIM_1, R.string.show_sim_1_title),
-    Sim2(TrioZones.Part.SIM_2, R.string.show_sim_2_title),
     Clock(TrioZones.Part.CLOCK, R.string.drawing_occupant_clock),
     ;
 
     companion object {
-        /** The entry for {@code part}, or null when it has no row of its own. */
-        fun of(part: TrioZones.Part?): TrioSettingsPart? =
-            if (part == null) null else entries.firstOrNull { it.part == part }
+        /**
+         * The entry for {@code part}, or null when it has no row of its own.
+         *
+         * <p>SIM 1 and SIM 2 have no card of their own any more, so they resolve to the
+         * signal card: tapping either card's ink on the preview opens the one sheet that
+         * offers both switches.
+         */
+        fun of(part: TrioZones.Part?): TrioSettingsPart? = when (part) {
+            null -> null
+            TrioZones.Part.SIM_1, TrioZones.Part.SIM_2 -> Mobile
+            else -> entries.firstOrNull { it.part == part }
+        }
     }
 }
 
@@ -132,6 +150,7 @@ internal fun geometrySliders(): List<SliderSpec> {
     val wifi = TrioZones.Part.WIFI
     val mobile = TrioZones.Part.MOBILE
     val type = TrioZones.Part.TYPE
+    val bolt = TrioZones.Part.BOLT
     return listOf(
         SliderSpec(
             group = GeometryGroup.Text,
@@ -272,6 +291,25 @@ internal fun geometrySliders(): List<SliderSpec> {
         ),
         SliderSpec(
             group = GeometryGroup.Type,
+            part = bolt,
+            min = Prefs.MIN_BOLT_SCALE,
+            max = Prefs.MAX_BOLT_SCALE,
+            read = { it.boltScale },
+            write = { r, v -> r.setBoltScale(v) },
+            titleRes = { R.string.bolt_scale_title },
+            summaryRes = { R.string.bolt_scale_summary },
+            // Gated on the bolt's own switch ("show a bolt while charging"), not on
+            // drawsBolt(): that predicate folds in whether charging is happening right now,
+            // so gating on it would grey the row out every time the charger was unplugged -
+            // which is exactly when nobody is looking at it.
+            enabled = { it.glyph && it.boltWanted },
+            hints = { a ->
+                listOf(a.glyph to R.string.master_title, a.boltWanted to R.string.show_bolt_title)
+            },
+            suffix = "%",
+        ),
+        SliderSpec(
+            group = GeometryGroup.Type,
             part = type,
             min = Prefs.MIN_TYPE_SIZE,
             max = Prefs.MAX_TYPE_SIZE,
@@ -379,6 +417,46 @@ internal fun geometrySliders(): List<SliderSpec> {
             },
         ),
         SliderSpec(
+            group = GeometryGroup.OutSignal,
+            part = mobile,
+            min = Prefs.MIN_OUT_SIGNAL_SIZE,
+            max = Prefs.MAX_OUT_SIGNAL_SIZE,
+            read = { it.outSignalSize },
+            write = { r, v -> r.setOutSignalSize(v) },
+            titleRes = { R.string.out_signal_size_title },
+            summaryRes = { R.string.out_signal_size_summary },
+            // The size of the out-of-ring reading only exists while that reading does, so
+            // both halves of the choice gate the row: the position and the stacked switch.
+            enabled = { it.glyph && it.stackedOut() },
+            hints = { a ->
+                listOf(
+                    a.glyph to R.string.master_title,
+                    a.signalOutOfRing to R.string.ring_position_mobile,
+                    a.stackedSignal to R.string.stacked_signal_title,
+                )
+            },
+            suffix = "dp",
+        ),
+        SliderSpec(
+            group = GeometryGroup.OutSignal,
+            part = mobile,
+            min = Prefs.MIN_OUT_SIGNAL_MARGIN,
+            max = Prefs.MAX_OUT_SIGNAL_MARGIN,
+            read = { it.outSignalMargin },
+            write = { r, v -> r.setOutSignalMargin(v) },
+            titleRes = { R.string.out_signal_margin_title },
+            summaryRes = { R.string.out_signal_margin_summary },
+            enabled = { it.glyph && it.stackedOut() },
+            hints = { a ->
+                listOf(
+                    a.glyph to R.string.master_title,
+                    a.signalOutOfRing to R.string.ring_position_mobile,
+                    a.stackedSignal to R.string.stacked_signal_title,
+                )
+            },
+            suffix = "dp",
+        ),
+        SliderSpec(
             group = GeometryGroup.Track,
             part = null,
             min = Prefs.MIN_TRACK_ALPHA,
@@ -400,10 +478,9 @@ internal fun slidersForPart(part: TrioZones.Part): List<SliderSpec> =
 internal fun slidersForEditor(part: TrioSettingsPart): List<SliderSpec> = when (part) {
     TrioSettingsPart.Appearance, TrioSettingsPart.Battery, TrioSettingsPart.Readouts ->
         geometrySliders().filter { it.part == null && it.editorOwner == part }
-    // Both cards render from the aggregate meter's rows: the dots' diameter and
-    // the track alpha are one shared setting, so there is deliberately no second
-    // pair of sliders to drift.
-    TrioSettingsPart.Sim1, TrioSettingsPart.Sim2 -> slidersForPart(TrioZones.Part.MOBILE)
+    // Each card gets its own rows. For the signal card those are the out-of-ring readings'
+    // two sizes: the in-ring dots have one shared geometry with no per-card size, but the
+    // stacked reading the module draws itself does have a height and a margin.
     else -> part.part?.let(::slidersForPart).orEmpty()
 }
 
@@ -494,7 +571,6 @@ internal fun PartSettingsSheet(
                     SwitchPreference(
                         checked = a.roleColors,
                         title = stringResource(R.string.color_role_title),
-                        summary = stringResource(R.string.color_role_summary),
                         insideMargin = SettingsItemMargin,
                         enabled = a.glyph,
                         onCheckedChange = { value -> update { it.setRoleColors(value) } },

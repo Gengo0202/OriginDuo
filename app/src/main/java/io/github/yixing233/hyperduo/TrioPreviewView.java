@@ -3,6 +3,7 @@ package io.github.yixing233.hyperduo;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.view.View;
@@ -22,6 +23,25 @@ public final class TrioPreviewView extends View {
 
     private final Paint background = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /**
+     * Scratch rect for the rounded background and its clip.
+     *
+     * <p>Allocated once rather than per frame: {@link #onDraw} runs on every invalidate,
+     * including the ones the glyph's own prefs broadcast causes, and a rect per frame is
+     * garbage on a path that is already repainting a bitmap-sized surface.
+     */
+    private final RectF cornerRect = new RectF();
+    /** Reused each frame by {@link #onDraw} to build the rounded clip; see {@link #cornerRect}. */
+    private final Path cornerPath = new Path();
+
+    /**
+     * Corner radius of the cell's own background, in dp.
+     *
+     * <p>Matches the Compose cards that host these cells (10鈥?2dp); 12 is the host
+     * {@code RoundedCornerShape} and the ceiling, because a radius larger than half the
+     * cell would stop being a rounded corner at all.
+     */
+    private static final float CORNER_RADIUS_DP = 12f;
 
     private TrioSettings settings = TrioSettings.defaults();
     private int level = 72;
@@ -77,14 +97,6 @@ public final class TrioPreviewView extends View {
      * relative to this box.
      */
     private static final float HOST_ICON_HEIGHT_DP = 20f;
-
-    /**
-     * Alpha of the two margin rules in the out-of-ring type cell, on 0..255.
-     * Structure rather than ink, the same role the glyph's own track plays -
-     * visible against the dark preview background, gone if it competed with
-     * the label itself.
-     */
-    private static final int TRACK_RULE_ALPHA = 56;
 
     public TrioPreviewView(Context context) {
         super(context);
@@ -279,15 +291,44 @@ public final class TrioPreviewView extends View {
             return;
         }
 
+        // Rounded, not a plain rect: this view paints its own background, and a Compose
+        // `clip(RoundedCornerShape(...))` on the AndroidView does NOT clip the canvas
+        // inside it - exactly like any other Android View. A square fill therefore showed
+        // its corners poking out of the Compose card that hosts it, in the glyph cell and
+        // in the two out-of-ring cells alike. The radius is the host's, expressed in dp so
+        // every cell gets the same corner whatever its size; `getWidth`/`getHeight` only
+        // decide how far the fill reaches.
         background.setStyle(Paint.Style.FILL);
         background.setColor(backgroundColor);
-        canvas.drawRect(0f, 0f, w, h, background);
+        final float radius = Math.min(CORNER_RADIUS_DP * getResources().getDisplayMetrics().density,
+                Math.min(w, h) * 0.5f);
+        if (radius > 0f) {
+            cornerRect.set(0f, 0f, w, h);
+            canvas.drawRoundRect(cornerRect, radius, radius, background);
+        } else {
+            canvas.drawRect(0f, 0f, w, h, background);
+        }
 
         final float pad = Math.min(w, h) * inset;
         final int innerW = Math.round(w - 2f * pad);
         final int innerH = Math.round(h - 2f * pad);
         if (innerW <= 0 || innerH <= 0) {
             return;
+        }
+
+        // Everything the cell paints is clipped to the same rounded shape, so a glyph,
+        // a magnified label or a too-wide reading cannot spill past the corner it is
+        // drawn inside.
+        final int clip = canvas.save();
+        if (radius > 0f) {
+            // clipPath rather than clipRoundRect: the latter is API 30 and this module's
+            // minSdk is 29. The path is rebuilt here rather than reused because a Path
+            // cannot be reset-and-rewound as cheaply as a RectF, and onDraw only runs on
+            // invalidate.
+            cornerPath.reset();
+            cornerRect.set(0f, 0f, w, h);
+            cornerPath.addRoundRect(cornerRect, radius, radius, Path.Direction.CW);
+            canvas.clipPath(cornerPath);
         }
 
         final int save = canvas.save();
@@ -310,6 +351,7 @@ public final class TrioPreviewView extends View {
         if (highlight != null && !outTypeOnly && !outSignalOnly) {
             drawZoneOutline(canvas);
         }
+        canvas.restoreToCount(clip);
     }
 
     /**
@@ -401,9 +443,9 @@ public final class TrioPreviewView extends View {
         // The label is placed as the status bar places it: one gap to the anchor
         // (the inward margin), one to the native icons (the outward margin). In
         // this cell those neighbours are the cell edges, so the text block is
-        // centred in the room *between* the two margin rules rather than in the
-        // whole cell - a one-sided margin then visibly shifts the label instead
-        // of only moving a rule. With equal margins this is the plain centre.
+        // centred in the room *between* the two margins rather than in the whole
+        // cell - a one-sided margin then visibly shifts the label instead of
+        // leaving it dead centre.
         final float pxPerDp = innerH / HOST_ICON_HEIGHT_DP;
         final float roomLeft = a.outTypeMarginLeft * pxPerDp;
         final float roomRight = innerW - a.outTypeMarginRight * pxPerDp;
@@ -420,20 +462,6 @@ public final class TrioPreviewView extends View {
                     baseline, labelPaint);
         }
         labelPaint.setTextAlign(Paint.Align.CENTER);
-
-        // The two margins, drawn as the reserved gaps they are: thin rules one
-        // margin's width in from each end, on the label's mid-line. In the
-        // status bar these lengths are padding the native icon row gives up, so
-        // the honest picture of a wider margin is "the neighbours moved out" -
-        // and the neighbours in this cell are the cell edges. The rules share
-        // the foreground at reduced alpha, the way the glyph's own track reads
-        // as structure rather than ink.
-        final float midY = innerH * 0.5f;
-        labelPaint.setColor((foreground & 0x00FFFFFF) | (TRACK_RULE_ALPHA << 24));
-        labelPaint.setStrokeWidth(Math.max(1f, innerH / 40f));
-        canvas.drawLine(roomLeft, midY, roomLeft, midY + innerH * 0.3f, labelPaint);
-        canvas.drawLine(roomRight, midY, roomRight, midY + innerH * 0.3f, labelPaint);
-        labelPaint.setColor(foreground);
     }
 
     /**
@@ -476,26 +504,19 @@ public final class TrioPreviewView extends View {
             return;
         }
 
-        // The margin is the reading's distance from the battery, so the cell is
-        // a window on the strip [reading][margin] with the battery standing at
-        // its right edge. The window is the reading plus the largest margin the
-        // slider offers, and the reading keeps exactly the configured gap from
-        // that edge - so the slider's whole range stays visible instead of the
-        // reading drifting out of the cell. No battery is drawn: this cell is
-        // the reading's, and adding a second piece of the status bar here would
-        // only compete with the glyph cells for the same square.
-        final float maxMarginPx = Prefs.MAX_OUT_SIGNAL_MARGIN * density;
-        final float regionW = hostWidth + maxMarginPx;
-        final float regionH = hostHeight;
-        final float scale = Math.min(innerW / regionW, innerH / regionH);
+        // The reading is shown at its own size, centred in the cell - NOT offset by its
+        // margin.
+        //
+        // <p>The margin is a layout quantity: on the status bar it is padding the native
+        // icon row gives up so the reading never lands on a neighbour. This cell has no
+        // neighbours and no battery edge to be a distance from, so drawing the gap there
+        // showed an empty gutter whose only effect was to make the reading sit off-centre
+        // for no visible reason. The slider still moves; the cell simply answers "how big
+        // is it", which is the question the size row next to it asks.
+        final float scale = Math.min(innerW / (float) hostWidth, innerH / (float) hostHeight);
         final int drawW = Math.max(1, Math.round(hostWidth * scale));
         final int drawH = Math.max(1, Math.round(hostHeight * scale));
-        final float marginPx = a.outSignalMargin * density * scale;
-        final float regionWpx = regionW * scale;
-        final float regionLeft = (innerW - regionWpx) * 0.5f;
-        // The region's right edge is the battery; the reading sits `marginPx` in
-        // from it, which is what a wider gap looks like.
-        final float left = regionLeft + regionWpx - marginPx - drawW;
+        final float left = (innerW - drawW) * 0.5f;
         final float top = (innerH - drawH) * 0.5f;
 
         final int save = canvas.save();

@@ -150,11 +150,15 @@ public final class Prefs {
     public static final String KEY_RING_SLOTS = "ring_slots";
 
     /**
-     * A fresh install starts EMPTY: three zones with nothing placed.
+     * A fresh install starts EMPTY: every zone with nothing placed.
      *
      * <p>The user builds the glyph themselves. This is deliberately not "the shipped
      * look" - with priority lists there is no single arrangement to ship, and an empty
      * ring is an honest starting point that says "add something" instead of guessing.
+     *
+     * <p>Three sections, not {@link #ZONE_COUNT}: {@link #decodeLayout} reads a short
+     * layout's missing sections as empty, so this one string serves both the three-zone
+     * arrangements and the capsule's five-section layout.
      */
     public static final String EMPTY_LAYOUT = "||";
 
@@ -180,11 +184,20 @@ public final class Prefs {
     /** How many parts there are, counting {@link #PART_NONE}. */
     public static final int PART_COUNT = PART_MAX + 1;
 
-    /** The three zones, in the order the layout string stores them. */
+    /**
+     * How many zones the layout has, in the order the layout string stores them.
+     *
+     * <p>Three, whatever the arrangement: top, middle, bottom. The capsule maps them onto its
+     * own shape (top opening, interior right of the fixed clock, bottom opening) rather than
+     * having extra zones of its own - the clock is fixed there, so a fourth cell would be one
+     * the user could not change.
+     *
+     * <p>Append-only: reordering would reinterpret every stored layout.
+     */
     public static final int ZONE_COUNT = 3;
 
     /**
-     * Splits a layout into its three sections, each an ordered id list.
+     * Splits a layout into its sections, each an ordered id list.
      *
      * <p>Never returns null and never throws: a corrupt or missing layout decodes to
      * {@link #EMPTY_LAYOUT}. Unlike the old packed encodings there is no "corrupt" state
@@ -226,10 +239,15 @@ public final class Prefs {
             if (id <= PART_NONE || id > PART_MAX) {
                 continue;
             }
+            // The aggregate meter is retired as a placeable piece: a stored layout that
+            // still names it is migrated to SIM 1's row, which is the reading it used to
+            // show for the data SIM. Dropping the id instead would empty a zone an existing
+            // install had filled, which reads as "my setting was lost".
+            final int migrated = id == PART_MOBILE ? PART_SIM_1 : id;
             // A piece can only be in a zone once; a duplicate would draw the same thing
             // twice and make the priority list ambiguous about which copy wins.
-            if (!ids.contains(id)) {
-                ids.add(id);
+            if (!ids.contains(migrated)) {
+                ids.add(migrated);
             }
         }
         final int[] out = new int[ids.size()];
@@ -237,6 +255,33 @@ public final class Prefs {
             out[i] = ids.get(i);
         }
         return out;
+    }
+
+    /**
+     * Whether a raw layout string still names the retired aggregate meter.
+     *
+     * <p>Asked of the string rather than of a decoded layout, because decoding has already
+     * migrated the id - so this is the only way to tell an upgrading install from one that
+     * simply has SIM 1 placed and its switch turned off on purpose.
+     */
+    public static boolean mentionsRetiredMeter(String layout) {
+        if (layout == null || layout.isEmpty()) {
+            return false;
+        }
+        for (String piece : layout.split("[|,]")) {
+            final String trimmed = piece.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            try {
+                if (Integer.parseInt(trimmed) == PART_MOBILE) {
+                    return true;
+                }
+            } catch (NumberFormatException malformed) {
+                // Not a number: nothing to migrate. decodeSection drops it too.
+            }
+        }
+        return false;
     }
 
     /** The inverse of {@link #decodeLayout}, with the same tolerance for gaps. */
@@ -449,13 +494,16 @@ public final class Prefs {
     /** Draws SIM 2's own row of four dots; see {@link #KEY_SHOW_SIM_1}. */
     public static final String KEY_SHOW_SIM_2 = "show_sim_2";
     /**
-     * Where the mobile signal is drawn: inside the glyph, or as a status-bar view
-     * outside it.
+     * Where the mobile signal reading goes: the glyph's own thirds, or back to MIUI.
      *
-     * <p>An {@code int} holding one of the {@code SIGNAL_*} constants below.
-     * Outside the glyph the module stops drawing the level dots entirely and -
-     * depending on {@link #KEY_STACKED_SIGNAL} - either hands the native signal
-     * icon back or draws one of its own next to the battery.
+     * <p>An {@code int} holding one of the {@code SIGNAL_*} constants below. Out of
+     * the ring the module stops drawing the level dots entirely and leaves the native
+     * icon in place - there is no second stacked rendering any more, because the
+     * status-bar view it used to drive is gone.
+     *
+     * <p>Which <em>third</em> each card sits in is a separate fact, stored in the ring
+     * layout as {@link #PART_SIM_1} / {@link #PART_SIM_2}. This key only decides whether
+     * those thirds are consulted at all.
      *
      * <p>A brand-new key with a brand-new name: the framework does no type
      * conversion, so a key may only ever be read back with the type it was
@@ -712,6 +760,19 @@ public final class Prefs {
      * <p>A new name, never a reuse - see {@link #KEY_MOBILE_TYPE_MODE}.
      */
     public static final String KEY_TYPE_SUFFIX_SCALE = "type_suffix_scale";
+    /**
+     * Size of the in-ring charging bolt, as a percentage of the size the reference
+     * path was drawn at.
+     *
+     * <p>One key for all three arrangements (ring, rectangle, capsule): the bolt is one
+     * shape, and a user who thinks it looks small expects it to change wherever it is
+     * drawn. The capsule's own fit-to-slot ceiling still applies - this multiplies inside
+     * the room that exists, so a large value crowded against a thick stroke stops growing
+     * rather than spilling over the outline.
+     *
+     * <p>Only the in-glyph bolt: the out-of-ring readings have their own sizes.
+     */
+    public static final String KEY_BOLT_SCALE = "bolt_scale";
     public static final String KEY_TYPE_WEIGHT = "type_weight";
     public static final String KEY_TRACK_ALPHA = "track_alpha";
 
@@ -786,14 +847,65 @@ public final class Prefs {
      */
     public static final int DEF_TRIO_STYLE = STYLE_RING;
 
-    /** The signal is the glyph's own level dots, exactly as shipped. */
+    // ------------------------------------------------------- bottom navigation
+    /**
+     * Which bottom-bar material the settings screen uses.
+     *
+     * <p>Three styles, matching the reference app's navigation:
+     *
+     * <ul>
+     *   <li>{@link #NAV_HYPER_OS} - a flat bar docked to the screen edge: square corners,
+     *       no lens, no highlight. The default, because it reads as a system control rather
+     *       than as a floating object;
+     *   <li>{@link #NAV_HYPER_OS_FLOATING} - the same material as a rounded capsule, inset
+     *       from the edges;
+     *   <li>{@link #NAV_LIQUID_GLASS} - the capsule with a stronger lens and a wider blur,
+     *       so the background visibly refracts through it.
+     * </ul>
+     *
+     * <p>An {@code int} with the same one-type-per-key rule as every other preference.
+     */
+    public static final String KEY_NAV_STYLE = "nav_style";
+    public static final int NAV_HYPER_OS = 0;
+    public static final int NAV_HYPER_OS_FLOATING = 1;
+    public static final int NAV_LIQUID_GLASS = 2;
+    public static final int NAV_STYLE_MIN = NAV_HYPER_OS;
+    public static final int NAV_STYLE_MAX = NAV_LIQUID_GLASS;
+    public static final int DEF_NAV_STYLE = NAV_HYPER_OS_FLOATING;
+
+    /** Clamps a stored nav style; anything unknown falls back to the default. */
+    public static int normalizeNavStyle(int style) {
+        return style >= NAV_STYLE_MIN && style <= NAV_STYLE_MAX ? style : DEF_NAV_STYLE;
+    }
+
+    /**
+     * What the bottom bar shows under each icon: both, icon only, or text only.
+     *
+     * <p>A separate key from the style because the two are independent choices - the
+     * reference exposes them separately as well, and a label mode is not a property of a
+     * material.
+     */
+    public static final String KEY_NAV_LABELS = "nav_labels";
+    public static final int NAV_LABELS_BOTH = 0;
+    public static final int NAV_LABELS_ICON = 1;
+    public static final int NAV_LABELS_TEXT = 2;
+    public static final int NAV_LABELS_MIN = NAV_LABELS_BOTH;
+    public static final int NAV_LABELS_MAX = NAV_LABELS_TEXT;
+    public static final int DEF_NAV_LABELS = NAV_LABELS_BOTH;
+
+    public static int normalizeNavLabels(int mode) {
+        return mode >= NAV_LABELS_MIN && mode <= NAV_LABELS_MAX ? mode : DEF_NAV_LABELS;
+    }
+
+    /** The signal rows are drawn inside the glyph, in the thirds the user picked. */
     public static final int SIGNAL_IN_RING = 0;
     /**
-     * The signal leaves the glyph and is drawn beside the battery instead.
+     * The signal is handed back to MIUI: the native icon keeps its place and the
+     * glyph draws no level dots at all.
      *
-     * <p>What stands there depends on {@link #KEY_STACKED_SIGNAL}: off means
-     * MIUI's own signal icon keeps its place, on means the module draws the
-     * stacked bars-and-dots reading of its own.
+     * <p>This is the same option as "return it to the system" in the other pieces'
+     * position rows, and it is what the settings screen labels 环外 - the signal
+     * itself is then drawn by the system, outside this module's glyph.
      */
     public static final int SIGNAL_OUT_RING = 1;
     /**
@@ -930,6 +1042,11 @@ public final class Prefs {
      * from {@code docs/ref-5ga.png}. 100 turns the shrink off.
      */
     public static final int DEF_TYPE_SUFFIX_SCALE = 65;
+    /**
+     * 100%: the bolt at exactly the size {@code BOLT_SCALE}/{@code capBoltScale} have
+     * always drawn it, so an install that never touches this key looks unchanged.
+     */
+    public static final int DEF_BOLT_SCALE = 100;
     public static final int DEF_TYPE_WEIGHT = 700;
     public static final int DEF_TRACK_ALPHA = 56;
 
@@ -1054,6 +1171,15 @@ public final class Prefs {
      */
     public static final int MIN_TYPE_SUFFIX_SCALE = 50;
     public static final int MAX_TYPE_SUFFIX_SCALE = 100;
+    /**
+     * The in-ring bolt's span, in percent of its reference size.
+     *
+     * <p>60 keeps it legible as a bolt rather than a blob; 160 is where the ring's top gap
+     * starts crowding the two digits it sits between, so going further would overlap the
+     * percentage instead of filling the notch.
+     */
+    public static final int MIN_BOLT_SCALE = 60;
+    public static final int MAX_BOLT_SCALE = 160;
     public static final int MIN_TYPE_WEIGHT = 100;
     public static final int MAX_TYPE_WEIGHT = 900;
     public static final int MIN_TRACK_ALPHA = 0;

@@ -376,7 +376,25 @@ graphics layer，顶栏再通过同一个 `backdrop` 采样它——捕获源与
   会是 `clickable="false" enabled="false"`。**不要**用「预置 `show_bolt=false` 再启动 app」验证——
   `SettingsRepository` 启动时会全量同步并把 pref 回写成 `true`，必须走 UI 点击。
 
-### 导航：miuix-nav
+### 导航：整页标签切换（2026-10-19）
+
+当前只有「首页」和「关于」两个标签。`rememberNavController<Route>` 保留页面栈与返回逻辑，
+页面渲染使用与 HyperChanger `mainTabNavigation` 相同的 `AnimatedContent`。
+外层 `Scaffold` 只承载固定底栏；参与动画的 `SettingsPage` 包含各自的顶栏、标题、操作按钮及列表。
+首页标题为 `HyperDuo`，关于页标题为「关于」。
+
+进入动画为方向位移 `width / 7`（280ms）、淡入（210ms）、缩放 `.985 → 1`（280ms）；
+退出为反方向位移 `width / 3`（230ms）、淡出（180ms）、缩放 `1 → .975`（230ms）。
+方向取目标与起始标签的 ordinal，滑动采用 `FastOutSlowInEasing`，页面另有 `12dp ↔ 0dp` 的
+280ms 模糊轨道。各页独立维护顶栏滚动行为和正文 backdrop，整页动画的输出再供底栏采样，
+避免把消费同一 backdrop 的底栏录入自身。每次进入页面重置列表与顶栏到顶部。
+
+真机回归：`python tests/navigation-device.py --serial SERIAL --root-input --transitions-only`。
+覆盖双向切换、连续反向点击、退出内容清理、标题与系统返回；该模式保持当前底栏偏好。
+
+以下为旧版四分区实现记录，其中 `NavDisplay`、`SectionTransition` 和零位移淡入已被上述实现替换。
+
+### 导航：旧版 miuix-nav 实现记录
 
 设置页的四个分区由 `miuix-nav` 的 `NavDisplay` 承载，四个标签就是栈上的四个目的地。
 
