@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalConfiguration
@@ -27,6 +28,8 @@ import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
 
 /**
  * One switchable component, paired with the title the settings screen shows for
@@ -541,23 +544,34 @@ internal fun PartSettingsSheet(
     // its full-bleed background away from the screen edge.
     val bottomInset = WindowInsets.navigationBars.asPaddingValues()
         .calculateBottomPadding()
+    val sheetBackdrop = rememberLayerBackdrop()
 
     OverlayBottomSheet(
         show = show,
+        // Recorded on the sheet itself, not on the content inside it. `layerBackdrop` captures
+        // the subtree the modifier is attached to, and `LayerBackdrop.drawBackdrop` measures
+        // the offset between the recorded node and the popup with `positionInWindow` on each.
+        // Attaching it to an inner Column made that offset a sheet-internal one while the
+        // dropdown is positioned in window space, so the sample landed outside the recorded
+        // bitmap and came back blank - the blur ran, over nothing. On the sheet's own
+        // modifier the recorded box is the whole panel, which is also what a dropdown opened
+        // from inside it should be frosting.
+        modifier = Modifier.layerBackdrop(sheetBackdrop),
         title = stringResource(R.string.drawing_settings_title,
             stringResource(if (part == TrioSettingsPart.Battery && a.ring) R.string.drawing_part_ring else part.labelRes)),
         onDismissRequest = onDismiss,
         onDismissFinished = onDismissFinished,
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight)
-                .padding(bottom = bottomInset),
-        ) {
-            if (!compact) preview?.invoke()
-            Column(modifier = Modifier.weight(1f, fill = false)
-                .verticalScroll(rememberScrollState()).padding(horizontal = 4.dp)) {
-                if (compact) preview?.invoke()
-                controls.forEach { control -> ContentControlRow(control, settings, update, ringSettings) }
+        CompositionLocalProvider(LocalDropdownBackdrop provides sheetBackdrop) {
+            Column(
+                modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight)
+                    .padding(bottom = bottomInset),
+            ) {
+                if (!compact) preview?.invoke()
+                Column(modifier = Modifier.weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 4.dp)) {
+                    if (compact) preview?.invoke()
+                    controls.forEach { control -> ContentControlRow(control, settings, update, ringSettings) }
                 if (rows.isEmpty() && colors.isEmpty() && controls.isEmpty()) {
                     Text(
                         text = stringResource(R.string.drawing_settings_none),
@@ -621,7 +635,7 @@ internal fun PartSettingsSheet(
                     )
                 }
 
-                if (part == TrioSettingsPart.Appearance) {
+                    if (part == TrioSettingsPart.Appearance) {
                     ArrowPreference(
                         title = stringResource(R.string.color_reset),
                         summary = stringResource(R.string.color_reset_summary),
@@ -629,6 +643,7 @@ internal fun PartSettingsSheet(
                         enabled = a.glyph && a.roleColors,
                         onClick = onResetColors,
                     )
+                    }
                 }
             }
         }

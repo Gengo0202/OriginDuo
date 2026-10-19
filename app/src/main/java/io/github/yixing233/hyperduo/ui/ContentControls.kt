@@ -11,7 +11,6 @@ import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.TooltipBox
 import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 
 /**
  * Content controls shared by General and the visual editor.
@@ -383,7 +382,7 @@ private fun ContentChoice(
 ) {
     ContentGate(dependencies) {
         if (blockedIndices.isEmpty()) {
-            OverlayDropdownPreference(
+            GlassDropdownPreference(
                 items = options.map { stringResource(it) },
                 selectedIndex = selected,
                 title = stringResource(title),
@@ -393,7 +392,7 @@ private fun ContentChoice(
                 onSelectedIndexChange = onChange,
             )
         } else {
-            OverlayDropdownPreference(
+            GlassDropdownPreference(
                 entry = DropdownEntry(
                     items = options.mapIndexed { index, res ->
                         DropdownItem(
