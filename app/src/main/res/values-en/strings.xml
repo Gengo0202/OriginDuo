@@ -119,10 +119,8 @@
 
 
     <string name="perf_power_title">Charging power</string>
-    <string name="perf_power_summary">Show the charging power beside the battery icon.</string>
 
     <string name="perf_temp_title">Battery temperature</string>
-    <string name="perf_temp_summary">Show the battery temperature in °C beside the battery icon.</string>
 
     <string name="glyph_scale_title">Overall icon size</string>
     <string name="glyph_scale_summary">The default is 100% and the slider covers 60–100%.</string>
@@ -287,11 +285,6 @@
     <string name="drawing_part_battery">Battery outline</string>
     <string name="drawing_part_ring">Battery ring</string>
     <string name="ring_value_summary">Show the battery percentage in its reserved slot, including while charging. Outside the ring, the system percentage setting applies.</string>
-    <string name="ring_slot_reserved">%1$s (currently hidden)</string>
     <string name="ring_bolt_summary">Show a bolt in its reserved slot while charging, independently of the percentage. When off, charging indication follows the system settings.</string>
     <string name="ring_signal_position_summary">Reserves an inside slot independently of inside/outside signal mode. Outside mode keeps this reservation.</string>
-    <string name="ring_layout_title">Ring layout</string>
-    <string name="ring_layout_auto">Automatic</string>
-    <string name="ring_layout_free">Three free slots</string>
-    <string name="ring_layout_summary">Free slots retain their top, middle and bottom assignments. The first edit keeps the current preview components and returns displaced content to the system. Automatic uses the original layout rules.</string>
 </resources>
