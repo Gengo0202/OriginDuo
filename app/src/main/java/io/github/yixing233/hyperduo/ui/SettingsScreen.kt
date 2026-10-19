@@ -424,17 +424,28 @@ fun SettingsScreen(repository: SettingsRepository) {
 
     Scaffold(
         topBar = {
+            // Three layers, and the thing that makes the reference look the way it does is
+            // that all three are tied to the SCROLL, not to a constant:
+            //
+            //   collapsedFraction == 0 (page at rest under an expanded bar)
+            //       the light 6dp layer is fully present and the 16dp masked layer is
+            //       invisible - a bar you can see the page through;
+            //   collapsedFraction == 1 (content scrolled under the bar)
+            //       the light layer has faded out and the masked layer is fully present -
+            //       the bar thickens as things pass beneath it.
+            //
+            // That hand-off is the effect. Two fixed-opacity layers, which is what this had
+            // before, give a bar that is blurry in exactly the same way whether anything is
+            // behind it or not - legible, but flat, and that flatness is what "not the same
+            // as the reference" looks like.
+            val collapsed = scrollBehavior.state.collapsedFraction.coerceIn(0f, 1f)
             Box {
-                // Two layers, following HyperChanger's toolbar. The plain pass blurs the
-                // strip evenly; the progressive pass below adds the same blur again with an
-                // alpha mask that fades it out toward the bottom of the bar, so the content
-                // scrolls under a blur that thins as it recedes instead of ending on a hard
-                // edge. Drawing the second layer is what makes the bar read as glass over a
-                // page rather than as a strip painted on top of one.
                 if (barBlurSupported) {
+                    // Light pass: present while the bar is expanded, gone once it collapses.
                     Box(
                         modifier = Modifier
                             .matchParentSize()
+                            .graphicsLayer { alpha = 1f - collapsed }
                             .drawPlainBackdrop(
                                 backdrop = navBackdrop,
                                 shape = { RectangleShape },
@@ -442,13 +453,14 @@ fun SettingsScreen(repository: SettingsRepository) {
                                 onDrawSurface = { drawRect(surfaceColor.copy(alpha = 0.55f)) },
                             ),
                     )
+                    // Heavy pass: the masked 16dp blur, visible only as the bar collapses.
                     Box(
                         modifier = Modifier
                             .matchParentSize()
-                            // The blur is drawn taller than the bar and clipped back to it by
-                            // the parent, because a mask that fades to nothing needs room to
-                            // fade INTO - without the expansion the gradient is cut off at the
-                            // bar's own bottom edge and never reaches zero.
+                            .graphicsLayer { alpha = collapsed }
+                            // Drawn taller than the bar so the mask has room to fade to
+                            // nothing; without the expansion the gradient is clipped at the
+                            // bar's edge and never reaches zero.
                             .expandDrawHeight(1.184625f)
                             .drawPlainBackdrop(
                                 backdrop = navBackdrop,
@@ -463,12 +475,22 @@ fun SettingsScreen(repository: SettingsRepository) {
                                 },
                             ),
                     )
+                } else {
+                    // A device without runtime shaders gets no backdrop at all, so the
+                    // bar has to paint itself: transparent here would let the list scroll
+                    // straight through the title.
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(surfaceColor),
+                    )
                 }
                 TopAppBar(
                     title = stringResource(R.string.app_name),
-                    // The bar's own background gets out of the way: the two layers above are
-                    // the background, and an opaque one would hide both.
-                    color = if (barBlurSupported) Color.Transparent else surfaceColor,
+                    // Transparent on purpose: the bar's own background is now the two
+                    // layers above (or the opaque fallback when shaders are unsupported),
+                    // and a second opaque pass would hide the blur entirely.
+                    color = Color.Transparent,
                     largeTitle = stringResource(R.string.app_name),
                     scrollBehavior = scrollBehavior,
                     actions = {
