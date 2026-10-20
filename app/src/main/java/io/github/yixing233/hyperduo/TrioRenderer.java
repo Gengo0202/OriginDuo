@@ -317,8 +317,12 @@ final class TrioRenderer {
                         ? mobileLevel
                         : (levels == null ? -1 : levels[part == Prefs.PART_SIM_1 ? 0 : 1]);
                 final int active = rowLevel < 0 ? 0 : Math.min(4, rowLevel);
+                // The user's size multiplies the reference bead; the opening's room still
+                // caps it, so a large setting stops growing rather than overrunning the
+                // arc's caps. See TrioGeometry.arcRowDotR's four-argument form.
                 drawArcDotRow(c, active, z,
-                        TrioGeometry.arcRowDotR(z, a.ringStroke, width), fg, a);
+                        TrioGeometry.arcRowDotR(z, a.ringStroke, width, a.dotScaleFactor()),
+                        fg, a);
             } else {
                 final String text = part == Prefs.PART_VALUE ? String.valueOf(level)
                         : part == Prefs.PART_TYPE ? type : TrioState.sClockText;
@@ -540,23 +544,32 @@ final class TrioRenderer {
         // a full battery on a device that had simply not answered.
         STROKE.setStrokeWidth(stroke);
         STROKE.setStyle(Paint.Style.STROKE);
-        buildCapsuleOutline(CAPSULE, cap.dots ? TrioGeometry.capDotReach(stroke) : 0f);
+        // One reach per opening, because the two openings no longer necessarily hold the
+        // same thing: a dot row is only as wide as its four beads, a reading is as wide as
+        // its own ink. The outline is cut back by whichever is there, so a reading sits in a
+        // gap the stroke does not run through - which is what makes it legible rather than
+        // lost against the line it was drawn over.
+        final float topReach = openingReach(cap, TrioZones.Zone.TOP, stroke, level, mobileType, a);
+        final float bottomReach =
+                openingReach(cap, TrioZones.Zone.BOTTOM, stroke, level, mobileType, a);
+        buildCapsuleOutline(CAPSULE, topReach, bottomReach);
         STROKE.setColor(withAlpha(fg, a.trackAlpha));
         canvas.drawPath(CAPSULE, STROKE);
 
         if (level > 0) {
             STROKE.setColor(role);
-            drawCapsuleFill(canvas, cap.dots, stroke, Math.min(1f, level / 100f));
+            drawCapsuleFill(canvas, stroke, Math.min(1f, level / 100f), topReach, bottomReach);
         }
 
         if (cap.dots) {
-            drawCapsuleDots(canvas, mobileLevel, slotLevels, cap.dual, stroke, fg, a);
+            drawCapsuleDots(canvas, mobileLevel, slotLevels, cap.dual, stroke, fg, a, cap);
         }
 
         // The clock is fixed in the left column, so it is drawn unconditionally rather than
-        // dispatched from a cell.
+        // dispatched from a cell. It owns the interior's own height budget, which is -1 in
+        // openingRoom's sense: the fixed left column is a body slot, never an opening.
         drawCapsuleTime(canvas, stroke, fg, a,
-                TrioGeometry.capLeftCx(stroke), TrioGeometry.capInteriorCy(stroke));
+                TrioGeometry.capLeftCx(stroke), TrioGeometry.capInteriorCy(stroke), -1f);
 
         // Three bands, the same three the ring has: the two openings and the interior.
         drawCapsuleCell(canvas, stroke, TrioZones.Zone.TOP, cap, level, quickCharging,
@@ -591,10 +604,14 @@ final class TrioRenderer {
         final float cy;
         switch (band) {
             case TOP:
-                cy = TrioGeometry.CAP_TOP;
+                // Centred in the strip ABOVE the outline, not on its centreline: the line is
+                // the capsule's edge, and a reading anchored to it loses half its ink outside
+                // the shape - clipped by the host and painted over by the stroke. See
+                // TrioGeometry.capOpeningCy.
+                cy = TrioGeometry.capOpeningCy(true, stroke);
                 break;
             case BOTTOM:
-                cy = TrioGeometry.CAP_BOTTOM;
+                cy = TrioGeometry.capOpeningCy(false, stroke);
                 break;
             default:
                 cy = TrioGeometry.capInteriorCy(stroke);
@@ -608,17 +625,63 @@ final class TrioRenderer {
                 drawCapsuleWifi(c, stroke, wifiLevel, fg, a, cx, cy);
                 break;
             case Prefs.PART_VALUE:
-                drawCapsuleValue(c, stroke, level, fg, a, cx, cy);
+                drawCapsuleValue(c, stroke, level, fg, a, cx, cy, openingRoom(band, stroke));
                 break;
             case Prefs.PART_TYPE:
-                drawCapsuleType(c, stroke, type, fg, a, cx, cy);
+                drawCapsuleType(c, stroke, type, fg, a, cx, cy, openingRoom(band, stroke));
                 break;
             case Prefs.PART_CLOCK:
-                drawCapsuleTime(c, stroke, fg, a, cx, cy);
+                drawCapsuleTime(c, stroke, fg, a, cx, cy, openingRoom(band, stroke));
                 break;
             default:
                 break;
         }
+    }
+
+    /**
+     * The vertical room a cell gives its reading, or {@code -1} for "the interior's own".
+     *
+     * <p>An opening's strip is the free space beyond the outline, which is shorter than the
+     * body the interior owns; telling the text fit which one applies is what stops a reading
+     * in an opening from being sized for the body and then overrunning its band.
+     */
+    /**
+     * The width a reading is fitted to: its row's in an opening, its slot's in the body.
+     *
+     * <p>Two different questions that used to share one answer. The body really is split into
+     * slots - the clock and the percentage sit side by side and have to divide the interior -
+     * but an opening is a full-width row, so giving it the right-hand slot's width fitted the
+     * text to a third of the space it had.
+     *
+     * <p>Keyed off the height hint because that is how the cell already says which it is:
+     * {@code -1} means "the interior's own", anything else is an opening's room.
+     */
+    private static float capsuleSlotWidth(TrioZones.Zone band, float heightHint, float stroke,
+                                          boolean clock) {
+        if (heightHint >= 0f) {
+            // An opening is a full-width row. See TrioGeometry.capOpeningWidth.
+            return TrioGeometry.capOpeningWidth();
+        }
+        // The body's two slots are NOT interchangeable: "19:41" is half again as long as "100"
+        // at the same size, which is why the clock's slot is the wider share. Folding them into
+        // one width is what shrank the time when the type was fixed - the clock was handed the
+        // percentage's narrower slot and fitted itself down to it.
+        return clock
+                ? TrioGeometry.capTimeSlotWidth(stroke)
+                : TrioGeometry.capValueSlotWidth(stroke);
+    }
+
+    private static float openingRoom(TrioZones.Zone band, float stroke) {
+        // An EM, not an ink height: everything downstream of this treats it as a font size.
+        // See TrioGeometry.capOpeningTextEm.
+        return band == TrioZones.Zone.CENTRE
+                ? -1f
+                : TrioGeometry.capOpeningTextEm(stroke);
+    }
+
+    /** {@code hint < 0} means "use the interior's own limit". */
+    private static float effectiveHeightLimit(float hint, float stroke) {
+        return hint < 0f ? TrioGeometry.capTextMaxSize(stroke) : hint;
     }
 
     /**
@@ -633,7 +696,38 @@ final class TrioRenderer {
      * <p>With {@code reach} at zero the two subpaths meet on the centre line and
      * the outline reads as continuous, which is the case when the rows are off.
      */
-    private static void buildCapsuleOutline(Path p, float reach) {
+    /**
+     * How far the outline is cut back at one opening: the half-width of whatever that opening
+     * draws.
+     *
+     * <p>A dot row is fixed - four beads on their own pitch - but a reading is not: "73" and
+     * "100" and "5GA" are three different widths, and a gap cut for the widest of them would
+     * leave the line interrupted across half the capsule for the narrowest. So the reach is
+     * measured per frame from the piece that band actually holds, and zero when it holds
+     * nothing - in which case the outline closes, which is what an empty opening is.
+     *
+     * <p>This is the third term {@link TrioGeometry#capDotReach} documents: the stroke inks a
+     * semicircle of radius {@code stroke / 2} past its cut end, so the clearance has to be
+     * carried on top of the piece's own half-span.
+     */
+    private static float openingReach(TrioAppearance.Capsule cap, TrioZones.Zone band,
+                                      float stroke, int level, String type, TrioAppearance a) {
+        if (cap == null) {
+            return 0f;
+        }
+        if (cap.dotsIn(band)) {
+            return TrioGeometry.capDotReach(stroke);
+        }
+        final int part = cap.parts[band.ordinal()];
+        if (part == Prefs.PART_NONE) {
+            return 0f;
+        }
+        return TrioGeometry.capPieceReach(part, level, type, stroke,
+                TrioGeometry.capOpeningTextRoomH(stroke))
+                + TrioGeometry.capDotClearance() + stroke * 0.5f;
+    }
+
+    private static void buildCapsuleOutline(Path p, float topReach, float bottomReach) {
         final float left = TrioGeometry.CAP_LEFT;
         final float right = TrioGeometry.CAP_RIGHT;
         final float top = TrioGeometry.CAP_TOP;
@@ -644,16 +738,16 @@ final class TrioRenderer {
         final float k = 0.5522847498307936f * r;
 
         p.reset();
-        p.moveTo(cx + reach, top);
+        p.moveTo(cx + topReach, top);
         p.lineTo(right - r, top);
         p.cubicTo(right - r + k, top, right, cy - k, right, cy);
         p.cubicTo(right, cy + k, right - r + k, bottom, right - r, bottom);
-        p.lineTo(cx + reach, bottom);
-        p.moveTo(cx - reach, bottom);
+        p.lineTo(cx + bottomReach, bottom);
+        p.moveTo(cx - bottomReach, bottom);
         p.lineTo(left + r, bottom);
         p.cubicTo(left + r - k, bottom, left, cy + k, left, cy);
         p.cubicTo(left, cy - k, left + r - k, top, left + r, top);
-        p.lineTo(cx - reach, top);
+        p.lineTo(cx - topReach, top);
     }
 
     /**
@@ -682,7 +776,8 @@ final class TrioRenderer {
      * charge from the top left, so a half-full battery lit the top and left while
      * the user was reading the level off the right bar.
      */
-    private static void drawCapsuleFill(Canvas c, boolean dots, float stroke, float fraction) {
+    private static void drawCapsuleFill(Canvas c, float stroke, float fraction,
+                                        float topReach, float bottomReach) {
         final float left = TrioGeometry.CAP_LEFT;
         final float right = TrioGeometry.CAP_RIGHT;
         final float top = TrioGeometry.CAP_TOP;
@@ -693,14 +788,15 @@ final class TrioRenderer {
         // The same reach the track's outline was cut back by, from the same stroke:
         // the fill and the track have to agree about where the gap is, or the
         // charged run would stop somewhere other than where the outline resumes.
-        final float reach = dots ? TrioGeometry.capDotReach(stroke) : 0f;
+        final float topGap = topReach;
+        final float bottomGap = bottomReach;
 
         // Four straight runs and two half-circle caps, in travel order. The gaps
         // are not segments: they carry no ink in either pass.
-        final float topLeft = (cx - reach) - (left + r);
-        final float bottomLeft = (cx - reach) - (left + r);
-        final float bottomRight = (right - r) - (cx + reach);
-        final float topRight = (right - r) - (cx + reach);
+        final float topLeft = (cx - topReach) - (left + r);
+        final float bottomLeft = (cx - bottomReach) - (left + r);
+        final float bottomRight = (right - r) - (cx + bottomReach);
+        final float topRight = (right - r) - (cx + topReach);
         final float capLen = (float) Math.PI * r;
         final float total = topLeft + capLen + bottomLeft + bottomRight + capLen + topRight;
         if (total <= 0f) {
@@ -716,12 +812,12 @@ final class TrioRenderer {
         // Both caps sweep +180 here and not -180: the sweep has to follow the
         // direction of travel, or the fill would run the cap backwards and the two
         // ends would meet in the middle of it.
-        left0 = run(c, left0, bottomLeft, cx - reach, bottom, left + r, bottom);
+        left0 = run(c, left0, bottomLeft, cx - bottomReach, bottom, left + r, bottom);
         left0 = cap(c, left0, capLen, left + r, cy, r, 90f, 180f);
-        left0 = run(c, left0, topLeft, left + r, top, cx - reach, top);
-        left0 = run(c, left0, topRight, cx + reach, top, right - r, top);
+        left0 = run(c, left0, topLeft, left + r, top, cx - topReach, top);
+        left0 = run(c, left0, topRight, cx + topReach, top, right - r, top);
         left0 = cap(c, left0, capLen, right - r, cy, r, 270f, 180f);
-        run(c, left0, bottomRight, right - r, bottom, cx + reach, bottom);
+        run(c, left0, bottomRight, right - r, bottom, cx + bottomReach, bottom);
     }
 
     /**
@@ -772,8 +868,21 @@ final class TrioRenderer {
      * there, and leaving it empty would read as a break in the line rather than
      * as an empty step.
      */
+    /**
+     * The two openings' dot rows, each drawn only if its band holds one.
+     *
+     * <p>The two rows used to be drawn together, gated by the mobile switch alone. They are
+     * separate placements now - {@link TrioAppearance.Capsule#dotsIn} - so a capsule can draw
+     * SIM 1 above and nothing below, which is what a user who removed the bottom row asked
+     * for. The <b>outline's</b> gap is still cut at both openings while any row exists (see
+     * {@code buildCapsuleOutline}'s reach), because a stroke interrupted on one side only
+     * reads as damage rather than as a row between two segments.
+     */
     private static void drawCapsuleDots(Canvas c, int level, int[] slotLevels, boolean dual,
-                                        float stroke, int fg, TrioAppearance a) {
+                                        float stroke, int fg, TrioAppearance a,
+                                        TrioAppearance.Capsule cap) {
+        final boolean topRow = cap == null || cap.dotsIn(TrioZones.Zone.TOP);
+        final boolean bottomRow = cap == null || cap.dotsIn(TrioZones.Zone.BOTTOM);
         final int top = (dual && slotLevels != null) ? slotLevels[0] : level;
         final int bottom = (dual && slotLevels != null) ? slotLevels[1] : level;
         final int inactive = withAlpha(fg, a.trackAlpha);
@@ -786,16 +895,20 @@ final class TrioRenderer {
 
         for (int i = 0; i < TrioGeometry.RECT_DOT_ROWS; i++) {
             final float x = first + i * TrioGeometry.CAP_DOT_PITCH;
-            FILL.setColor(i < topActive ? fg : inactive);
-            c.drawCircle(x, topY, TrioGeometry.CAP_DOT_R, FILL);
-            FILL.setColor(i < bottomActive ? fg : inactive);
-            c.drawCircle(x, bottomY, TrioGeometry.CAP_DOT_R, FILL);
+            if (topRow) {
+                FILL.setColor(i < topActive ? fg : inactive);
+                c.drawCircle(x, topY, TrioGeometry.CAP_DOT_R, FILL);
+            }
+            if (bottomRow) {
+                FILL.setColor(i < bottomActive ? fg : inactive);
+                c.drawCircle(x, bottomY, TrioGeometry.CAP_DOT_R, FILL);
+            }
         }
     }
 
     /** The time of day, in a capsule cell centred on {@code (cx, cy)}. */
     private static void drawCapsuleTime(Canvas c, float stroke, int fg, TrioAppearance a,
-                                        float cx, float cy) {
+                                        float cx, float cy, float heightHint) {
         final String text = TrioState.sClockText;
         if (text == null || text.isEmpty()) {
             return;
@@ -808,7 +921,8 @@ final class TrioRenderer {
         // again as long as "100" at the same size, so an even split capped the clock
         // at a setting of about 36 whatever the slider said.
         final float size = capsuleTextSize(text, a.clockSize, stroke,
-                TrioGeometry.capTimeSlotWidth(stroke), 100);
+                capsuleSlotWidth(TrioZones.Zone.CENTRE, heightHint, stroke, true), 100,
+                effectiveHeightLimit(heightHint, stroke));
         TEXT.setTextSize(size);
         TEXT.setColor(fg);
         TEXT.setTextAlign(Paint.Align.CENTER);
@@ -817,11 +931,13 @@ final class TrioRenderer {
 
     /** The battery percentage, when a capsule cell carries it. */
     private static void drawCapsuleValue(Canvas c, float stroke, int level, int fg,
-                                         TrioAppearance a, float cx, float cy) {
+                                         TrioAppearance a, float cx, float cy,
+                                         float heightHint) {
         final String text = String.valueOf(level);
         applyWeight(a.valueWeight);
         final float size = capsuleTextSize(text, a.valueSize, stroke,
-                TrioGeometry.capValueSlotWidth(stroke), 100);
+                capsuleSlotWidth(TrioZones.Zone.CENTRE, heightHint, stroke, false), 100,
+                effectiveHeightLimit(heightHint, stroke));
         TEXT.setTextSize(size);
         TEXT.setColor(fg);
         TEXT.setTextAlign(Paint.Align.CENTER);
@@ -830,10 +946,14 @@ final class TrioRenderer {
 
     /** The network type, when a capsule cell carries it. */
     private static void drawCapsuleType(Canvas c, float stroke, String type, int fg,
-                                        TrioAppearance a, float cx, float cy) {
+                                        TrioAppearance a, float cx, float cy,
+                                        float heightHint) {
         applyWeight(a.typeWeight);
+        // The width of the row it is in, not of the interior's right-hand slot. See
+        // TrioGeometry.capOpeningWidth: an opening spans the capsule, a slot does not.
         final float size = capsuleTextSize(type, a.typeSize, stroke,
-                TrioGeometry.capValueSlotWidth(stroke), a.typeSuffixScale);
+                TrioGeometry.capOpeningWidth(), a.typeSuffixScale,
+                effectiveHeightLimit(heightHint, stroke));
         drawType(c, type, cx, cy + (size * TrioGeometry.CAP_HEIGHT_RATIO) * 0.5f,
                 size, fg, a);
     }
@@ -856,8 +976,24 @@ final class TrioRenderer {
      */
     private static float capsuleTextSize(String text, int setting, float stroke,
                                          float slotWidth, int suffixPercent) {
-        final float requested = Math.min(setting * TrioGeometry.CAP_TEXT_SCALE,
+        return capsuleTextSize(text, setting, stroke, slotWidth, suffixPercent,
                 TrioGeometry.capTextMaxSize(stroke));
+    }
+
+    /**
+     * The same, with the vertical room stated by the caller instead of taken from the interior.
+     *
+     * <p>An opening's strip is shorter than the body, so a piece placed there has to be fitted
+     * to that strip rather than to the interior's height. Passing the interior's limit - which
+     * is what both opening cells used to do - sized the reading for the middle of the capsule
+     * and then drew it out in a band half that tall, so it overran the outline on both sides.
+     *
+     * @param heightLimit the tallest the line's ink may be, in design units
+     */
+    private static float capsuleTextSize(String text, int setting, float stroke,
+                                         float slotWidth, int suffixPercent,
+                                         float heightLimit) {
+        final float requested = Math.min(setting * TrioGeometry.CAP_TEXT_SCALE, heightLimit);
         return fitSize(text, requested, slotWidth, suffixPercent);
     }
 
@@ -1476,7 +1612,11 @@ final class TrioRenderer {
             return inkScale(w, h, TrioGeometry.RECT_INK_W, TrioGeometry.RECT_INK_H);
         }
         if (style == Prefs.STYLE_CAPSULE) {
-            return inkScale(w, h, TrioGeometry.CAP_INK_W, TrioGeometry.CAP_INK_H);
+            // The banded box: the capsule plus the strip either opening draws in. See
+            // TrioGeometry.CAP_INK_TOP - the box grew in HEIGHT only, so the width-driven fit
+            // is unchanged and the capsule is the pixels it always was.
+            return inkScale(w, h, TrioGeometry.CAP_INK_W,
+                    TrioGeometry.CAP_INK_BOTTOM - TrioGeometry.CAP_INK_TOP);
         }
         return inkScale(w, h);
     }
@@ -1529,8 +1669,9 @@ final class TrioRenderer {
         }
         out[0] = scale;
         if (appearance.capsule) {
+            final float boxH = TrioGeometry.CAP_INK_BOTTOM - TrioGeometry.CAP_INK_TOP;
             out[1] = (w - TrioGeometry.CAP_INK_W * scale) / 2f - TrioGeometry.CAP_INK_X * scale;
-            out[2] = (h - TrioGeometry.CAP_INK_H * scale) / 2f - TrioGeometry.CAP_INK_Y * scale;
+            out[2] = (h - boxH * scale) / 2f - TrioGeometry.CAP_INK_TOP * scale;
         } else if (rect) {
             out[1] = (w - TrioGeometry.RECT_INK_W * scale) / 2f
                     - TrioGeometry.RECT_INK_X * scale;

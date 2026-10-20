@@ -332,6 +332,11 @@ final class DrawingZonesTest {
         // else still passes when the ring quietly loses a fifth of each side.
         onlyTheDualReadingWidensTheMouth();
 
+        // The dot-size slider has to reach the pixels, and has to stop at the ceiling
+        // instead of letting the beads run outside the box that fits the glyph. The
+        // geometry assertions live in issue-regressions; this is the pixel claim.
+        dotSizeReachesThePixels();
+
         System.out.println("PASS: " + checks + " cases over " + scenes.size()
                 + " configurations and " + renders + " renders");
     }
@@ -1289,6 +1294,90 @@ final class DrawingZonesTest {
             sb.append(z.name());
         }
         return sb.toString();
+    }
+
+    /**
+     * The dot-size setting moves the pixels, and its ceiling keeps the beads inside the
+     * ink box.
+     *
+     * <p>Two claims a geometry assertion cannot make on its own. The first is that the
+     * value reaches the canvas at all - a slider wired into the settings but not into
+     * {@code drawArcDotRow} would pass every unit check and change nothing on screen. The
+     * second is the one that matters for the user's phone: the beads ride the ring's own
+     * arc, so growing them pushes ink toward the edge of the box that fits the glyph to its
+     * view. Past that edge the host clips, and the glyph would visibly change size as the
+     * slider moved. So the glyph's own ink must stay inside the box at the largest setting.
+     */
+    private static void dotSizeReachesThePixels() {
+        // The reference look: one card's row in each opening, nothing else competing for
+        // the body, so the ink that changes is the dots' own.
+        final TrioSettings base = cfg(false, s -> {
+            s.showValue = false;
+            s.showWifi = false;
+            s.showBolt = false;
+            s.showMobile = true;
+            s.showSim1 = true;
+            s.showSim2 = true;
+            s.mobileTypeMode = Prefs.MOBILE_TYPE_OFF;
+            // SIM 1 in the top opening, SIM 2 in the bottom: both rows, both caps.
+            s.ringZones = Prefs.decodeLayout("7||8");
+        }).settings;
+
+        final TrioSettings small = base.copy();
+        small.dotScale = Prefs.MIN_DOT_SCALE;
+        final TrioSettings normal = base.copy();
+        normal.dotScale = Prefs.DEF_DOT_SCALE;
+        final TrioSettings large = base.copy();
+        large.dotScale = Prefs.MAX_DOT_SCALE;
+
+        final boolean[] smallInk = ink(new Scene(small, false));
+        final boolean[] normalInk = ink(new Scene(normal, false));
+        final boolean[] largeInk = ink(new Scene(large, false));
+
+        ok("the smallest dot size draws less ink than the reference",
+                count(smallInk) < count(normalInk));
+        ok("the largest dot size draws more ink than the reference",
+                count(largeInk) > count(normalInk));
+
+        // The ceiling, stated against pixels rather than against the radius: at the largest
+        // setting the glyph must still fit the box the transform was built from.
+        final float[] t = transform(large);
+        final float minX = (0f - t[1]) / t[0];
+        final float minY = (0f - t[2]) / t[0];
+        final float maxX = (SIZE - t[1]) / t[0];
+        final float maxY = (SIZE - t[2]) / t[0];
+        ok("the largest dot size still centres the box on the ring",
+                Math.abs((minX + maxX) * 0.5f - TrioGeometry.B_CX) < 0.5f
+                        && Math.abs((minY + maxY) * 0.5f - TrioGeometry.B_CY) < 0.5f);
+        // Every painted pixel has to fall inside the design box; one outside is one the
+        // host would clip on a real status bar.
+        int outside = 0;
+        for (int y = 0; y < SIZE; y++) {
+            for (int x = 0; x < SIZE; x++) {
+                if (!largeInk[y * SIZE + x]) {
+                    continue;
+                }
+                final float dx = (x + 0.5f - t[1]) / t[0];
+                final float dy = (y + 0.5f - t[2]) / t[0];
+                if (dx < -0.5f || dy < -0.5f || dx > TrioGeometry.BOX + 0.5f
+                        || dy > TrioGeometry.BOX + 0.5f) {
+                    outside++;
+                }
+            }
+        }
+        eq("the largest dot size keeps every pixel inside the design box",
+                String.valueOf(outside), "0");
+    }
+
+    /** How many pixels carry ink. */
+    private static int count(boolean[] set) {
+        int n = 0;
+        for (boolean b : set) {
+            if (b) {
+                n++;
+            }
+        }
+        return n;
     }
 
     /** True when the two renders differ anywhere on the canvas. */

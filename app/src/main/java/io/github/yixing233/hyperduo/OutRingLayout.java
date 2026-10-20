@@ -39,14 +39,36 @@ final class OutRingLayout {
      * size, so scaling it is the one thing that cannot be absorbed. Dropping keeps every
      * surviving view at its designed size and only costs the least important slot.
      *
-     * <p><b>Index order is priority order</b> (index 0 = most important). The caller passes
-     * the slots as signal, performance, type, so the reading that changes every second
-     * outlives the static "5G" label. When even the highest priority slot cannot fit, it is
-     * scaled as a last resort: showing it small beats showing nothing.
+     * <p><b>Array order is POSITION, and the sacrifice order is passed separately.</b> Those
+     * were one thing while the strip had a fixed arrangement: index 0 was both nearest the
+     * battery and the most important. The arrangement is now a setting, so the two questions
+     * have to be asked separately - putting a reading first says where the user wants to read
+     * it, not that it should outlive the others in a narrow row. {@code dropOrder} is the
+     * priority answer: the indices to give up, least important first. The four-argument-list
+     * overload passes null and keeps the old behaviour exactly.
+     *
+     * <p>When even the highest priority slot cannot fit, it is scaled as a last resort:
+     * showing it small beats showing nothing.
      */
     static Plan solve(int rowWidth, int paddingStart, int paddingEnd,
                       int islandBoundary, int availableHeight,
                       int[] widths, int[] heights, int[] gaps, int outwardGap) {
+        return solve(rowWidth, paddingStart, paddingEnd, islandBoundary, availableHeight,
+                widths, heights, gaps, outwardGap, null);
+    }
+
+    /**
+     * The same, with the sacrifice order named explicitly.
+     *
+     * @param dropOrder indices to drop, least important first; null means "from the last
+     *   index backwards", which is what every caller got before the arrangement was
+     *   settable. An index it does not name is only chosen once everything it names is gone,
+     *   so a partial list still terminates.
+     */
+    static Plan solve(int rowWidth, int paddingStart, int paddingEnd,
+                      int islandBoundary, int availableHeight,
+                      int[] widths, int[] heights, int[] gaps, int outwardGap,
+                      int[] dropOrder) {
         if (widths.length != heights.length || widths.length != gaps.length) {
             throw new IllegalArgumentException("strip metrics have different lengths");
         }
@@ -77,7 +99,7 @@ final class OutRingLayout {
             // views are about one row tall, so dropping one would not make the rest shorter.
             final boolean fitsWidth = total <= room;
             final boolean fitsHeight = tallest <= height;
-            if ((fitsWidth && fitsHeight) || dropLowest(dropped)) {
+            if ((fitsWidth && fitsHeight) || dropLowest(dropped, dropOrder)) {
                 break;
             }
         }
@@ -111,10 +133,22 @@ final class OutRingLayout {
     /**
      * Drops the least important surviving slot and reports whether it dropped anything.
      *
-     * <p>Scans from the end because index order is priority order, so the last surviving
-     * index is always the next victim.
+     * <p>Walks {@code dropOrder} in the order it is given - least important first - and takes
+     * the first slot still standing. With no order to go by it falls back to scanning from
+     * the end, which is the fixed arrangement's rule and still the right default: the
+     * static type label has always been the cheapest thing to lose.
      */
-    private static boolean dropLowest(boolean[] dropped) {
+    private static boolean dropLowest(boolean[] dropped, int[] dropOrder) {
+        if (dropOrder != null) {
+            for (int index : dropOrder) {
+                if (index >= 0 && index < dropped.length && !dropped[index]) {
+                    dropped[index] = true;
+                    return true;
+                }
+            }
+            // Everything named is already gone; fall through to the positional rule so a
+            // short or partial order cannot leave the loop unable to make progress.
+        }
         for (int i = dropped.length - 1; i >= 0; i--) {
             if (!dropped[i]) {
                 dropped[i] = true;

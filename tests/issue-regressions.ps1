@@ -1,7 +1,7 @@
 param(
     [string]$SourceDirectory,
-    [ValidateSet('signal','tint','assignment','wifi','clear','clock')]
-    [string[]]$Suite = @('signal','tint','assignment','wifi','clear','clock')
+    [ValidateSet('signal','tint','assignment','wifi','clear','clock','centre','dots','outorder','capsule','isolation')]
+    [string[]]$Suite = @('signal','tint','assignment','wifi','clear','clock','centre','dots','outorder','capsule','isolation')
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -37,7 +37,7 @@ $meter = Read-Method $hooks 'private static int hookMeterTint(XposedModule modul
 $iconTint = Read-Method $hooks 'private static int hookIconTint(XposedModule module, ClassLoader cl)'
 $rowInk = Read-Method $hooks 'static int rowInk(View row)'
 $clockVisibility = Read-Method $hooks 'static void applyClockVisibility()'
-foreach ($name in @('TrioZones.java','TrioTint.java')) {
+foreach ($name in @('TrioZones.java','TrioTint.java','OutRingLayout.java')) {
     Write-Source "io/github/yixing233/hyperduo/$name" ([IO.File]::ReadAllText((Join-Path $SourceDirectory $name)))
 }
 foreach ($name in @('Prefs.java','TrioSettings.java','TrioAppearance.java','TrioGeometry.java')) {
@@ -248,6 +248,7 @@ Write-Source "$pkg/IssueRegressionTest.java" @'
 package io.github.yixing233.hyperduo;
 import android.content.Context;
 import android.view.*;
+import java.util.Arrays;
 public class IssueRegressionTest {
  static int checks;
  static void ok(String message,boolean value){if(!value)throw new AssertionError(message);checks++;}
@@ -414,8 +415,586 @@ public class IssueRegressionTest {
   TrioConfig.settings.enabled=false;TrioHooks.applyClockVisibility();
   ok("master off restores native clock",!TrioHooks.sClockHidden && clock.value==0);
  }
+ /**
+  * A signal row may not be placed in the ring's middle band, and every path that could
+  * place one refuses it there.
+  *
+  * <p>The rule exists because the middle band has no opening for the row to sit in: the
+  * arc runs past both sides, so four beads there are a horizontal smudge across a closed
+  * ring rather than the ring cut into segments. The test is stated against the three
+  * doors a placement can come through - the layout write, the solver and the picker's own
+  * list - because a rule enforced at one of them is a rule the other two can walk around.
+  */
+ static void centre() {
+  for(TrioZones.Part row:new TrioZones.Part[]{
+      TrioZones.Part.MOBILE,TrioZones.Part.SIM_1,TrioZones.Part.SIM_2}) {
+   TrioSettings s=TrioSettings.defaults();s.trioStyle=Prefs.STYLE_RING;
+   ok("the ring refuses "+row+" in the middle",!TrioZones.ringAccepts(TrioZones.Zone.CENTRE,row));
+   ok("and accepts it at the top",TrioZones.ringAccepts(TrioZones.Zone.TOP,row));
+   ok("and at the bottom",TrioZones.ringAccepts(TrioZones.Zone.BOTTOM,row));
+   // Door 1: the layout write hands the settings back untouched rather than storing a
+   // placement the drawing would skip.
+   TrioSettings refused=TrioZones.withPiece(s,TrioZones.Zone.CENTRE.ordinal(),row);
+   ok("withPiece refuses "+row+" in the middle",
+      refused.ringZones[TrioZones.Zone.CENTRE.ordinal()].length==0);
+   ok("withPiece does not mutate on refusal",s.ringZones[TrioZones.Zone.CENTRE.ordinal()].length==0);
+   ok("withPiece still places "+row+" at the bottom",
+      TrioZones.withPiece(s,TrioZones.Zone.BOTTOM.ordinal(),row)
+        .ringZones[TrioZones.Zone.BOTTOM.ordinal()][0]==TrioZones.encodePart(row));
+   // Door 2: the solver reports it as unsolvable, so the page's row is disabled.
+   ok("the solver refuses "+row+" in the middle",
+      TrioZones.assign(TrioZones.Zone.CENTRE,false,row,s,2)==null);
+   ok("the solver places "+row+" at the bottom",
+      TrioZones.assign(TrioZones.Zone.BOTTOM,false,row,s,2)!=null);
+   // Door 3: the picker never offers it, so there is no dead menu entry. MOBILE is the
+   // retired aggregate meter and is absent from every list by construction - its own
+   // absence is asserted elsewhere - so only the two live rows are checked here.
+   ok("the picker does not offer "+row+" in the middle",
+      !TrioZones.placementChoices(TrioZones.Zone.CENTRE,s,2).contains(row));
+   if(row!=TrioZones.Part.MOBILE) {
+    ok("the picker offers "+row+" at the bottom",
+       TrioZones.placementChoices(TrioZones.Zone.BOTTOM,s,2).contains(row));
+   }
+   // And the drawing passes over a layout that still names it, so a snapshot delivered
+   // And the drawing passes over a layout that still names it. Decoding repairs such a
+   // layout today, so this asserts the drawing's own guard by handing it the raw arrays a
+   // broadcast could carry - a snapshot built by a process that never decoded a string.
+   // Two shapes, because the guard must do both: skip the refused head, and let the
+   // candidate behind it take the band rather than leaving it blank.
+   int code=TrioZones.encodePart(row);
+   for(int[] chain:new int[][]{{code},{code,Prefs.PART_WIFI}}) {
+    TrioSettings stale=s.copy();
+    stale.showSim1=stale.showSim2=true;stale.showMobile=true;stale.showWifi=true;
+    // Index 1 is the middle band; 0 and 2 are the openings.
+    stale.ringZones=new int[][]{{},chain,{}};
+    int slot=TrioAppearance.of(stale).ring(79,false,3,"5G",2)
+      .parts[TrioZones.Zone.CENTRE.ordinal()];
+    ok("the drawing skips a stored middle "+row+" in "+Arrays.toString(chain),
+       slot!=code);
+    ok("and takes the fallback behind it, not a blank band "
+       +Arrays.toString(chain),
+       chain.length==1 ? slot==Prefs.PART_NONE : slot==Prefs.PART_WIFI);
+   }
+  }
+  // Everything else keeps the middle, so the rule is the signal's and not a blanket ban.
+  for(TrioZones.Part part:TrioZones.Part.values()) {
+   if(TrioZones.isSignalRow(part)) continue;
+   TrioSettings s=TrioSettings.defaults();s.trioStyle=Prefs.STYLE_RING;
+   ok("the middle still takes "+part,TrioZones.ringAccepts(TrioZones.Zone.CENTRE,part));
+   ok("and the solver places "+part+" there",
+      TrioZones.assign(TrioZones.Zone.CENTRE,false,part,s,2)!=null);
+  }
+  // Decoding a layout written before the rule moves the row to the bottom band instead of
+  // deleting it: dropping it would read as "my setting was lost". The middle holds a
+  // reading ahead of the row here, so the rest of that band has to survive untouched.
+  int[][] decoded=Prefs.decodeLayout("|3,7|");
+  ok("a stored middle signal row leaves the middle",
+     !Arrays.equals(decoded[Prefs.ZONE_CENTRE],new int[]{Prefs.PART_VALUE,Prefs.PART_SIM_1}));
+  ok("and arrives in the bottom band",
+     Arrays.equals(decoded[Prefs.ZONE_BOTTOM],new int[]{Prefs.PART_SIM_1}));
+  ok("the rest of the middle survives, in order",
+     Arrays.equals(decoded[Prefs.ZONE_CENTRE],new int[]{Prefs.PART_VALUE}));
+  // Appended behind whatever the bottom band already held, so a deliberately promoted
+  // piece keeps its precedence.
+  ok("a moved row goes behind the bottom band's own head",
+     Arrays.equals(Prefs.decodeLayout("|7|1")[Prefs.ZONE_BOTTOM],
+        new int[]{Prefs.PART_WIFI,Prefs.PART_SIM_1}));
+  // A row already in the bottom band is not duplicated by the move.
+  ok("a row already at the bottom is not duplicated",
+     Arrays.equals(Prefs.decodeLayout("|7|7")[Prefs.ZONE_BOTTOM],
+        new int[]{Prefs.PART_SIM_1}));
+  // Repair is idempotent: running it twice must not move anything twice.
+  int[][] once=TrioZones.repairRingLayout(Prefs.decodeLayout("|7|1"));
+  ok("repairing a repaired layout changes nothing",
+     Arrays.deepEquals(once,TrioZones.repairRingLayout(once)));
+  // The other two arrangements have no such band, so their middle keeps everything.
+  for(int style:new int[]{Prefs.STYLE_RECT,Prefs.STYLE_CAPSULE}) {
+   TrioSettings s=TrioSettings.defaults();s.trioStyle=style;
+   for(TrioZones.Part row:new TrioZones.Part[]{
+       TrioZones.Part.MOBILE,TrioZones.Part.SIM_1,TrioZones.Part.SIM_2}) {
+    ok("style "+style+" keeps "+row+" in its middle",
+       TrioZones.accepts(TrioZones.Zone.CENTRE,row,s));
+   }
+  }
+ }
+ /**
+  * The ring's level-dot size setting, which has to scale the bead without letting it
+  * outgrow the ink box.
+  *
+  * <p>Two claims, and both are needed. The first is that the slider does something the
+  * drawing can see: the bead radius has to follow it. The second is the ceiling - the
+  * beads are threaded onto the ring's own arc, so a larger bead reaches further from the
+  * ring centre, and the ink box is what fits the glyph to its view. A setting that pushed
+  * ink past that box would be clipped by the host and, worse, would make the glyph grow
+  * and shrink as the slider moved.
+  *
+  * <p>The default is asserted to be a no-op, because that is the whole compatibility
+  * promise: an install that never touches the key must keep the bead whose diameter is the
+  * ring's thickness.
+  */
+ static void dots() {
+  // 1. 100% is exactly the old radius, at every stroke, for both end thirds.
+  for(int stroke=Prefs.MIN_RING_STROKE;stroke<=Prefs.MAX_RING_STROKE;stroke++) {
+   float width=78f-stroke;
+   float legacy=TrioGeometry.arcRowDotR(0,stroke,width);
+   float at100=TrioGeometry.arcRowDotR(0,stroke,width,1f);
+   ok("100% is the old bead at stroke "+stroke,Math.abs(legacy-at100)<1e-6f);
+   // And the two openings share the size: they are one piece of ink.
+   ok("the top and bottom rows share one size at stroke "+stroke,
+      Math.abs(TrioGeometry.arcRowDotR(0,stroke,width,1f)
+             -TrioGeometry.arcRowDotR(2,stroke,width,1f))<1e-6f);
+  }
+  // 2. Smaller really is smaller, and larger is larger - until the box stops it.
+  {
+   int stroke=Prefs.DEF_RING_STROKE;
+   float width=78f-stroke;
+   float small=TrioGeometry.arcRowDotR(0,stroke,width,Prefs.MIN_DOT_SCALE/100f);
+   float normal=TrioGeometry.arcRowDotR(0,stroke,width,1f);
+   float big=TrioGeometry.arcRowDotR(0,stroke,width,Prefs.MAX_DOT_SCALE/100f);
+   ok("the smallest setting draws a smaller bead",small<normal);
+   ok("the largest setting draws a larger bead",big>normal);
+   ok("the bead never shrinks below a drawable radius",small>=0.5f);
+  }
+  // 3. The ceiling: no setting, at any stroke, may ask for a bead the box cannot hold,
+  // and none may ask for one the opening cannot hold either. Both limits are real - the
+  // box stops the row leaving the glyph, the opening stops it overrunning the arc's caps -
+  // and whichever binds first is the one the drawing must obey.
+  for(int stroke=Prefs.MIN_RING_STROKE;stroke<=Prefs.MAX_RING_STROKE;stroke++) {
+   float width=78f-stroke;
+   for(int pct:new int[]{Prefs.MIN_DOT_SCALE,Prefs.DEF_DOT_SCALE,Prefs.MAX_DOT_SCALE}) {
+    float r=TrioGeometry.arcRowDotR(0,stroke,width,pct/100f);
+    ok("stroke "+stroke+" at "+pct+"% stays inside the ink box",
+       r<=TrioGeometry.maxBeadR()+0.01f);
+    // The reference bead is what the opening was designed around; the test asserts the
+    // drawn radius never exceeds the roomier of the two mechanical limits, which is what
+    // keeps a future change to either from silently overlapping the arc.
+    float reference=TrioGeometry.arcRowDotR(0,stroke,width);
+    float room=Math.max(reference,TrioGeometry.maxBeadR());
+    ok("stroke "+stroke+" at "+pct+"% is capped by a real limit, not the slider",
+       r<=Math.max(reference,room)+0.01f);
+   }
+   // Scaling up can never make the bead smaller than the reference: the cap only binds
+   // from above, so a large setting is monotonic up to the ceiling.
+   float normal=TrioGeometry.arcRowDotR(0,stroke,width,1f);
+   float big=TrioGeometry.arcRowDotR(0,stroke,width,Prefs.MAX_DOT_SCALE/100f);
+   ok("a larger setting never draws a smaller bead at stroke "+stroke,big>=normal-1e-6f);
+  }
+  // 4. The setting round-trips, and a stored value outside the span is clamped rather
+  // than trusted - the hooked side reads the broadcast extras as well as the file.
+  {
+   TrioSettings s=TrioSettings.defaults();
+   ok("a fresh install is at the reference size",s.dotScale==Prefs.DEF_DOT_SCALE);
+   TrioSettings tweaked=s.copy();tweaked.dotScale=Prefs.MAX_DOT_SCALE;
+   ok("the dot size survives copy()",tweaked.copy().dotScale==Prefs.MAX_DOT_SCALE);
+   ok("the dot size survives the bundle",TrioSettings.fromBundle(
+        tweaked.toBundle()).dotScale==Prefs.MAX_DOT_SCALE);
+   ok("the dot size participates in equality",!s.equals(tweaked));
+   ok("the remote key update carries it",s.applyKeyFrom(tweaked,Prefs.KEY_DOT_SCALE)
+        && s.dotScale==Prefs.MAX_DOT_SCALE);
+   TrioSettings wild=s.copy();wild.dotScale=9999;
+   ok("the multiplier clamps a wild value",
+      TrioAppearance.of(wild).dotScaleFactor()==Prefs.MAX_DOT_SCALE/100f);
+  }
+ }
+ /**
+  * The out-of-ring order: a stored arrangement that decides placement only.
+  *
+  * <p>Three claims. The codec survives junk and always yields three slots, because it is
+  * read from a preference file and from broadcast extras. The arrangement actually moves the
+  * views through {@link OutRingLayout}, since an order that reaches the settings but not the
+  * layout would look saved and do nothing. And the sacrifice order stays a separate
+  * judgement: reordering must not change which piece survives an overflow, which is the whole
+  * reason the two were split.
+  */
+ static void outorder() {
+  // 1. The codec: order preserved, junk repaired, always three entries.
+  ok("the default order is the shipped arrangement",
+     Arrays.equals(Prefs.decodeOutOrder(null),new int[]{
+        Prefs.OUT_SLOT_SIGNAL,Prefs.OUT_SLOT_READOUTS,Prefs.OUT_SLOT_TYPE}));
+  ok("a stored order round-trips",
+     Arrays.equals(Prefs.decodeOutOrder("3,1,2"),new int[]{
+        Prefs.OUT_SLOT_TYPE,Prefs.OUT_SLOT_SIGNAL,Prefs.OUT_SLOT_READOUTS}));
+  ok("the codec re-encodes to the same string",
+     "3,1,2".equals(Prefs.encodeOutOrder(Prefs.decodeOutOrder("3,1,2"))));
+  // A partial value keeps what the user did express and appends the rest in default order,
+  // rather than resetting the whole arrangement over one damaged id.
+  ok("a partial order keeps the entry that survived",
+     Arrays.equals(Prefs.decodeOutOrder("3"),new int[]{
+        Prefs.OUT_SLOT_TYPE,Prefs.OUT_SLOT_SIGNAL,Prefs.OUT_SLOT_READOUTS}));
+  ok("an unknown id is dropped",Prefs.decodeOutOrder("9,1,2,3").length==Prefs.OUT_SLOT_COUNT);
+  ok("a duplicate is collapsed",
+     Arrays.equals(Prefs.decodeOutOrder("1,1,2,3"),new int[]{
+        Prefs.OUT_SLOT_SIGNAL,Prefs.OUT_SLOT_READOUTS,Prefs.OUT_SLOT_TYPE}));
+  ok("an empty string is the default order",
+     Arrays.equals(Prefs.decodeOutOrder(""),Prefs.OUT_DEFAULT_ORDER));
+  ok("every decoded order names each slot exactly once",distinctSlots(Prefs.decodeOutOrder("x")));
+  // 2. The transport: the arrangement survives copy, bundle and the remote key update.
+  {
+   TrioSettings s=TrioSettings.defaults();
+   ok("a fresh install has the shipped arrangement",
+      Arrays.equals(s.outOrder,Prefs.OUT_DEFAULT_ORDER));
+   s.outOrder=new int[]{Prefs.OUT_SLOT_TYPE,Prefs.OUT_SLOT_READOUTS,Prefs.OUT_SLOT_SIGNAL};
+   ok("the order survives copy()",Arrays.equals(s.copy().outOrder,s.outOrder));
+   ok("copy() does not share the array",s.copy().outOrder!=s.outOrder);
+   ok("the order survives the bundle",
+      Arrays.equals(TrioSettings.fromBundle(s.toBundle()).outOrder,s.outOrder));
+   TrioSettings other=TrioSettings.defaults();
+   ok("the remote key update carries it",other.applyKeyFrom(s,Prefs.KEY_OUT_ORDER)
+      && Arrays.equals(other.outOrder,s.outOrder));
+   ok("the order participates in equality",!TrioSettings.defaults().equals(s));
+   ok("the appearance exposes the same arrangement",
+      Arrays.equals(TrioAppearance.of(s).outOrder,s.outOrder));
+  }
+  // 3. The layout: the arrangement decides placement, and only placement.
+  //
+  // The coordinate convention, which the editor has to mirror: `near` is measured from the
+  // row's END, so the slot the solver counts FIRST sits closest to the battery and therefore
+  // furthest to the RIGHT in LTR. Index 0 is "next to the battery", not "leftmost" - that is
+  // the mapping the settings row has to reverse when it draws its tiles.
+  {
+   int[] widths={20,40,30}, heights={20,20,20}, gaps={3,5,5};
+   OutRingLayout.Plan shipped=OutRingLayout.solve(300,0,0,0,40,widths,heights,gaps,7);
+   ok("index 0 is placed at all",shipped.widths[0]>0);
+   ok("index 0 sits nearest the row's end, i.e. nearest the battery",
+      shipped.near[0]>shipped.near[1] && shipped.near[1]>shipped.near[2]);
+   // Reversed arrangement: the same widths, permuted. The same index now carries a different
+   // piece, so its coordinate moves - that is what a reorder has to look like.
+   int[] revWidths={widths[2],widths[1],widths[0]};
+   int[] revGaps={gaps[2],gaps[1],gaps[0]};
+   OutRingLayout.Plan reversed=OutRingLayout.solve(300,0,0,0,40,revWidths,heights,revGaps,7);
+   ok("a permuted arrangement places the same pieces",
+      Arrays.equals(sorted(shipped.widths),sorted(reversed.widths)));
+   ok("the arrangement moves the geometry",
+      Math.abs(shipped.near[2]-reversed.near[2])>0.5f);
+   // And the screen order the editor renders is the reverse of this array: the LAST stored
+   // entry is the leftmost tile. Stated as arithmetic so the two cannot drift apart.
+   int[] stored={Prefs.OUT_SLOT_SIGNAL,Prefs.OUT_SLOT_TYPE,Prefs.OUT_SLOT_READOUTS};
+   int[] onScreen={stored[2],stored[1],stored[0]};
+   ok("the leftmost tile is the piece furthest from the battery",
+      onScreen[0]==Prefs.OUT_SLOT_READOUTS && stored[2]==Prefs.OUT_SLOT_READOUTS);
+   ok("the rightmost tile is the piece next to the battery",
+      onScreen[onScreen.length-1]==stored[0]);
+  }
+  // 4. Priority is independent: overflow drops the same piece whatever the arrangement.
+  {
+   int[] widths={40,40,40}, heights={20,20,20}, gaps={5,5,5};
+   // No drop order: the old positional rule, which sacrifices from the end.
+   OutRingLayout.Plan positional=OutRingLayout.solve(30,0,0,0,40,widths,heights,gaps,0);
+   ok("positional rule drops from the end",positional.dropped[2]);
+   // An explicit priority that names slot 0 first must sacrifice slot 0 instead, whatever
+   // position it occupies - that is the separation the setting exists for.
+   OutRingLayout.Plan priority=OutRingLayout.solve(30,0,0,0,40,widths,heights,gaps,0,
+      new int[]{0,1,2});
+   ok("an explicit priority wins over the position",priority.dropped[0]);
+   ok("and it drops exactly one before giving up",
+      priority.dropped[0] && !priority.dropped[1] && !priority.dropped[2]);
+   // A partial order still terminates: everything it names is gone, so the fallback takes
+   // over rather than looping forever.
+   OutRingLayout.Plan partial=OutRingLayout.solve(1,0,0,0,40,widths,heights,gaps,0,
+      new int[]{0});
+   ok("a partial drop order still terminates",partial.dropped[0]);
+   ok("the default order and the priority agree on the shipped arrangement",
+      Arrays.equals(Prefs.OUT_DEFAULT_ORDER,Prefs.OUT_PRIORITY));
+  }
+ }
+ /** True when an order names each slot exactly once. */
+ static boolean distinctSlots(int[] order) {
+  if(order.length!=Prefs.OUT_SLOT_COUNT) return false;
+  boolean[] seen=new boolean[Prefs.OUT_SLOT_COUNT+1];
+  for(int id:order) {
+   if(id<Prefs.OUT_SLOT_SIGNAL||id>Prefs.OUT_SLOT_COUNT||seen[id]) return false;
+   seen[id]=true;
+  }
+  return true;
+ }
+ /** A sorted copy, so two arrangements can be compared as multisets. */
+ static int[] sorted(int[] values) {
+  int[] copy=values.clone();
+  Arrays.sort(copy);
+  return copy;
+ }
+ /**
+  * The capsule's two dot rows are editable placements, and an install that never edited one
+  * still draws exactly what it used to.
+  *
+  * <p>The defect this pins: the openings drew dots from the mobile switch alone, so the user
+  * saw signal dots in the top and bottom bands and no setting could move or remove them - the
+  * bands opened a picker that offered readings only, and the rows were not in any list. The
+  * fix makes them band occupants like everything else; the compatibility claim is that the
+  * legacy no-placement path reproduces the old look, which is why the two rows are asserted
+  * on instead of merely "dots are still drawn somewhere".
+  */
+ static void capsule() {
+  // 1. A capsule with nothing placed keeps the shipped look: both rows, from the switch.
+  {
+   TrioSettings legacy=TrioSettings.defaults();
+   legacy.trioStyle=Prefs.STYLE_CAPSULE;
+   legacy.ringZones=Prefs.decodeLayout(Prefs.EMPTY_LAYOUT);
+   TrioAppearance a=TrioAppearance.of(legacy);
+   TrioAppearance.Capsule cap=a.capsule(79,false,-1,"5GA",2);
+   ok("an untouched capsule still draws dots",cap.dots);
+   ok("an untouched capsule draws the top row",cap.dotsIn(TrioZones.Zone.TOP));
+   ok("an untouched capsule draws the bottom row",cap.dotsIn(TrioZones.Zone.BOTTOM));
+   // Out of ring releases the rows exactly as before.
+   TrioSettings outside=legacy.copy();
+   outside.signalMode=Prefs.SIGNAL_OUT_RING;
+   ok("out of ring still releases both rows",
+      !TrioAppearance.of(outside).capsule(79,false,-1,"5GA",2).dots);
+  }
+  // 2. The rows are placements: they can be removed, and each opening is independent.
+  {
+   TrioSettings cleared=TrioSettings.defaults();
+   cleared.trioStyle=Prefs.STYLE_CAPSULE;
+   // A reading in the interior and nothing in the openings: the user removed both rows.
+   cleared.ringZones=Prefs.decodeLayout("|3|");
+   TrioAppearance.Capsule cap=TrioAppearance.of(cleared).capsule(79,false,-1,"5GA",2);
+   ok("a capsule with an interior reading draws no dots",!cap.dots);
+   ok("and neither opening holds a row",
+      !cap.dotsIn(TrioZones.Zone.TOP) && !cap.dotsIn(TrioZones.Zone.BOTTOM));
+   ok("the interior reading survives",cap.parts[TrioZones.Zone.CENTRE.ordinal()]
+      !=Prefs.PART_NONE);
+
+   // SIM 1 in the top opening only: the two bands are independent.
+   TrioSettings topOnly=TrioSettings.defaults();
+   topOnly.trioStyle=Prefs.STYLE_CAPSULE;
+   topOnly.showSim1=true;
+   topOnly.ringZones=Prefs.decodeLayout("7|3|");
+   TrioAppearance.Capsule top=TrioAppearance.of(topOnly).capsule(79,false,-1,"5GA",2);
+   ok("a top-only placement draws the top row",top.dotsIn(TrioZones.Zone.TOP));
+   ok("and leaves the bottom opening empty",!top.dotsIn(TrioZones.Zone.BOTTOM));
+   ok("one row still counts as dots for the outline",top.dots);
+
+   // The bottom opening is a placement target in its own right.
+   TrioSettings bottomOnly=TrioSettings.defaults();
+   bottomOnly.trioStyle=Prefs.STYLE_CAPSULE;
+   bottomOnly.showSim2=true;
+   bottomOnly.ringZones=Prefs.decodeLayout("|3|8");
+   TrioAppearance.Capsule bot=TrioAppearance.of(bottomOnly).capsule(79,false,-1,"5GA",2);
+   ok("a bottom-only placement draws the bottom row",bot.dotsIn(TrioZones.Zone.BOTTOM));
+   ok("and leaves the top opening empty",!bot.dotsIn(TrioZones.Zone.TOP));
+  }
+  // 3. The editor can name what it sees: the occupant of a band holding dots is a piece the
+  // picker offers, which is what makes the row editable rather than merely visible.
+  {
+   TrioSettings topOnly=TrioSettings.defaults();
+   topOnly.trioStyle=Prefs.STYLE_CAPSULE;
+   topOnly.showSim1=true;
+   topOnly.ringZones=Prefs.decodeLayout("7|3|");
+   TrioAppearance a=TrioAppearance.of(topOnly);
+   ok("the top band reports an occupant",
+      TrioZones.occupant(TrioZones.Zone.TOP,a,79,false,-1,"5GA",2)!=null);
+   // And that band is offered the rows, so the user can put one there or take it away.
+   java.util.List<TrioZones.Part> choices=
+      TrioZones.placementChoices(TrioZones.Zone.TOP,topOnly,2);
+   ok("the top band is offered the per-card rows",
+      choices.contains(TrioZones.Part.SIM_1) || choices.contains(TrioZones.Part.SIM_2));
+   // Both openings are bands the solver writes to.
+   ok("a row can be placed in the top opening",
+      TrioZones.assign(TrioZones.Zone.TOP,false,TrioZones.Part.SIM_2,topOnly,2)!=null);
+   ok("a row can be placed in the bottom opening",
+      TrioZones.assign(TrioZones.Zone.BOTTOM,false,TrioZones.Part.SIM_1,topOnly,2)!=null);
+   // Clearing a band that holds a row leaves it empty rather than falling back to the switch.
+   TrioSettings emptied=TrioZones.withPiece(topOnly,TrioZones.Zone.TOP.ordinal(),null);
+   ok("clearing the top opening removes its row",
+      !TrioAppearance.of(emptied).capsule(79,false,-1,"5GA",2).dotsIn(TrioZones.Zone.TOP));
+  }
+  // 4. The capsule is slot-driven for the rows but still refuses what it cannot draw: the
+  // clock is fixed in its own column and is not a placement.
+  {
+   TrioSettings s=TrioSettings.defaults();
+   s.trioStyle=Prefs.STYLE_CAPSULE;
+   ok("the capsule still refuses to place the clock",
+      TrioZones.assign(TrioZones.Zone.TOP,false,TrioZones.Part.CLOCK,s,2)==null);
+   ok("the capsule answers hasSlots",TrioZones.hasSlots(s));
+   TrioSettings rect=s.copy();rect.trioStyle=Prefs.STYLE_RECT;
+   ok("the rectangle has no bands",!TrioZones.hasSlots(rect));
+  }
+  // 5. A reading in an opening straddles the outline, in the gap the dot row opened, and its
+  // whole ink stays inside the box the glyph is fitted to.
+  //
+  // This is the "space design is wrong" defect, and it had two halves. The first was that the
+  // cell sat in a lane INSIDE the capsule, stacked on the clock and the percentage the body
+  // already draws there - so an opening was not a place of its own. The second was that even
+  // there it could not be drawn large: the lane was measured against the strip the ink box
+  // left beyond the stroke, which is about one stroke wide.
+  //
+  // The fix is that the opening is a real row. The reading is centred on the path line, and the
+  // host grows by CAP_BAND_H above and below so the half of the line outside the capsule has
+  // somewhere to land. The capsule itself does not change size: the fit is width-driven and the
+  // width is untouched (pinned below), so every pixel of it is where it was.
+  {
+   for(int ringStroke=Prefs.MIN_RING_STROKE;ringStroke<=Prefs.MAX_RING_STROKE;ringStroke++) {
+    float stroke=ringStroke*TrioGeometry.CAP_STROKE_RATIO;
+    float room=TrioGeometry.capOpeningTextRoomH(stroke);
+    float topCy=TrioGeometry.capOpeningCy(true,stroke);
+    float bottomCy=TrioGeometry.capOpeningCy(false,stroke);
+    // Centred on the path line: the label reads as the row that interrupted the outline.
+    ok("stroke "+ringStroke+": the top cell is centred on the outline",
+       Math.abs(topCy-TrioGeometry.CAP_TOP)<0.001f);
+    ok("stroke "+ringStroke+": the bottom cell is centred on the outline",
+       Math.abs(bottomCy-TrioGeometry.CAP_BOTTOM)<0.001f);
+    // Its ink fits the banded box, so the host does not clip it.
+    ok("stroke "+ringStroke+": the top cell stays inside the banded box",
+       topCy-room*0.5f>=TrioGeometry.CAP_INK_TOP-0.001f);
+    ok("stroke "+ringStroke+": the bottom cell stays inside the banded box",
+       bottomCy+room*0.5f<=TrioGeometry.CAP_INK_BOTTOM+0.001f);
+    // The CAPSULE's own box is unchanged. This is the compatibility pin: it is what keeps the
+    // width asked of the status bar - and so the capsule's size in pixels - exactly as shipped,
+    // because the fit is width-driven and CAP_INK_W is untouched by the bands.
+    ok("stroke "+ringStroke+": the capsule box still ends at the outline plus its stroke",
+       Math.abs((TrioGeometry.CAP_INK_Y+TrioGeometry.CAP_INK_H)
+          -(TrioGeometry.CAP_BOTTOM+Prefs.MAX_RING_STROKE
+            *TrioGeometry.CAP_STROKE_RATIO*0.5f))<0.001f);
+    // The bands are exactly what was added, on both sides.
+    ok("stroke "+ringStroke+": the banded box is the capsule box plus both bands",
+       Math.abs(TrioGeometry.CAP_INK_TOP-(TrioGeometry.CAP_INK_Y-TrioGeometry.CAP_BAND_H))<0.001f
+       && Math.abs(TrioGeometry.CAP_INK_BOTTOM
+            -(TrioGeometry.CAP_INK_Y+TrioGeometry.CAP_INK_H+TrioGeometry.CAP_BAND_H))<0.001f);
+   }
+   // The openings no longer fight the body for space: a reading there is half outside the
+   // capsule, so the two cannot overlap the clock in the middle.
+   float stroke=Prefs.DEF_RING_STROKE*TrioGeometry.CAP_STROKE_RATIO;
+   float room=TrioGeometry.capOpeningTextRoomH(stroke);
+   ok("the opening readings sit clear of the body",
+      TrioGeometry.capOpeningCy(true,stroke)+room*0.5f
+      <= TrioGeometry.capInteriorTop(stroke)+0.5f);
+   // And the host really does grow, in HEIGHT only - the width the status bar is asked for is
+   // unchanged, which is the whole reason the capsule does not shrink.
+   int bare=60;
+   ok("the host grows taller", TrioGeometry.capHostHeightPx(bare)>bare);
+   ok("the host width is untouched by the bands",
+      TrioGeometry.capHostWidthPx(bare)==Math.round(
+         bare*(TrioGeometry.CAP_INK_W/TrioGeometry.CAP_INK_H)));
+   ok("and the grown height keeps the same aspect the width was asked for",
+      Math.abs((TrioGeometry.capHostHeightPx(bare)-bare)
+         -2f*TrioGeometry.CAP_BAND_H*(bare/TrioGeometry.CAP_INK_H))<=1f);
+  }
+ }
+ /**
+  * The ring and the capsule keep their own components and layout.
+  *
+  * <p>Before the split both arrangements read and wrote the same three slots and the same six
+  * switches, so setting up one silently reconfigured the other: placing the percentage in the
+  * ring's middle and then switching to the capsule emptied one of the two. The fix moves the
+  * component keys to a per-arrangement name (`show_wifi` for the ring, `show_wifi@capsule` for
+  * the capsule) while leaving every size, weight and colour shared.
+  *
+  * <p>Three claims: the keys map as intended, an existing install inherits its ring values into
+  * the capsule rather than getting defaults, and an edit to either arrangement leaves the other
+  * untouched in BOTH directions - which is the property the user actually notices.
+  */
+ static void isolation() {
+  // 1. The key mapping. The ring keeps the historical unsuffixed name, so no stored value
+  //    has to move; only the capsule gets a new name.
+  ok("the ring keeps the historical key",
+     Prefs.styledKey(Prefs.KEY_SHOW_WIFI,Prefs.STYLE_RING).equals(Prefs.KEY_SHOW_WIFI));
+  ok("the capsule gets its own key",
+     Prefs.styledKey(Prefs.KEY_SHOW_WIFI,Prefs.STYLE_CAPSULE)
+        .equals(Prefs.KEY_SHOW_WIFI+Prefs.STYLE_SUFFIX));
+  ok("the layout is per arrangement",
+     Prefs.styledKey(Prefs.KEY_RING_LAYOUT,Prefs.STYLE_CAPSULE)
+        .equals(Prefs.KEY_RING_LAYOUT+Prefs.STYLE_SUFFIX));
+  // Appearance is NOT per arrangement: a user who chose 40pt digits wants them in both.
+  for(String key:new String[]{Prefs.KEY_RING_STROKE,Prefs.KEY_VALUE_SIZE,
+      Prefs.KEY_TYPE_WEIGHT,Prefs.KEY_DOT_SCALE,Prefs.KEY_GLYPH_SCALE}) {
+   ok("appearance stays shared: "+key,
+      Prefs.styledKey(key,Prefs.STYLE_CAPSULE).equals(key));
+  }
+  ok("the base of a suffixed key is recovered",
+     Prefs.styledBase(Prefs.KEY_RING_LAYOUT+Prefs.STYLE_SUFFIX).equals(Prefs.KEY_RING_LAYOUT));
+
+  // 2. Migration: an install that only ever had ring values hands them to the capsule.
+  {
+   Map prefs=new Map();
+   prefs.m.put(Prefs.KEY_SHOW_WIFI,false);
+   prefs.m.put(Prefs.KEY_SHOW_VALUE,false);
+   prefs.m.put(Prefs.KEY_RING_LAYOUT,"1|3|");
+   TrioSettings capsule=TrioSettings.from(prefs,3f,Prefs.STYLE_CAPSULE);
+   ok("the capsule inherits the pre-split switch",!capsule.showWifi && !capsule.showValue);
+   ok("the capsule inherits the pre-split layout",
+      java.util.Arrays.equals(capsule.ringZones[0],new int[]{Prefs.PART_WIFI}));
+  }
+
+  // 3. Isolation, capsule edit first: the ring must be untouched.
+  {
+   Map prefs=new Map();
+   prefs.m.put(Prefs.KEY_SHOW_WIFI,true);
+   prefs.m.put(Prefs.KEY_RING_LAYOUT,"1|3|");
+   // The user switches to the capsule and edits it.
+   prefs.m.put(Prefs.styledKey(Prefs.KEY_SHOW_WIFI,Prefs.STYLE_CAPSULE),false);
+   prefs.m.put(Prefs.styledKey(Prefs.KEY_RING_LAYOUT,Prefs.STYLE_CAPSULE),"||1");
+   TrioSettings capsule=TrioSettings.from(prefs,3f,Prefs.STYLE_CAPSULE);
+   ok("the capsule reads its own switch",!capsule.showWifi);
+   ok("the capsule reads its own layout",
+      java.util.Arrays.equals(capsule.ringZones[2],new int[]{Prefs.PART_WIFI}));
+   TrioSettings ring=TrioSettings.from(prefs,3f,Prefs.STYLE_RING);
+   ok("the ring kept its switch after a capsule edit",ring.showWifi);
+   ok("the ring kept its layout after a capsule edit",
+      java.util.Arrays.equals(ring.ringZones[0],new int[]{Prefs.PART_WIFI}));
+   ok("and the capsule layout did not leak upward",ring.ringZones[2].length==0);
+  }
+
+  // 4. And the other way: a ring edit must leave the capsule alone.
+  {
+   Map prefs=new Map();
+   prefs.m.put(Prefs.styledKey(Prefs.KEY_SHOW_VALUE,Prefs.STYLE_CAPSULE),true);
+   prefs.m.put(Prefs.styledKey(Prefs.KEY_RING_LAYOUT,Prefs.STYLE_CAPSULE),"||1");
+   // The user goes back to the ring and changes it.
+   prefs.m.put(Prefs.KEY_SHOW_VALUE,false);
+   prefs.m.put(Prefs.KEY_RING_LAYOUT,"1|3|");
+   TrioSettings ring=TrioSettings.from(prefs,3f,Prefs.STYLE_RING);
+   ok("the ring edit applied to the ring",!ring.showValue);
+   TrioSettings capsule=TrioSettings.from(prefs,3f,Prefs.STYLE_CAPSULE);
+   ok("the capsule kept its own value switch",capsule.showValue);
+   ok("the capsule kept its own layout",
+      java.util.Arrays.equals(capsule.ringZones[2],new int[]{Prefs.PART_WIFI}));
+   ok("and did not inherit the ring's new placement",
+      !java.util.Arrays.equals(capsule.ringZones[0],new int[]{Prefs.PART_WIFI}));
+  }
+
+  // 5. The remote-preference and broadcast paths must speak the suffixed keys too, or a
+  //    capsule edit would reach storage and never reach the hooked process.
+  {
+   TrioSettings snap=TrioSettings.defaults();
+   snap.trioStyle=Prefs.STYLE_CAPSULE;
+   snap.showWifi=false;
+   TrioSettings target=TrioSettings.defaults();
+   ok("a suffixed remote key writes its field",
+      target.applyKeyFrom(snap,Prefs.styledKey(Prefs.KEY_SHOW_WIFI,Prefs.STYLE_CAPSULE))
+      && !target.showWifi);
+   android.os.Bundle bundle=snap.toBundle();
+   ok("the capsule bundle carries its own key",
+      bundle.containsKey(Prefs.styledKey(Prefs.KEY_SHOW_WIFI,Prefs.STYLE_CAPSULE)));
+   ok("and the value it carries",
+      !bundle.getBoolean(Prefs.styledKey(Prefs.KEY_SHOW_WIFI,Prefs.STYLE_CAPSULE),true));
+   TrioSettings ringSnap=TrioSettings.defaults();
+   ringSnap.trioStyle=Prefs.STYLE_RING;
+   ok("the ring's bundle keeps the unsuffixed key",
+      ringSnap.toBundle().containsKey(Prefs.KEY_SHOW_WIFI));
+  }
+ }
+ /** Minimal in-memory prefs, so these cases exercise the real readers. */
+ static final class Map implements android.content.SharedPreferences {
+  final java.util.Map<String,Object> m=new java.util.HashMap<>();
+  public boolean getBoolean(String k,boolean d){Object v=m.get(k);return v==null?d:(Boolean)v;}
+  public int getInt(String k,int d){Object v=m.get(k);return v==null?d:(Integer)v;}
+  public String getString(String k,String d){Object v=m.get(k);return v==null?d:(String)v;}
+  public boolean contains(String k){return m.containsKey(k);}
+  public android.content.SharedPreferences.Editor edit(){
+   return new android.content.SharedPreferences.Editor(){
+    final java.util.Map<String,Object> pending=new java.util.HashMap<>();
+    public android.content.SharedPreferences.Editor putBoolean(String k,boolean v){
+     pending.put(k,v);return this;}
+    public android.content.SharedPreferences.Editor putInt(String k,int v){
+     pending.put(k,v);return this;}
+    public android.content.SharedPreferences.Editor putString(String k,String v){
+     pending.put(k,v);return this;}
+    public boolean commit(){m.putAll(pending);pending.clear();return true;}
+   };
+  }
+ }
  public static void main(String[] args)throws Throwable {
-  switch(args[0]){case "signal":signal();break;case "tint":tint();break;case "assignment":assignment();break;case "wifi":wifi();break;case "clear":clear();break;case "clock":clock();break;default:throw new AssertionError(args[0]);}
+  switch(args[0]){case "signal":signal();break;case "tint":tint();break;case "assignment":assignment();break;case "wifi":wifi();break;case "clear":clear();break;case "clock":clock();break;case "centre":centre();break;case "dots":dots();break;case "outorder":outorder();break;case "capsule":capsule();break;case "isolation":isolation();break;default:throw new AssertionError(args[0]);}
   System.out.println("PASS: "+args[0]+" / "+checks+" assertions");
  }
 }
@@ -476,3 +1055,4 @@ foreach ($name in @('charging','bolt','wifi','other')) {
     if ($drawing -notmatch "R\.string\.drawing_feedback_$name") { throw "Missing preview feedback: $name" }
 }
 Write-Output 'PASS: long-press and preview-feedback source contracts (Android gestures not executed)'
+

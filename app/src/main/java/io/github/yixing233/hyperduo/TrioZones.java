@@ -260,7 +260,7 @@ public final class TrioZones {
                 // The clock keeps the left column and is not a zone, so this band is the
                 // whole width of the strip above the interior rather than a cell of it.
                 return new float[][] {
-                        { left, TrioGeometry.CAP_INK_Y - fringe, right, top } };
+                        { left, TrioGeometry.CAP_INK_TOP - fringe, right, top } };
             case CENTRE:
                 // The interior to the right of the fixed clock: the one cell of the body the
                 // user can put something in.
@@ -270,7 +270,7 @@ public final class TrioZones {
                 // The bottom opening, mirroring the top one.
                 return new float[][] {
                         { left, bottom, right,
-                                TrioGeometry.CAP_INK_Y + TrioGeometry.CAP_INK_H + fringe } };
+                                TrioGeometry.CAP_INK_BOTTOM + fringe } };
         }
     }
 
@@ -476,10 +476,13 @@ public final class TrioZones {
         if (a == null || cap == null) {
             return null;
         }
-        // The dot rows are not a placed piece: they belong to BOTTOM as a whole, and the
-        // switch decides whether they draw. TOP and CENTRE report their own slot.
-        if (zone == Zone.BOTTOM) {
-            return cap.dots ? Part.MOBILE : null;
+        // A band holding a dot row reports that row, whatever the layout's id list says
+        // after the cell was resolved: the row IS the band's piece, and the editor has to
+        // name the thing the user can see there. Both openings are ordinary bands now - the
+        // rows used to belong to BOTTOM as a whole, which is why the top opening could hold
+        // visible dots with nothing the editor could point at.
+        if (cap.dotsIn(zone)) {
+            return Part.MOBILE;
         }
         return decodePart(cap.parts[zone.ordinal()]);
     }
@@ -528,7 +531,136 @@ public final class TrioZones {
                 || progress <= ring.gapStart() + pad || progress >= ring.gapEnd() - pad;
     }
 
-    // ------------------------------------------------------------- assignment
+    // ------------------------------------------------------- placement rules
+
+    /**
+     * Whether the ring may hold {@code part} in {@code zone}.
+     *
+     * <p>One piece is refused, and only in one place: a <b>signal row</b> - the aggregate
+     * meter {@link Part#MOBILE} or either card's row, {@link Part#SIM_1} /
+     * {@link Part#SIM_2} - may not sit in the ring's <b>middle</b> band.
+     *
+     * <p>That is not a taste. The ring's middle band draws its dot row as a compact
+     * <em>horizontal</em> line of beads (<code>TrioRenderer.drawArcDotRow</code>, the
+     * {@code zone == 1} branch), because the bands above and below it are the ring's own
+     * openings - the places the outline is already cut, so a row of beads there reads as
+     * the ring cut into segments. The middle has no such opening: the battery arc runs
+     * straight past it on both sides, and the beads are fitted to
+     * {@code DOT_BOX_CENTRE / 3}, which is a reading's size rather than a bead's. Four of
+     * them in a line there read as a smudge across the closed ring rather than as part of
+     * its outline.
+     *
+     * <p>So the top and the bottom are the signal's two homes - the two openings - and the
+     * middle is the reading's. The rule itself is stated once, in
+     * {@link Prefs#zoneAccepts(int, int)}, next to the ids and the zone numbering it is
+     * about, because the drawing page, the position dropdown, the solver and the layout
+     * decoder all have to answer it the same way; this is the typed view of it for code
+     * that works in {@link Zone} and {@link Part}.
+     *
+     * <p>Only the ring is affected. The capsule draws its dot rows across its two
+     * <em>openings</em> and nothing in its middle, and the rectangle's centre is the
+     * percentage by construction - so neither has a middle band a signal row could be put
+     * in and get wrong.
+     *
+     * @param zone one of the three ring thirds
+     * @param part the piece a placement or a dropdown is asking about; null (a cleared
+     *             zone) is always allowed
+     */
+    public static boolean ringAccepts(Zone zone, Part part) {
+        return zone == null || part == null
+                || Prefs.zoneAccepts(zone.ordinal(), encodePart(part));
+    }
+
+    /** Whether this arrangement places pieces in bands at all - i.e. not the rectangle. */
+    public static boolean hasSlots(TrioSettings settings) {
+        return settings != null && settings.trioStyle != Prefs.STYLE_RECT;
+    }
+
+    /**
+     * Whether {@code part} is one of the rows of level dots - see {@link #ringAccepts}.
+     */
+    public static boolean isSignalRow(Part part) {
+        return part != null && Prefs.isSignalRow(encodePart(part));
+    }
+
+    /**
+     * The same question for whichever arrangement {@code current} is drawing.
+     *
+     * <p>The rectangle accepts everything - it has no bands, and derives its contents from
+     * the switches. The ring's middle is the one refusal, and it applies to the ring only:
+     * the capsule's middle is a reading's band too, but its rows are fitted to its own
+     * outline rather than threaded onto a notch, so a row there is a different (and legal)
+     * drawing. Only the ring has the notch geometry the rule is about.
+     */
+    public static boolean accepts(Zone zone, Part part, TrioSettings current) {
+        if (current == null || part == null) {
+            return true;
+        }
+        return current.trioStyle != Prefs.STYLE_RING || ringAccepts(zone, part);
+    }
+
+    /**
+     * {@code zones} with every refused placement moved to where the drawing would have put
+     * it anyway.
+     *
+     * <p>Two things need this. A layout <b>stored before the rule existed</b> can still
+     * name a middle signal row, and dropping it would silently delete a piece the user had
+     * placed - so it is moved to the bottom, which is where the ring's own signal meter has
+     * always lived. And the drawing resolves a band by taking the first candidate that has
+     * ink, so a refused piece has to be passed over rather than taken.
+     *
+     * <p>{@link Zone#BOTTOM} rather than {@link Zone#TOP}: the move has to be somewhere, and
+     * the bottom opening is the row's customary home in this glyph. Appended rather than
+     * prepended, so a piece the user had deliberately promoted in the bottom band keeps its
+     * precedence.
+     *
+     * <p>Idempotent, and free of Android types, so the hooked process can run it on the
+     * settings it just read. {@link Prefs#decodeLayout(String)} already applies the same
+     * rule to every stored layout; this is it again for a snapshot already in memory, and
+     * it defers to {@link Prefs#zoneAccepts} so the two cannot disagree.
+     */
+    public static int[][] repairRingLayout(int[][] zones) {
+        if (zones == null) {
+            return null;
+        }
+        final int[][] out = TrioSettings.copyZones(zones);
+        final int centre = Zone.CENTRE.ordinal();
+        final int bottom = Zone.BOTTOM.ordinal();
+        final java.util.List<Integer> kept = new java.util.ArrayList<>();
+        for (int id : out[centre]) {
+            if (!Prefs.zoneAccepts(centre, id)) {
+                if (!contains(out[bottom], id)) {
+                    out[bottom] = append(out[bottom], id);
+                }
+            } else {
+                kept.add(id);
+            }
+        }
+        if (kept.size() != out[centre].length) {
+            final int[] trimmed = new int[kept.size()];
+            for (int i = 0; i < trimmed.length; i++) {
+                trimmed[i] = kept.get(i);
+            }
+            out[centre] = trimmed;
+        }
+        return out;
+    }
+
+    private static boolean contains(int[] ids, int id) {
+        for (int existing : ids) {
+            if (existing == id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int[] append(int[] ids, int id) {
+        final int[] out = new int[ids.length + 1];
+        System.arraycopy(ids, 0, out, 0, ids.length);
+        out[ids.length] = id;
+        return out;
+    }
 
     /** Stable storage IDs, deliberately independent of enum declaration order. */
     public static int encodePart(Part part) {
@@ -615,9 +747,19 @@ public final class TrioZones {
      * <p>Passing {@code null} clears the zone instead. To drop a single candidate see
      * {@link #withoutAt(TrioSettings, int, int)}: "empty this third" and "remove this one
      * entry" are different intentions, and one call cannot honestly mean both.
+     *
+     * <p>A placement the ring refuses - a signal row in the <b>middle</b> band, see
+     * {@link #ringAccepts} - is handed back unchanged rather than written. Refusing here
+     * rather than at the dialog is what makes the rule hold for every caller: the drawing
+     * page, the position dropdown, {@link #assign} and {@link #place} all end up in this
+     * one write, so none of them can store a layout the renderer would then draw as a
+     * smudge.
      */
     public static TrioSettings withPiece(TrioSettings current, int zone, Part want) {
         if (current == null || zone < 0 || zone >= Prefs.ZONE_COUNT) {
+            return current;
+        }
+        if (!accepts(Zone.values()[zone], want, current)) {
             return current;
         }
         final TrioSettings next = current.copy();
@@ -728,11 +870,35 @@ public final class TrioZones {
      * settings screen decides between "in the ring" and "back to the system" once for both.
      * Offering the aggregate row here would put three rows in the ring and give the user a
      * switch that changes nothing the cards do not already decide.
+     *
+     * <p>The ring and the capsule share the slot-driven list; only the rectangle still asks
+     * the switch solver, because it is the one arrangement with no bands to place into.
      */
     public static java.util.List<Part> placementChoices(Zone zone, TrioSettings current, int sims) {
-        return current.trioStyle == Prefs.STYLE_RING
-                ? placeableParts()
+        return hasSlots(current)
+                ? ringChoices(zone)
                 : choices(zone, current.trioStyle == Prefs.STYLE_RECT, current, sims);
+    }
+
+    /**
+     * Every piece the ring may hold in {@code zone}: {@link #placeableParts()} minus the
+     * ones {@link #ringAccepts} refuses there.
+     *
+     * <p>Filtered rather than merely disabled, and that is the one place in this page where
+     * filtering is right: the drawing page does not list all of {@link Part} and grey the
+     * impossible ones (see the picker's own doc), it asks this method, so an entry that
+     * could never be placed would be an entry with no way to be reached. The page reports
+     * the refusal in the band's title instead - "the middle does not hold a signal row" -
+     * which says why the band is short without offering a tap that would do nothing.
+     */
+    public static java.util.List<Part> ringChoices(Zone zone) {
+        final java.util.List<Part> out = new java.util.ArrayList<>();
+        for (Part p : placeableParts()) {
+            if (ringAccepts(zone, p)) {
+                out.add(p);
+            }
+        }
+        return out;
     }
 
     /** Every piece the ring may hold, in enum order, minus the retired aggregate meter. */
@@ -801,16 +967,29 @@ public final class TrioZones {
         if (current.trioStyle == Prefs.STYLE_CAPSULE && want == Part.CLOCK) {
             return null;
         }
-        // The ring keeps ordered lists, so "put X in Z" appends or moves X to the FRONT of
-        // Z's list: the newly chosen piece is the one that wins the zone, and the ones
-        // behind it stay as fallbacks rather than being thrown away.
+        // A refused placement is unsolvable, so the page reports it as such ("the middle
+        // does not hold a signal row") instead of writing a list the drawing would skip.
+        if (!accepts(zone, want, current)) {
+            return null;
+        }
+        // The ring and the capsule both keep ordered lists per band, so "put X in Z" moves X
+        // to the FRONT of Z's list: the newly chosen piece wins the band and the ones behind
+        // it stay as fallbacks rather than being thrown away.
         //
-        // Moving rather than copying matters: a piece that was in another zone is removed
-        // from there, because the same piece twice would draw in two places and make the
-        // priority lists fight over it.
-        if (current.trioStyle == Prefs.STYLE_RING) {
-            return new Assignment(withPiece(current, zone.ordinal(), want),
-                    distance(current, withPiece(current, zone.ordinal(), want)));
+        // The capsule joined them once its two dot rows became placements. Before that its
+        // bands were derived from switches alone, so a placement was solved for by enumerating
+        // switch combinations - and the rows the user could see in the openings had no entry
+        // here at all.
+        //
+        // Moving rather than copying matters: a piece that was in another band is removed from
+        // there, because the same piece twice would draw in two places and make the priority
+        // lists fight over it.
+        if (hasSlots(current)) {
+            // Solved through withPiece and read back, rather than calling it twice: the
+            // refusal above already guarantees the write is honoured, and one call means
+            // the change count describes the settings actually returned.
+            final TrioSettings placed = withPiece(current, zone.ordinal(), want);
+            return new Assignment(placed, distance(current, placed));
         }
         final int level = ASSIGN_LEVEL;
         final int wifiLevel = ASSIGN_WIFI_LEVEL;

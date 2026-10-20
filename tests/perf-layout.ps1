@@ -170,6 +170,17 @@ if(!$capLeft -or !$capRight -or !$capTop -or !$capBottom -or !$capStrokeRatio -o
     throw 'could not read the capsule ink inputs from TrioGeometry/Prefs'}
 $capInkDerivation=[regex]::Match($geom,'(?s)static final float CAP_INK_X =.*?CAP_INK_H =[^;]*;').Value
 if(!$capInkDerivation){throw 'could not read the capsule ink derivation from TrioGeometry'}
+# The two opening bands, and the box that includes them. The renderer fits the drawing to the
+# BANDED box (so an opening's reading has room outside the capsule), while the width asked of
+# the status bar is still derived from the bare one - that split is what keeps the capsule the
+# size it shipped at, so the harness has to reproduce both. Spliced from the real source rather
+# than retyped, for the same reason as everything else here.
+$capBandH=[regex]::Match($geom,'static final float CAP_BAND_H = ([0-9.]+)f;').Groups[1].Value
+if(!$capBandH){throw 'could not read CAP_BAND_H from TrioGeometry'}
+$capInkTop=[regex]::Match($geom,'static final float CAP_INK_TOP = ([^;]+);').Groups[1].Value
+if(!$capInkTop){throw 'could not read CAP_INK_TOP from TrioGeometry'}
+$capInkBottom=[regex]::Match($geom,'static final float CAP_INK_BOTTOM = ([^;]+);').Groups[1].Value
+if(!$capInkBottom){throw 'could not read CAP_INK_BOTTOM from TrioGeometry'}
 # The style ordinals, read for the same reason: the spliced inkScale(w,h,style)
 # switches on them, and a stub that restated 0/1/2 could drift from the real ones.
 $styleRing=[regex]::Match($prefs,'static final int STYLE_RING = (\d+);').Groups[1].Value
@@ -436,6 +447,9 @@ final class TrioGeometry {
     static final float CAP_STROKE_RATIO = $($capStrokeRatio)f;
 
     $capInkDerivation
+    static final float CAP_BAND_H = $($capBandH)f;
+    static final float CAP_INK_TOP = $($capInkTop);
+    static final float CAP_INK_BOTTOM = $($capInkBottom);
 }
 "@
 

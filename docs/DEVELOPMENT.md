@@ -712,6 +712,70 @@ Wi-Fi 搬进缺口仍是 canvas 变换（`translate` + `scale`）完成的，几
 单字号完全一致。间距本身没有独立工装：它是 `reserveOutRingStrip` 的一个加数，与标签边距走同一
 条断言路径。
 
+**环形与胶囊的组件设置相互隔离（1.7）**。在这之前，两种形态共用同一份三槽布局和同一批组件开关
+（`show_wifi` / `show_mobile` / `show_value` / `show_bolt` / `show_sim_*` / `mobile_type_mode` /
+`signal_mode` / `dual_sim` / `value_centred` / `ring_layout`）。后果是**切换形态会改写对方**：在圆环里
+把电量数字放进中部，切到胶囊再摆一个读数，圆环那个位置就被清掉了——因为两者写的是同一个 `ring_layout`。
+
+隔离只做在**「画什么、放哪里」**这一层，存储上靠**键名后缀**区分：
+
+| 形态 | 键 |
+| --- | --- |
+| 圆环 | `show_wifi`（沿用历史名，现有安装的值原地不动，**无需迁移**） |
+| 胶囊 | `show_wifi@capsule` |
+
+`Prefs.styledKey(base, style)` 是唯一映射；`Prefs.STYLED_KEYS` 列出受影响的 12 个键。
+**尺寸/粗细/颜色一律不隔离**——40pt 的数字在两种形态里都该是 40pt，复制这些意味着以后每加一条滑杆
+都要写两遍。
+
+**读取时按当前形态选键，胶囊缺省时回退到圆环的值**。回退就是全部迁移逻辑：升级上来的安装没有
+`xxx@capsule`，于是胶囊先继承它原来看到的样子，直到用户在胶囊模式下改了某样东西才开始分叉。
+`TrioSettings.from(prefs, density, styleOverride)` 多了一个可选形态参数，供样式卡片预览
+**另一种**形态（`SettingsRepository.readForStyle`）——否则卡片会用当前形态的组件去画另一个形态，
+点下去才发现跟预览不一样。写入侧 `SettingsRepository` 全部走 `writeStyled`，键由**当前**形态决定；
+`toBundle` / `applyKeyFrom` 也认后缀，否则胶囊的改动到得了存储却到不了 SystemUI 进程。
+
+验收：`-Suite isolation`（键映射 / 升级继承 / 双向隔离 / 远端键与广播键）。其中「双向」是重点：
+改胶囊不影响圆环、改圆环也不影响胶囊，两个方向都断言。
+
+**环外顺序可调（`out_ring_order`，1.7）**。三个环外组件（信号读数 / 读数对 / 网络类型）的**摆放
+顺序**原本写死为 signal → readouts → type，而且**同一个顺序也是优先级**——`OutRingLayout.solve`
+放不下时从数组末尾往前丢，所以「排在最后」同时意味着「最先被丢」。这是两个不同的问题被一份列表
+回答了：用户想要的「哪个读数挨着电池」和「窄行里哪个读数该牺牲」并不相关。于是 1.7 把它们拆开：
+
+| 问题 | 真源 | 可调 |
+| --- | --- | --- |
+| 谁挨着电池 | `out_ring_order`（存 `"3,1,2"` 这样的槽位 id 串） | 是，绘制页「环外组件」的 ←/→ |
+| 谁先被丢 | `Prefs.OUT_PRIORITY`（固定：类型最先丢） | 否，这是判断不是偏好 |
+
+**存储顺序是「贴电池优先」，屏幕顺序是它的反向**。`OutRingLayout` 的 `near` 从行尾量起，
+下标 0 的坐标最大——也就是 LTR 下**最右**、最贴电池。所以 `out_ring_order` 的第 0 项是
+**最右**那张卡片，不是最左。绘制页最初按存储顺序从左往右排，方向正好相反：按的是「往电池移」，
+屏幕上却往左跳了一格。现在 `DrawingOutsideParts` 渲染 `order.reversedArray()`，箭头也改用 ←/→
+（右＝贴电池），并在行下角标出「← 往外 / 贴着电池 →」。
+
+**只翻转渲染，不翻转存储**：`TrioHooks` 和 `OutRingLayout` 都按「贴电池优先」消费这个数组，把屏幕顺序
+写进存储会让每个读取方都要镜像一次。验收里有两条直接量这个映射的断言（`near[0] > near[1] > near[2]`，
+以及首/末卡片对应的存储下标）。
+
+**顺序只决定摆放**。`OutRingLayout.solve` 原来把数组下标同时当位置和优先级用，现在多一个
+`dropOrder` 参数：位置仍是数组下标（`outRingViews` 按存好的顺序取视图），牺牲顺序单独传
+（`outRingDropOrder` 按 `OUT_PRIORITY` 经当前顺序翻译成下标）。旧的四参数重载保留，传 `null`
+就退回「从末尾丢」，所以没调用它的地方行为不变。
+
+**每个槽位带着自己的间距走**。`gaps[i]` 现在按 `outGapFor(order[i], ...)` 逐槽计算，而不是
+`{signalMargin, inward, inward}` 那样按下标写死：信号读数带 `out_signal_margin_dp`，两个文本件
+带标签内侧边距。共用一份间距的话，一交换位置就会把用户调好的边距悄悄换成另一件的。同理
+`outward` 属于**实际最外**的那一件（`order[order.length-1]`），而不是下标 2。
+
+**编解码容忍损坏**：`Prefs.decodeOutOrder` 丢掉未知 id、合并重复、按默认顺序补齐缺项，**永远**返回
+三个槽位。所以坏掉一个 id 不会把整个顺序重置，下游也不用处理短数组。
+
+验收：`tests/issue-regressions.ps1 -Suite outorder`（编解码 / 传输 / 摆放确实改变坐标 /
+优先级独立于顺序 / 部分 dropOrder 仍能收敛）。`tests/os4-layout.ps1` 拼接了 `outRingPlan` 与
+新增的五个顺序方法，并注入了 `Prefs`/`TrioConfig`/`TrioAppearance` 的桩，所以它测的仍是**生产**
+代码的摆放。
+
 **原生类型文字的压制（1.6.3，取代已关闭的「已知风险」）**：原生类型文字有两个宿主视图——经典的
 `mobile_type`（ImageView + `MobileTypeDrawable`，在 `mobile_signal_container` 内）与 HyperOS 的
 `mobile_type_single`（TextView，在 `mobile_group` 内），两者都在 slot=`mobile` 的
@@ -1222,6 +1286,73 @@ hook `StatusBarIconView.onDarkChanged(ArrayList,float,int)`（AOSP 拼法）与
 （与 `DOTS` 同向），顶部与中部朝环心弯。实现是 `TrioRenderer.drawArcDotRow`，半径取
 `B_R * ARC_ROW_RADIUS_RATIO`（0.82），留出端点不压环线。
 
+**信号点不能放进中部**（2026-10-20）。`PART_MOBILE` / `PART_SIM_1` / `PART_SIM_2` 三行电平点
+只允许进上、下两处，中部一律拒绝。理由不是偏好而是几何：圆环在 12 点与 6 点本来就有缺口，
+一排点穿在缺口上读起来就是「环被切成几段」；中部没有缺口，电量弧从两侧直接过去，`drawArcDotRow`
+的 `zone == 1` 分支只能画成一条**水平**短线，而它的点径取自读数盒 `DOT_BOX_CENTRE / 3`，不是
+珠子的尺度。结果是闭合圆环中间一道横杠，任何字号下都不成立，所以这是拒绝而不是又一条滑杆。
+
+规则只有一处真源：`Prefs.zoneAccepts(zone, id)`（挨着部件 ID 与分区编号写，因为解码器也要用它）。
+四条路径都过它，一条都不能绕过：
+
+| 路径 | 行为 |
+| --- | --- |
+| `Prefs.decodeLayout` | 旧布局里中部若存着信号点，**移到下部**（追加在队尾，保留下部原有队首），不丢弃 |
+| `TrioZones.withPiece` | 拒绝时把 `current` 原样返回，不写入 |
+| `TrioZones.assign` | 返回 `null`（「放不下」），于是绘制页那一行是灰的 |
+| `TrioZones.placementChoices` | 直接把该件从该处的候选里滤掉，不留死菜单项 |
+| `TrioAppearance` 的槽位解析 | 照样跳过它，让后面的候选顶上（广播来的快照可能没经过解码） |
+
+只对圆环生效：胶囊的两排点画在两个**缺口**上、中部不画点，矩形的中部本来就只有数字，两者都没有
+能被放错的「中部」。组合框里卡一/卡二的「中部」选项因此恒为禁用（`ContentControls.kt` 的
+`middleBlocked`），绘制页的挑选框则用 `drawing_pick_signal_in_centre` 说明原因——不是「放不下」，
+那条会让人去找一个根本存在的设置。验收在 `tests/issue-regressions.ps1 -Suite centre`。
+
+**胶囊的两排点现在是可编辑的摆放**（2026-10-20，修「默认就显示信号点但用户无法编辑」）。
+缺陷的形状：胶囊上下的点由 `cap.dots`（= `signalDots()`，只看开关）**无条件**画出，与三格布局
+完全无关；而 `Capsule` 的解析里 `BOTTOM` 被硬写成 `PART_NONE`、`TOP` 只可能放下读数。于是上下
+两个缺口**看得到点、点开挑选框却只有读数**，没有任何设置能移动或去掉那两排点——`hasInk` 里
+`PART_SIM_*` 还带着 `a.ring` 条件，胶囊根本进不去候选。
+
+修法是把两排点变成和圆环一样的**缺口占用者**：
+
+| 环节 | 现在 |
+| --- | --- |
+| `TrioAppearance.hasInk` | `PART_SIM_*` 的条件从 `a.ring` 改为 `!a.rect`——圆环和胶囊都有缺口可穿，矩形才没有 |
+| `Capsule` 解析 | 三个缺口都跑 `firstInk`；某缺口命中信号点则记进 `dotBands`（`dotsIn(band)`），同一缺口不再同时画读数 |
+| `drawCapsuleDots` | 按 `dotsIn` **逐缺口**决定画不画那排，所以可以只画上面 |
+| `TrioZones.occupant(capsule)` | 缺口有点就报 `Part.MOBILE`，编辑页因此点得到、拿得走 |
+| `TrioZones.hasSlots` | 圆环**和**胶囊都是槽位驱动（`STYLE != RECT`），于是 `assign`/`placementChoices`/`applyZoneAssignment` 都走布局写入 |
+| `TrioAppearance.slotted` | 新增字段，替代散落的 `a.ring`；卡片的位置行、`signalInsideRing` 都改问它 |
+
+**兼容性是硬要求，且已逐像素验证**：没摆过任何东西的胶囊（`ringZones` 为空）仍走原来的迁移
+分支，`dotBands` 上下都取 `signalDots()`——即旧图。我把「空布局 / 充电 / 有 Wi-Fi / 双卡」四种
+胶囊画面在 `HEAD` 与本次改动下各渲染一次做 SHA256 对比，**四张全部 identical**。
+
+`dots` 仍是「上下任意一排存在」，因为轮廓在两个缺口都要断开（只断一侧看起来像损坏），而
+`dotsIn(band)` 才回答具体某一排。验收 `-Suite capsule`（默认外观 / 两缺口独立 / 编辑页能命名 /
+可放置可清空 / 时钟仍不可摆放 / 矩形无缺口）。
+
+**信号点大小可调**（2026-10-20）。`dot_scale` 一条滑杆，**上下两排共用**，默认 100% 即
+「点径 = 环的粗细」——这是 `arcRowDotR` 一直以来的推导，所以不碰这条键的安装外观完全不变。
+上下不是一个设置而是同一个，因为它们是同一种墨：两排点要一起读成「环被切成几段」，允许上粗下细
+等于在一个图标里画两条不同的环。
+
+放大会先撞两个上限里的第一个，两个都得挡：
+
+| 上限 | 来源 | 撞不上会怎样 |
+| --- | --- | --- |
+| `arcRowBeadRoomR` | 缺口长度减去弧的端帽 | 四颗珠子压到弧的圆头上，珠子不再是描边的延续 |
+| `maxBeadR() = INK_W/2 - B_R = 8` | **墨迹盒**：珠子穿在半径 `B_R` 的弧上，外缘到 `B_R + r` | 墨迹出框被宿主裁掉；而且墨迹盒决定缩放，动它会让整个字形随滑杆一起变大变小 |
+
+`maxBeadR()` 恰好等于 `MAX_RING_STROKE/2`，不是巧合：墨迹盒当初就是按「最粗描边时那排点正好装下」
+定的尺寸。所以这不是余量而是硬顶，也正因如此放大**不能**靠加大墨迹盒来解决——那会让每个从没碰过
+这条滑杆的安装都缩小整个字形。处理方式沿用 `bolt_scale` 的先例：先乘再夹，大数值到顶就不再长。
+`TrioGeometry.checkInkBox()` 在类加载时按 `MIN/DEF/MAX_DOT_SCALE` 三档重算一遍，越界直接抛。
+
+滑杆按**样式**门控（只有圆环有缺口可穿珠子），不按开关门控——刚把信号点关掉的人仍要先调好大小
+再打开，和其余尺寸行一致。验收在 `tests/issue-regressions.ps1 -Suite dots`。
+
 **文字尺寸按槽位分两套规则**（用户定义，2026-10-17）：
 
 | 槽位 | 上限依据 |
@@ -1685,7 +1816,7 @@ hook 组 10 拦 `setIsHideBattery`，把值记进 `TrioState.sIslandHideBattery`
 | `enabled` | `true` | — |
 | `show_wifi` / `show_mobile` / `show_value` / `show_bolt` | `true` | — |
 | `dual_sim_signal` | `false` | —（无 Wi-Fi 且未充电时改画上下两排点，上排卡一、下排卡二；见「双卡信号」） |
-| `show_sim_1` | `false` | —（卡一自己的那一行四点，作为独立组件放进圆环任意槽位；只在自由圆环生效，见「卡一 / 卡二」） |
+| `show_sim_1` | `false` | —（卡一自己的那一行四点，作为独立组件放进圆环**上/下两处**——中部不放信号点，见 `Prefs.zoneAccepts`；只在自由圆环生效，见「卡一 / 卡二」） |
 | `show_sim_2` | `false` | —（卡二自己的那一行四点，同上；与卡一互不影响） |
 | `ring_slots_v2` | `-1` | `-1` 或 `0`–`4095`（三槽 × 4 bit 的部件 ID；**取代**每槽 3 bit 的旧键 `ring_slots`，见「卡一 / 卡二」） |
 | `signal_mode` | `0`（环内） | 0 – 1（环内 / 环外）；**选项顺序即存储值**；见「信号：环内与环外堆叠」 |
@@ -1703,6 +1834,7 @@ hook 组 10 拦 `setIsHideBattery`，把值记进 `TrioState.sIslandHideBattery`
 | `low_threshold` | `20` | 5 – 50 |
 | `ring_stroke` | `14` | 4 – 16 |
 | `arc_stroke` | `12` | 3 – 16 |
+| `dot_scale` | `100` | 50 – 160（环内上/下两排信号点的点径，相对「直径=环粗细」的百分比；**一个键管上下两处**，只对圆环生效。放大会在墨迹盒与缺口两个上限处停住，见「信号点大小」） |
 | `value_size` | `36` | 16 – 44 |
 | `value_weight` | `700` | 100 – 900 |
 | `type_size` | `32` | 16 – 44（只用于环内） |
@@ -1712,6 +1844,7 @@ hook 组 10 拦 `setIsHideBattery`，把值记进 `TrioState.sIslandHideBattery`
 | `out_type_margin_right_dp` | `2` | 0 – 16（环外标签与其**内侧**的空隙，dp；RTL 下同样镜像） |
 | `out_signal_size_dp` | `15` | 6 – 20（环外信号读数的 dp 高度；乘显示器密度成像素，**不跟随电池容器高度**，只用于环外 + 堆叠信号） |
 | `out_signal_margin_dp` | `2` | 0 – 16（环外读数与电池之间的**会占位**边距，dp；调大时原生图标同步让位。只用于环外 + 堆叠信号） |
+| `out_ring_order` | `"1,2,3"` | 三个环外组件的摆放顺序，**贴电池的一侧在前**（即 LTR 下最右）；id 见 `Prefs.OUT_SLOT_*`（1=堆叠信号/读数对、2=功率温度、3=网络类型）。**只决定摆放，不决定溢出时谁先被丢**（那是固定的 `Prefs.OUT_PRIORITY`）；解码时永远补齐成三项。绘制页渲染时反向，见「环外顺序可调」 |
 | `type_weight` | `700` | 100 – 900（环内/环外共用） |
 | `track_alpha` | `56` | 0 – 255 |
 | `debug_log` | `false` | — |

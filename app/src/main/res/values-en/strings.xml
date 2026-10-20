@@ -47,6 +47,7 @@
     <string name="drawing_feedback_wifi">%1$s is set in %2$s; there is no Wi-Fi in this preview. Select Normal to see it.</string>
     <string name="drawing_feedback_other">%1$s is set in %2$s; this preview currently shows %3$s. Change the preview state to see it.</string>
     <string name="drawing_pick_impossible">This component does not fit in the %1$s.</string>
+    <string name="drawing_pick_signal_in_centre">%1$s cannot go in the middle: the middle is where the in-ring reading goes, and signal dots only fit the two openings at the top and bottom.</string>
     <string name="drawing_hint_top">Top</string>
     <string name="drawing_hint_centre">Middle</string>
     <string name="drawing_hint_bottom">Bottom</string>
@@ -73,6 +74,10 @@
     <string name="drawing_part_readouts">Power and temperature</string>
     <string name="drawing_parts_title">Component appearance</string>
     <string name="drawing_outside_title">Outside components</string>
+    <string name="out_order_move_in">Move toward the battery</string>
+    <string name="out_order_move_out">Move outwards</string>
+    <string name="out_order_outwards">← Outwards</string>
+    <string name="out_order_battery">Next to battery →</string>
     <string name="drawing_readout_sample_summary">Sample readings show content and weight; final sizing follows the status bar.</string>
     <string name="drawing_preview_hidden">Hidden outside</string>
     <string name="drawing_power_preview_hint">Select Charging to preview power</string>
@@ -105,6 +110,8 @@
     <string name="bolt_scale_title">Charging bolt size</string>
     <string name="bolt_scale_summary">The default is 100% and the slider covers 60–160%.</string>
     <string name="show_bolt_summary">Show a bolt in the ring while charging.</string>
+    <string name="dot_scale_title">In-ring signal dot size</string>
+    <string name="dot_scale_summary">One size for both the top and the bottom row. The default 100% makes each dot as thick as the ring; the slider covers 50–160%, and growing stops where the openings run out of room.</string>
 
     <string name="show_mobile_type_title">Network type</string>
     <string name="show_mobile_type_summary">The 3G/4G/5G label, inside the ring or outside it.</string>

@@ -118,13 +118,14 @@ internal fun ContentControlRow(
         // switches, so "where does it go" is answered before "is it on".
         SignalPositionControl(settings, update)
     }
-    // The per-card slot rows are ring-only: only the ring has thirds to put them in. In the
-    // other two styles the cards are not separately placeable, so a slot row would offer a
-    // choice that does not exist.
-    if (control == ContentControl.Sim1 && a.ring) {
+    // The per-card slot rows exist wherever the arrangement has bands to put a row in: the
+    // ring's two openings and the capsule's. Both draw the row as beads/lines in a band, so
+    // both can move it. The rectangle cannot - its columns are derived from the mobile switch
+    // - so a slot row there would offer a choice that does not exist.
+    if (control == ContentControl.Sim1 && a.slotted) {
         SignalCardPositionControl(TrioZones.Part.SIM_1, settings, update, enabled = signalInsideRing(a))
     }
-    if (control == ContentControl.Sim2 && a.ring) {
+    if (control == ContentControl.Sim2 && a.slotted) {
         SignalCardPositionControl(TrioZones.Part.SIM_2, settings, update, enabled = signalInsideRing(a))
     }
     when (control) {
@@ -217,9 +218,15 @@ private fun SignalPositionControl(
     )
 }
 
-/** Whether the signal is drawn inside the ring, which is what enables the per-card rows. */
+/**
+ * Whether the signal is drawn inside the glyph, which is what enables the per-card rows.
+ *
+ * <p>Covers the capsule as well as the ring: both draw the rows in a band, so both can place
+ * them. The rectangle cannot, and [TrioAppearance.slotted] is what the callers gate on, so
+ * this only has to answer the shared part.
+ */
 private fun signalInsideRing(a: TrioAppearance): Boolean =
-    a.mobile && a.ring && !a.signalOutOfRing
+    a.mobile && a.slotted && !a.signalOutOfRing
 
 /**
  * One card's third, with the thirds the other card holds disabled.
@@ -228,6 +235,11 @@ private fun signalInsideRing(a: TrioAppearance): Boolean =
  * and the layout would have to pick one of them, so the second card's choice is expressed
  * by disabling the option rather than by silently moving the first card. A disabled row
  * that cannot be picked is also the honest presentation of "one of these is taken".
+ *
+ * <p>The middle is disabled for every card, always, because the ring does not hold a signal
+ * row there - see [TrioZones.isSignalRow] and the reason in `Prefs.zoneAccepts`. That is not
+ * the other card taking it: it is a band the row has no business in, so it is blocked
+ * whatever the twin is doing.
  */
 @Composable
 private fun SignalCardPositionControl(
@@ -242,7 +254,12 @@ private fun SignalCardPositionControl(
     val zones = settings.ringZones
     val placedAt = zones.indexOfFirst { it.contains(id) } + 1
     val takenByTwin = zones.indexOfFirst { it.contains(twinId) }
-
+    // Option 0 is "not placed" and is always allowed; 1..3 mirror the zones. The middle is
+    // refused for the row itself, and the one the twin holds is refused because it is taken.
+    val blocked = buildSet {
+        add(TrioZones.Zone.CENTRE.ordinal + 1)
+        if (takenByTwin >= 0) add(takenByTwin + 1)
+    }
     ContentChoice(
         selected = placedAt,
         title = if (part == TrioZones.Part.SIM_1) R.string.ring_position_sim_1
@@ -252,9 +269,7 @@ private fun SignalCardPositionControl(
             R.string.drawing_hint_centre, R.string.drawing_hint_bottom),
         dependencies = listOf(settings.enabled to R.string.master_title),
         enabled = enabled,
-        // Option 0 is "not placed" and is always allowed; 1..3 mirror the zones, so the one
-        // the twin holds is the one this card may not pick.
-        blockedIndices = if (takenByTwin >= 0) setOf(takenByTwin + 1) else emptySet(),
+        blockedIndices = blocked,
         onChange = { value -> update { it.setRingPartPosition(part, value) } },
     )
 }
@@ -289,6 +304,23 @@ private fun WifiPositionControl(
         update { it.setWifiPosition(value) }
     }
 }
+
+/**
+ * The one option every position dropdown has to be able to refuse: the ring's middle does
+ * not hold a signal row.
+ *
+ * <p>Written as a set of option indices rather than as a boolean so the caller can add the
+ * options it has its own reason to disable - the third the other card already holds - and
+ * hand one set to [ContentChoice]. The index is the zone's ordinal plus one: zero is "not
+ * placed" in every one of these dropdowns, and 1..3 mirror the three bands.
+ *
+ * <p>Only meaningful where the row is actually a ring row. The per-card rows are ring-only,
+ * and the Wi-Fi row never names a signal row, so in practice this is the card rows' own
+ * constant - kept a function so the arithmetic cannot be written slightly differently in
+ * two places.
+ */
+private fun middleBlocked(part: TrioZones.Part): Set<Int> =
+    if (TrioZones.isSignalRow(part)) setOf(TrioZones.Zone.CENTRE.ordinal + 1) else emptySet()
 
 @Composable
 private fun RingPositionControl(
@@ -325,7 +357,12 @@ private fun RingPositionControl(
         listOf(R.string.ring_position_native, R.string.drawing_hint_top,
             R.string.drawing_hint_centre, R.string.drawing_hint_bottom) +
             if (part == TrioZones.Part.TYPE) listOf(R.string.mobile_type_outside) else emptyList(),
-        listOf(settings.enabled to R.string.master_title)) { value ->
+        listOf(settings.enabled to R.string.master_title),
+        // A signal row cannot be put in the middle band - see [middleBlocked]. The row is
+        // mostly used by pieces that have no such restriction, so the set is empty for them
+        // and [ContentChoice] takes its plain path.
+        blockedIndices = middleBlocked(part),
+    ) { value ->
         update { it.setRingPartPosition(part, value) }
     }
 }

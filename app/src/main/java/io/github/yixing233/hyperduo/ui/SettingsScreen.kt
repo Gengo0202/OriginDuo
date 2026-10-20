@@ -460,6 +460,10 @@ fun SettingsScreen(repository: SettingsRepository) {
                                     update = { block -> update(block) },
                                     onEditColor = { role -> editing = role },
                                     onResetColors = { resettingColors = true },
+                                    // The style tiles preview the OTHER arrangement's own
+                                    // components, so they need a read of that arrangement
+                                    // rather than of the live one.
+                                    snapshotForStyle = { style -> repository.readForStyle(style) },
                                 )
                                 SettingsTab.About -> aboutTab(
                                     settingsState.value, serviceState.value, updater, showMessage,

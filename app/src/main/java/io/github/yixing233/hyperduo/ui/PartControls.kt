@@ -311,6 +311,37 @@ internal fun geometrySliders(): List<SliderSpec> {
             },
             suffix = "%",
         ),
+        /**
+         * The ring's level-dot size - one row for both the top and the bottom row.
+         *
+         * <p>Owned by [TrioZones.Part.MOBILE] because that is the card the dot ink belongs
+         * to, and the two per-card rows share it: the ink is one kind of thing (a row of
+         * four beads) and the geometry that sizes it is one set of constants, so a second
+         * slider for the cards would be two names for one bead.
+         *
+         * <p>Gated on the arrangement rather than on a switch. The row sizes ink that only
+         * the ring has an opening for; the capsule's rows fit their own outline and the
+         * rectangle's columns are square, so on those two the setting would do nothing and
+         * a live slider that does nothing is worse than a greyed one that says why. It is
+         * not gated on the mobile switches either - a user who has just turned the dots off
+         * still needs to set the size before turning them back on, which is the same rule
+         * every other size row follows.
+         */
+        SliderSpec(
+            group = GeometryGroup.Type,
+            part = mobile,
+            min = Prefs.MIN_DOT_SCALE,
+            max = Prefs.MAX_DOT_SCALE,
+            read = { it.dotScale },
+            write = { r, v -> r.setDotScale(v) },
+            titleRes = { R.string.dot_scale_title },
+            summaryRes = { R.string.dot_scale_summary },
+            enabled = { it.glyph && it.ring },
+            hints = { a ->
+                listOf(a.glyph to R.string.master_title, a.ring to R.string.trio_style_ring)
+            },
+            suffix = "%",
+        ),
         SliderSpec(
             group = GeometryGroup.Type,
             part = type,
@@ -482,11 +513,11 @@ internal fun slidersForEditor(part: TrioSettingsPart): List<SliderSpec> = when (
     TrioSettingsPart.Appearance, TrioSettingsPart.Battery, TrioSettingsPart.Readouts ->
         geometrySliders().filter { it.part == null && it.editorOwner == part }
     // Each card gets its own rows. For the signal card those are the out-of-ring readings'
-    // two sizes: the in-ring dots have one shared geometry with no per-card size, but the
-    // stacked reading the module draws itself does have a height and a margin.
+    // two sizes plus the in-ring dot size: the dots themselves have one shared geometry
+    // (both rows, both cards, one bead), so that row is shared rather than per-card, while
+    // the stacked reading the module draws itself does have a height and a margin.
     else -> part.part?.let(::slidersForPart).orEmpty()
 }
-
 /**
  * The role colours a component's ink takes, so the dialog can offer them.
  *

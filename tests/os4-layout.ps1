@@ -24,7 +24,15 @@ $methods=@(
     'private static View iconContainerIn(View batteryContainer)',
     'private static void reserveOutTypeSpace(ViewGroup batteryContainer, int reserve)',
     'private static void releaseOutTypeSpace(View batteryContainer)',
-    'private static void reserveOutRingStrip(ViewGroup container)'
+    'private static void reserveOutRingStrip(ViewGroup container)',
+    # The arrangement: which view is in which slot, and which slot is sacrificed first.
+    # Spliced alongside the plan because they are the same decision - the plan's arrays are
+    # indexed from the battery outwards, so it is these three that decide what index 0 means.
+    'private static View[] outRingViews(ViewGroup container)',
+    'private static int[] slotOrder(TrioAppearance a)',
+    'private static View slotView(int slot, View signal, View perf, View type)',
+    'private static int[] outRingDropOrder(TrioAppearance a)',
+    'private static int outGapFor(int slot, ViewGroup container, int labelInward)'
 ) | ForEach-Object {
     $m=[regex]::Match($hooks,'(?s)'+[regex]::Escape($_)+' \{.*?\n    \}')
     if(!$m.Success){throw "Production method missing: $_"}
@@ -33,6 +41,20 @@ $methods=@(
 foreach($name in @('OutRingLayout.java','Refl.java')){
     Write-Source "io/github/yixing233/hyperduo/$name" ([IO.File]::ReadAllText((Join-Path $trio $name)))
 }
+# The order ids and their codec come from the real Prefs, so the harness cannot disagree
+# with the app about what a slot number means.
+Write-Source 'io/github/yixing233/hyperduo/Prefs.java' @'
+package io.github.yixing233.hyperduo;
+final class Prefs {
+ static final int OUT_SLOT_SIGNAL=1, OUT_SLOT_READOUTS=2, OUT_SLOT_TYPE=3;
+ static final int[] OUT_PRIORITY={ OUT_SLOT_SIGNAL, OUT_SLOT_READOUTS, OUT_SLOT_TYPE };
+ static final int[] OUT_DEFAULT_ORDER={ OUT_SLOT_SIGNAL, OUT_SLOT_READOUTS, OUT_SLOT_TYPE };
+ static int outOrderIndex(int[] order,int slot){
+  for(int i=0;i<order.length;i++) if(order[i]==slot) return i;
+  return order.length;
+ }
+}
+'@
 Write-Source 'android/view/View.java' @'
 package android.view;
 public class View {
@@ -88,6 +110,22 @@ final class TrioHooks {
  static void layout(Row row){layoutOutRingStrip(row,row.meter);}
 }
 "@
+# The arrangement the spliced methods read. Set by each case through Row.appearance, so a
+# test can ask for any order without re-splicing the production code.
+Write-Source 'io/github/yixing233/hyperduo/TrioConfig.java' @'
+package io.github.yixing233.hyperduo;
+final class TrioConfig {
+ static TrioAppearance current;
+ static TrioAppearance appearance(){ return current; }
+}
+'@
+Write-Source 'io/github/yixing233/hyperduo/TrioAppearance.java' @'
+package io.github.yixing233.hyperduo;
+final class TrioAppearance {
+ final int[] outOrder;
+ TrioAppearance(int[] order){ outOrder=order; }
+}
+'@
 Write-Source 'io/github/yixing233/hyperduo/Os4LayoutTest.java' @'
 package io.github.yixing233.hyperduo;
 import android.view.*;
@@ -98,6 +136,7 @@ public class Os4LayoutTest {
  public static class Monitor {int width;boolean blocked;public int getIslandWidth(){return width;}public boolean getBlocked(){return blocked;}}
  public static class Icons extends View {public Monitor _islandMonitor=new Monitor();}
  static TrioHooks.Row row(){
+  TrioConfig.current=new TrioAppearance(Prefs.OUT_DEFAULT_ORDER);
   TrioHooks.Row row=new TrioHooks.Row();row.layout(0,0,230,40);
   Icons icons=new Icons();icons.layout(0,0,200,40);icons.setPadding(2,0,4,0);row.mStatusIcon=icons;
   row.meter.layout(200,0,230,40);

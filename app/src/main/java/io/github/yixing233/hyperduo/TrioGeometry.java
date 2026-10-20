@@ -405,7 +405,26 @@ final class TrioGeometry {
     static final float DOT_BOX_CENTRE = 44f;
 
     /**
-     * The dot radius for a placed card row in the top or bottom third.
+     * The largest bead radius the ink box can hold, in design units.
+     *
+     * <p>The end thirds thread their beads onto the ring's own arc, so the outermost one
+     * sits at radius {@code B_R} and its outer edge reaches {@code B_R + r} from the ring
+     * centre - straight up at 12 o'clock, or straight down at 6. The ink box is the square
+     * that scales the glyph, so {@code INK_W / 2} is the furthest any ink may reach; this is
+     * that limit solved for the bead.
+     *
+     * <p>It equals {@code MAX_RING_STROKE / 2}, which is not a coincidence: the box was
+     * sized so the shipped bead - whose diameter is the ring's thickness - just fits at the
+     * thickest stroke. That is what makes this a real ceiling rather than a spare margin,
+     * and why the dot-size setting has to stop here instead of growing the box: enlarging
+     * the box would shrink the glyph for every install that never touched the slider.
+     */
+    static float maxBeadR() {
+        return INK_W / 2f - B_R;
+    }
+
+    /**
+     * The dot radius for a placed card row in the top or bottom third, at the reference size.
      *
      * <p>Exactly half the ring's stroke, so each dot's <b>diameter equals the ring's
      * thickness</b> and a row of four reads as four beads threaded onto the open arc -
@@ -424,8 +443,50 @@ final class TrioGeometry {
      * which the numbers above say cannot happen for the shipped stroke range - but the
      * guard stays so a future change to the notch width degrades into smaller dots
      * rather than into overlap.
+     *
+     * <p>This is the scale-1 case of {@link #arcRowDotR(int, int, float, float)}; ask that
+     * one when the user's {@code dot_scale} applies.
      */
     static float arcRowDotR(int z, int ringStroke, float slotWidth) {
+        return arcRowDotR(z, ringStroke, slotWidth, 1f);
+    }
+
+    /**
+     * The same, with the user's dot-size multiplier applied.
+     *
+     * <p>The multiplier scales the <em>reference</em> radius and then the opening's room
+     * still caps the result. That order is the whole contract: {@link #arcRowBeadRoomR} is
+     * a mechanical limit - four beads and the arc's caps have to fit the gap - while the
+     * percentage is a look, so the look is applied first and the limit is allowed to
+     * refuse it. Capping before scaling would let a large percentage push the beads past
+     * the caps; scaling before capping means a large value simply stops growing.
+     *
+     * <p>{@link #maxBeadR()} is the second ceiling, and it is the one the ink box imposes:
+     * the bead rides the arc, so scaling it pushes ink outward toward the edge of the box
+     * that fits the glyph to its view. This is exactly the {@code bolt_scale} precedent -
+     * a large value crowded against a thick stroke stops growing rather than spilling over
+     * - and it is why the size setting never has to shrink the glyph.
+     *
+     * <p>1.0 is exactly the old behaviour, so the default and every caller that does not
+     * pass a scale go on drawing the bead whose diameter equals the ring's thickness.
+     *
+     * @param scale {@code TrioAppearance.dotScaleFactor()}: 1.0 for the reference bead
+     */
+    static float arcRowDotR(int z, int ringStroke, float slotWidth, float scale) {
+        final float fit = arcRowDotRFitted(z, ringStroke, slotWidth);
+        final float scaled = Math.max(0.5f, fit * Math.max(0.01f, scale));
+        // The middle third is not an opening: the row there is fitted to the interior
+        // rather than threaded onto a bare arc, so there is no cap to overrun and the
+        // user's size is the only limit. The end thirds have the arc's caps to clear.
+        if (z == 1) {
+            return scaled;
+        }
+        return Math.max(0.5f, Math.min(scaled, Math.min(arcRowBeadRoomR(z, ringStroke),
+                maxBeadR())));
+    }
+
+    /** The reference bead radius for {@code z}, before any user multiplier. */
+    private static float arcRowDotRFitted(int z, int ringStroke, float slotWidth) {
         // The middle third is not a notch: the ring runs past it on both sides, so a row
         // there has to fit the space between the arcs rather than being threaded onto
         // one. It keeps the compact proportions it has always had - the dot box divided
@@ -972,18 +1033,31 @@ final class TrioGeometry {
             reach = Math.max(reach, Math.max(dx, dy));
         }
         final int stroke = Prefs.MAX_RING_STROKE;
-        final float beadR = arcRowDotR(0, stroke, 78f - stroke);
         final float halfOpening = (float) Math.toRadians(GAP_WIDTH_DEG * 0.5);
-        final float inset = (beadR + stroke * 0.5f + 1f) / B_R;
-        final float beadHalfAngle = Math.min(halfOpening - inset,
-                (float) Math.toRadians(BEAD_SPAN_DEG * 0.5));
-        for (int row = 0; row < 2; row++) {
-            final float sign = row == 1 ? 1f : -1f;
-            for (int i = -1; i <= 1; i++) {
-                final float angle = beadHalfAngle * i;
-                final float dx = Math.abs(B_R * (float) Math.sin(angle)) + beadR;
-                final float dy = Math.abs(B_R * (float) Math.cos(angle)) + beadR;
-                reach = Math.max(reach, Math.max(dx, dy));
+        // Both ends of the dot-size slider, because the beads are the one piece whose ink
+        // the user moves directly: at MAX_DOT_SCALE they are what reaches furthest, and at
+        // MIN_DOT_SCALE they shrink away and the arc's own caps become the outer limit.
+        // Checking only the reference size is exactly what let a larger bead overrun the
+        // box before maxBeadR() existed.
+        for (int scalePct : new int[] { Prefs.MIN_DOT_SCALE, Prefs.DEF_DOT_SCALE,
+                Prefs.MAX_DOT_SCALE }) {
+            final float beadR = arcRowDotR(0, stroke, 78f - stroke, scalePct / 100f);
+            final float inset = (beadR + stroke * 0.5f + 1f) / B_R;
+            final float beadHalfAngle = Math.min(halfOpening - inset,
+                    (float) Math.toRadians(BEAD_SPAN_DEG * 0.5));
+            for (int row = 0; row < 2; row++) {
+                for (int i = -1; i <= 1; i++) {
+                    final float angle = beadHalfAngle * i;
+                    final float dx = Math.abs(B_R * (float) Math.sin(angle)) + beadR;
+                    final float dy = Math.abs(B_R * (float) Math.cos(angle)) + beadR;
+                    reach = Math.max(reach, Math.max(dx, dy));
+                }
+            }
+            // The ceiling itself has to be a real one: a bead radius past maxBeadR() would
+            // put the outer edge outside the box, whatever the opening allows.
+            if (beadR > maxBeadR() + 0.01f) {
+                throw new AssertionError("dot radius " + beadR + " at " + scalePct
+                        + "% exceeds what the ink box holds: " + maxBeadR());
             }
         }
         final float half = INK_W / 2f;
@@ -1233,6 +1307,222 @@ final class TrioGeometry {
         return (capInteriorTop(stroke) + capInteriorBottom(stroke)) * 0.5f;
     }
 
+    /**
+     * The vertical centre a piece placed in one of the two <b>openings</b> is drawn on.
+     *
+     * <p>The two opening bands are not the interior: they are the strips at 12 and 6 o'clock
+     * where the outline is cut, which is what lets a row of beads read as the ring segmented.
+     * Drawing a cell at {@code CAP_TOP}/{@code CAP_BOTTOM} - which is what this used to do, on
+     * the reasoning that a band's centre is its anchor - put the reading exactly ON the
+     * outline's centreline: half of it stuck out beyond the capsule, where the host clipped it
+     * and the stroke painted over it. That is the "component shows only partially" defect.
+     *
+     * <p><b>The piece lives inside the capsule, in the lane the opening leaves free.</b> Not
+     * outside it: the strip beyond the stroke is the ink box's own margin, about one stroke
+     * wide, which is enough for a bead and nowhere near enough for a line of digits. So an
+     * opening's reading is centred in the free lane just <em>inside</em> the outline, between
+     * the stroke's inner face and the first thing that would collide with it - which for the
+     * top is nothing but the interior's own readings, and that is why the lane is measured from
+     * the interior's edge.
+     *
+     * @param top true for the 12 o'clock opening, false for the 6 o'clock one
+     */
+    static float capOpeningCy(boolean top, float stroke) {
+        return top ? CAP_TOP + openingLaneCy(stroke) : CAP_BOTTOM - openingLaneCy(stroke);
+    }
+
+    /**
+     * How far OUTSIDE the outline an opening's piece sits, measured from the path line.
+     *
+     * <p><b>Astride the gap, not tucked inside it.</b> The two openings are where the outline is
+     * cut for the dot rows, so a reading placed there belongs in that gap, centred on the path
+     * line: it then reads as the row that opened the outline rather than as a second line of
+     * digits crammed under the top edge. Putting it in the lane just <em>inside</em> the
+     * outline - which is what this used to do - stacked it on the body's own readings (the clock
+     * shares the left column) and asked a 7.4-unit strip to do the work of a text line.
+     *
+     * <p>That lane existed only because the ink box left about one stroke of room beyond the
+     * outline and a taller line would have been clipped by the host. The box is not the limit
+     * any more: {@link #CAP_BAND_H} is added above and below it, and {@link #capHostHeightPx}
+     * grows the host's <em>height</em> by the same two bands, so the drawing scale - and with it
+     * every pixel of the capsule - is unchanged.
+     */
+    private static float openingLaneCy(float stroke) {
+        // Dead on the path line, which is what the reference does: the label straddles the
+        // outline, half of it above and half below, so the gap the dot row opened in the
+        // stroke is exactly where the label sits. The band above the ink box is therefore
+        // only half a label tall, and the other half lives in the opening itself.
+        return 0f;
+    }
+
+    /**
+     * The band added above and below the outline's ink box to hold the two openings' pieces.
+     *
+     * <p><b>Why a band on the host and not a taller ink box.</b> The capsule is fitted to the
+     * host by whichever axis binds, and {@link #capHostWidthPx} asks the status bar to reserve a
+     * width derived from the ink box's aspect ratio. Making the ink box itself taller therefore
+     * makes the capsule <em>narrower</em>: the glyph would shrink to make room for the very band
+     * it was meant to gain.
+     *
+     * <p>So the band is added to the <em>host</em> instead. {@link #capHostWidthPx} keeps the
+     * width it always asked for, {@link #capHostHeightPx} grows the height by one band at each
+     * end, and the drawing scale is still decided by the width alone. Every pixel of the capsule
+     * - outline, stroke, clock, percentage, dot rows - stays exactly where it was; only the host
+     * got taller, and the space it gained is the space these readings now use.
+     *
+     * <p>Quoted against the reference the design was drawn from rather than against the stroke,
+     * because it is a text band: the mockup puts an opening's label at a cap height of about a
+     * quarter of the path height. The <b>inward</b> half of such a label is the half that binds
+     * - it runs down to the interior's own top, where the clock is, and that clearance is
+     * fixed by the dot rows rather than by this constant - so the band is sized to at least
+     * match that inward half and stop being the limit. Anything less and the label is fitted to
+     * the band instead of to the row it is in, which is what makes it look shrunken.
+     */
+    static final float CAP_BAND_H = 9f;
+
+
+    /**
+     * The height a reading in an opening may use, in design units.
+     *
+     * <p>The band, less what the stroke and the clearance take out of it. A line fitted to this
+     * fits the band wherever the piece is drawn, which is why the same number is both the fit's
+     * bound and the band's usable height.
+     *
+     * <p>Measured from the band's outer edge rather than from the path line: a piece centred on
+     * the path line reaches into the opening as well as out of it, and the outline's stroke is
+     * drawn across the middle of that. The band is what is left beyond the stroke.
+     */
+    static float capOpeningTextRoomH(float stroke) {
+        // The budget is measured from the PATH LINE outwards on both sides, because that is
+        // where the reading is centred. Its inward half runs down to the interior's own top -
+        // the first thing it could collide with, which is the clock - and its outward half runs
+        // up to the box's edge. The two are not equal: the band is one stroke's worth taller
+        // than the interior's clearance, so the INWARD half is what binds.
+        //
+        // Note what is NOT subtracted again: the path line is the stroke's centre, so a piece
+        // centred on it has already cleared half the stroke by construction. Taking the
+        // stroke's half out a second time - which this did - charged the same clearance twice.
+        final float inward = capInteriorTop(stroke) - CAP_TOP;
+        final float outward = CAP_TOP - CAP_INK_TOP;
+        final float half = Math.min(inward, outward) - CAP_OPENING_GAP;
+        // Ink on both sides of the line, so the ink budget is twice the smaller half.
+        final float ink = 2f * half;
+        // No extra reduction. The clearance to the interior already leaves this at about 0.81
+        // of the body's readings, which is the reference's own 0.82 - applying a ratio on top
+        // of that shrank the label twice for the same reason, which is what made the network
+        // type look wrong in the top opening. The proportion is a CONSEQUENCE of the geometry,
+        // not a second knob. This is an INK height - see {@link #capOpeningTextEm}, which is
+        // what the text fit actually wants.
+        // Never smaller than a dot: a band that cannot draw a bead is not a band.
+        return Math.max(CAP_DOT_R * 2f, ink);
+    }
+
+    /**
+     * The same budget as an <b>em</b>, which is the unit the text fit measures in.
+     *
+     * <p>Two different quantities, and feeding one where the other was wanted is what made an
+     * opening's label come out at a fifth of the body's readings: the size was clamped to an
+     * INK height, then multiplied by {@link #CAP_HEIGHT_RATIO} again to get its own ink - so the
+     * cap height came out as the square of the ratio's effect rather than the once it should be.
+     * {@link #capOpeningTextRoomH} answers the ink a cell has; this answers the font size that
+     * produces it.
+     */
+    static float capOpeningTextEm(float stroke) {
+        return capOpeningTextRoomH(stroke) / CAP_HEIGHT_RATIO;
+    }
+
+
+    /**
+     * Clearance kept between the outline and a reading sitting across its opening.
+     *
+     * <p>One unit is the antialiasing fringe: both the line and the glyph are antialiased, so
+     * touching exactly still interleaves pixels.
+     */
+    private static final float CAP_OPENING_GAP = 1f;
+
+    /**
+     * Half the width a piece placed in an opening inks, in design units.
+     *
+     * <p>Used to cut the outline back by exactly what that opening holds, so a reading sits in
+     * a gap rather than on top of the line. The dot rows have their own measured reach
+     * ({@link #capDotReach}); this is the same question for a piece made of text or an icon.
+     *
+     * <p>Measured rather than estimated: the three candidates for an opening - the percentage,
+     * the network type and the clock - differ by more than 2:1 in width, so a single constant
+     * would either cut the outline for the widest and leave it broken under "73", or fit "73"
+     * and bury "100" under the stroke. Worst-case on purpose where a piece can grow: the outline
+     * must be wide enough at every reading, not only at the one on screen.
+     *
+     * @param part      the piece that opening holds
+     * @param level     battery level, for the percentage this frame
+     * @param type      network type, for the label this frame
+     * @param stroke    the capsule's stroke, which sets the text's own height budget
+     * @param roomH     the height that opening's reading is fitted to
+     */
+    static float capPieceReach(int part, int level, String type, float stroke, float roomH) {
+        switch (part) {
+            case Prefs.PART_WIFI:
+                // The arcs are drawn at capWifiScale about their own centre.
+                return W_INK_W * capWifiScale(stroke) * 0.5f;
+            case Prefs.PART_BOLT:
+                // The bolt path is 12.5 units wide against its 19.9 of height; the reach is
+                // half of that, scaled the way the bolt itself is.
+                return 6.25f * capBoltScale(stroke);
+            case Prefs.PART_VALUE:
+                // Three digits is the widest this can get.
+                return capTextReach("100", stroke, roomH);
+            case Prefs.PART_TYPE:
+                return capTextReach("5GA", stroke, roomH);
+            case Prefs.PART_CLOCK:
+                return capTextReach("19:41", stroke, roomH);
+            default:
+                return 0f;
+        }
+    }
+
+    /**
+     * Half the width {@code text} inks at the size an opening gives it.
+     *
+     * <p>The same two bounds the renderer applies - the user's size setting and the opening's
+     * height - so the gap is cut for the glyph that will actually be drawn rather than for a
+     * nominal one. Estimated from the character count instead of measured on a Paint: geometry
+     * has no font, and the harness renders without one either, so an estimate that is
+     * deliberately a little generous is the honest answer here. The clearance term the caller
+     * adds covers the remainder.
+     */
+    private static float capTextReach(String text, float stroke, float roomH) {
+        // The em the renderer will actually draw at: the user's own size, clamped by the row's
+        // budget. Both are ems, so they compare directly. Clamping the reach and clamping the
+        // drawn size have to use the same number or the gap gets cut for a glyph that is not
+        // there - too narrow and the stroke runs through the label, too wide and the outline is
+        // interrupted for nothing.
+        final float em = Math.min(Prefs.DEF_VALUE_SIZE * CAP_TEXT_SCALE, roomH);
+        // Average advance width of a digit in the condensed face the readings use, in ems.
+        final float half = Math.max(0, text.length()) * em * 0.31f;
+        // Never eat more than a quarter of the capsule: the outline still has to read as an
+        // outline, and a gap wider than this stops being an interruption of the stroke and
+        // becomes a shape with two horns.
+        return Math.min(half, capFlatRight() * 0.5f);
+    }
+
+    /**
+     * The width a piece placed in an <b>opening</b> may use, in design units.
+     *
+     * <p>A piece in an opening is not in a slot. The two interior slots exist because the clock
+     * and the percentage have to share the body side by side, which is why the right-hand one is
+     * only {@link #capValueSlotWidth} wide. An opening spans the whole capsule instead - it is a
+     * row the outline was cut for - so fitting its text to the right-hand slot crushed it to a
+     * third of the size the same string gets anywhere else. That was the "the network type looks
+     * far too small" report.
+     *
+     * <p>Bounded by the flat run between the end caps rather than by the full outline width:
+     * past the flat run the shape curves away, and the text would hang its first and last glyph
+     * out over the curve. The run is the straight edge the opening actually has.
+     */
+    static float capOpeningWidth() {
+        return capFlatRight() - capFlatLeft();
+    }
+
     /** The gap the two readings keep between each other. */
     static final float CAP_TEXT_GAP = 6f;
 
@@ -1478,11 +1768,38 @@ final class TrioGeometry {
      * setting can push ink outside the host, where the platform clips it.
      */
     static final float CAP_INK_X = CAP_LEFT - Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f;
+    /**
+     * The top of the capsule's ink: the outline plus its stroke.
+     *
+     * <p><b>Deliberately unchanged by the opening bands.</b> A reading placed in the top or
+     * bottom opening is fitted to the room that exists <em>inside</em> this box (see
+     * {@link #capOpeningCy}), rather than the box being widened to hold it. Growing the box was
+     * tried and reverted: {@link #capHostWidthPx} divides {@code CAP_INK_W} by this height to
+     * ask the status bar for a width, so a taller box makes the capsule NARROWER - the glyph
+     * would have shrunk to make room for the very band it was meant to fit.
+     */
     static final float CAP_INK_Y = CAP_TOP - Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f;
     static final float CAP_INK_W =
             (CAP_RIGHT + Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f) - CAP_INK_X;
     static final float CAP_INK_H =
             (CAP_BOTTOM + Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f) - CAP_INK_Y;
+     /**
+     * The top of what the capsule draws, band included.
+     *
+     * <p>The outline plus its stroke is where the <em>capsule</em> starts; the band above that
+     * is what the 12 o'clock piece sits in. Declared here rather than beside
+     * {@link #CAP_BAND_H} because it is derived from {@link #CAP_INK_Y}: Java does not allow
+     * reading a static field before its declaration.
+     *
+     * <p>This box is what the renderer fits the drawing to, and it is <b>taller without being
+     * wider</b>. That is the whole point: the fit is width-driven for this shape, so the
+     * capsule's own pixels are decided by {@code CAP_INK_W} alone and are unchanged, while the
+     * two bands give the opening readings somewhere to live.
+     */
+    static final float CAP_INK_TOP = CAP_INK_Y - CAP_BAND_H;
+
+    /** The bottom of what the capsule draws, band included - the mirror of {@link #CAP_INK_TOP}. */
+    static final float CAP_INK_BOTTOM = CAP_INK_Y + CAP_INK_H + CAP_BAND_H;
 
     /**
      * The width the capsule's host view has to ask the status bar for, so that the
@@ -1521,6 +1838,30 @@ final class TrioGeometry {
             return 0;
         }
         return Math.round(heightPx * (CAP_INK_W / CAP_INK_H));
+    }
+
+    /**
+     * The height to ask the status bar for, given the height it offered.
+     *
+     * <p>The bar offers {@code CAP_INK_H}'s worth of pixels and the module answers the width
+     * question with the aspect ratio's answer. The two opening bands are added to the
+     * <em>height</em> afterwards: growing the width instead would change the aspect ratio, and
+     * as the fit is decided by whichever axis binds, that would shrink the capsule rather than
+     * enlarge the box. Adding the bands to the height leaves the width - and so the scale -
+     * alone, which is what keeps the capsule exactly the size it shipped at.
+     *
+     * @param heightPx the height the bar is offering, in pixels
+     * @return the height to measure the host at
+     */
+    static int capHostHeightPx(int heightPx) {
+        if (heightPx <= 0) {
+            return 0;
+        }
+        // The scale the width above was asked for, so the bands cost the same number of pixels
+        // the rest of the design is drawn at rather than a fixed pixel count.
+        final float scale = heightPx / CAP_INK_H;
+        final int grown = Math.round(heightPx + 2f * CAP_BAND_H * scale);
+        return Math.max(heightPx, grown);
     }
 
     // ------------------------------------------------------------------ colours

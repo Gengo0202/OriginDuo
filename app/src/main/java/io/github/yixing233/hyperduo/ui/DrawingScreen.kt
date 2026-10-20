@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,6 +42,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +71,8 @@ import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.ChevronLeft
+import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.ChevronUp
 import com.composables.icons.lucide.CircleDot
 import com.composables.icons.lucide.Info
@@ -205,6 +210,14 @@ internal fun LazyListScope.drawingTab(
     update: ((SettingsRepository) -> Unit) -> Unit,
     onEditColor: (RoleColor) -> Unit,
     onResetColors: () -> Unit,
+    /**
+     * The stored snapshot for a given arrangement, used by the style tiles.
+     *
+     * <p>A plain lambda rather than handing the whole repository down: the page only ever
+     * needs to READ one other snapshot, and a read accessor is what keeps that dependency
+     * from turning into "the page may write anything".
+     */
+    snapshotForStyle: (Int) -> TrioSettings,
 ) {
     item {
         DrawingEditorCard(
@@ -212,6 +225,7 @@ internal fun LazyListScope.drawingTab(
             update = update,
             onEditColor = onEditColor,
             onResetColors = onResetColors,
+            snapshotForStyle = snapshotForStyle,
         )
     }
 }
@@ -230,6 +244,7 @@ private fun DrawingEditorCard(
     update: ((SettingsRepository) -> Unit) -> Unit,
     onEditColor: (RoleColor) -> Unit,
     onResetColors: () -> Unit,
+    snapshotForStyle: (Int) -> TrioSettings,
 ) {
     // Which component's settings dialog is open, if any. The named enum rather than
     // the raw part, so the dialog can be titled with the row name the rest of the
@@ -295,10 +310,16 @@ private fun DrawingEditorCard(
         }
 
         DrawingSection(R.string.drawing_quick_edit_title) {
-            DrawingStyleSelector(settings, scene, dark) { style ->
-                lastSelection = null
-                update { it.setTrioStyle(style) }
-            }
+            DrawingStyleSelector(
+                settings = settings,
+                scene = scene,
+                dark = dark,
+                snapshotForStyle = snapshotForStyle,
+                onSelect = { style ->
+                    lastSelection = null
+                    update { it.setTrioStyle(style) }
+                },
+            )
             Text(
                 text = stringResource(R.string.drawing_state_title),
                 style = MiuixTheme.textStyles.subtitle,
@@ -416,6 +437,9 @@ private fun DrawingEditorCard(
                         isDrawing = part == actual,
                         onMove = { i, delta -> reorderZone(openZone, i, delta) },
                         onRemove = { reorderZone(openZone, index, REMOVE) },
+                        // The same sheet the library opens, so the two entrances cannot
+                        // disagree about what a piece's settings are.
+                        onEdit = { TrioSettingsPart.of(part)?.let { editing = it } },
                     )
                 }
             }
@@ -433,7 +457,10 @@ private fun DrawingEditorCard(
         }
 
         DrawingSection(R.string.drawing_outside_title) {
-            DrawingOutsideParts(settings, scene, dark, onEdit = { editing = it })
+            DrawingOutsideParts(settings, scene, dark,
+                onEdit = { editing = it },
+                onReorder = { order -> update { it.setOutOrder(order) } },
+            )
         }
 
         DrawingSection(R.string.drawing_parts_title) {
@@ -568,14 +595,22 @@ private fun drawingPartLabel(part: TrioSettingsPart): Int = when (part) {
 
 @Composable
 private fun DrawingStyleSelector(
-    settings: TrioSettings, scene: PreviewScene, dark: Boolean, onSelect: (Int) -> Unit,
+    settings: TrioSettings, scene: PreviewScene, dark: Boolean,
+    snapshotForStyle: (Int) -> TrioSettings, onSelect: (Int) -> Unit,
 ) {
     val styles = listOf(Prefs.STYLE_RING, Prefs.STYLE_CAPSULE)
     val labels = listOf(R.string.trio_style_ring, R.string.trio_style_capsule)
     Row(Modifier.fillMaxWidth().padding(bottom = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         styles.forEachIndexed { index, style ->
             val chosen = settings.trioStyle == style
-            val sample = settings.copy().apply { trioStyle = style }
+            // Each arrangement keeps its own components and layout now, so the tile that is
+            // NOT selected has to draw THAT arrangement's pieces. Copying the current snapshot
+            // and only relabelling its shape would preview a look clicking it does not
+            // produce - and for the capsule that is a visible lie, since its openings and
+            // body are filled by a different set of pieces.
+            val sample = remember(style, settings.trioStyle) {
+                settings.withComponentsFrom(snapshotForStyle(style), style)
+            }
             Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
                 .background(if (chosen) MiuixTheme.colorScheme.primaryContainer else MiuixTheme.colorScheme.surfaceContainerHigh)
                 .border(if (chosen) 2.dp else 0.dp, if (chosen) MiuixTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(12.dp))
@@ -719,38 +754,143 @@ private fun DrawingReadoutSample(settings: TrioSettings, dark: Boolean, modifier
  * what it will look like before switching it back on. The two readouts already say so
  * themselves, in [DrawingReadoutSample]'s own empty state.
  */
+/**
+ * The three out-of-ring pieces, positioned the way the status bar actually lays them out.
+ *
+ * <p><b>The row runs left to right and the RIGHTmost tile is the one next to the battery.</b>
+ * That is not a cosmetic choice: {@code layoutOutRingStrip} measures every slot from the
+ * battery outwards, so the stored order's first entry is the piece nearest the battery and
+ * therefore the rightmost one on screen in LTR. Drawing the list left to right in stored
+ * order - which is what this card first did - showed the arrangement mirrored, so the arrows
+ * moved a piece the opposite way from the tile the user pressed.
+ *
+ * <p>The stored array stays in "nearest the battery first" order, because that is what the
+ * layout consumes. Only the <em>rendering</em> is reversed, and only here: making the storage
+ * order screen order would push the mirror image into every other reader.
+ *
+ * <p><b>The tiles are ordered, and that is the control.</b> Showing the samples in the shipped
+ * order would make the setting invisible: the user would move a piece, read "first", and still
+ * be looking at the same three tiles.
+ *
+ * <p>Which piece survives a narrow row is separate and deliberately not offered here: that is
+ * a judgement about what a reading is worth ([Prefs.OUT_PRIORITY]), not a preference.
+ */
 @Composable
-private fun DrawingOutsideParts(settings: TrioSettings, scene: PreviewScene, dark: Boolean, onEdit: (TrioSettingsPart) -> Unit) {
+private fun DrawingOutsideParts(
+    settings: TrioSettings, scene: PreviewScene, dark: Boolean,
+    onEdit: (TrioSettingsPart) -> Unit, onReorder: (IntArray) -> Unit,
+) {
     val a = TrioAppearance.of(settings)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(TrioSettingsPart.Type, TrioSettingsPart.Readouts, TrioSettingsPart.Mobile).forEach { part ->
-            Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
-                .background(MiuixTheme.colorScheme.surfaceContainerHigh)
-                .clickable(role = Role.Button) { onEdit(part) }.padding(6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally) {
-                val previewable = when (part) {
-                    // The type has exactly one reason to be unpaintable here: it is set to
-                    // draw inside the ring, so there is no out-of-ring label to show.
-                    TrioSettingsPart.Type -> a.typeOutOfRing
-                    // Both of these can always be drawn as a sample.
-                    else -> true
-                }
-                if (!previewable) {
-                    Box(Modifier.fillMaxWidth().height(58.dp), contentAlignment = Alignment.Center) {
-                        Text(stringResource(R.string.drawing_preview_hidden), style = MiuixTheme.textStyles.footnote2,
-                            textAlign = TextAlign.Center)
+    val order = settings.outOrder
+    // Screen order: outermost (furthest from the battery) on the left, nearest on the right.
+    val onScreen = order.reversedArray()
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            onScreen.forEachIndexed { screenIndex, slot ->
+                val part = trioSettingsPartFor(slot) ?: return@forEachIndexed
+                // The stored index this tile occupies. Moving "towards the battery" means a
+                // LOWER stored index, which is one step to the RIGHT on screen.
+                val stored = order.size - 1 - screenIndex
+                Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                    .background(MiuixTheme.colorScheme.surfaceContainerHigh)
+                    .clickable(role = Role.Button) { onEdit(part) }.padding(6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    val previewable = when (part) {
+                        // The type has exactly one reason to be unpaintable here: it is set to
+                        // draw inside the ring, so there is no out-of-ring label to show.
+                        TrioSettingsPart.Type -> a.typeOutOfRing
+                        // Both of these can always be drawn as a sample.
+                        else -> true
                     }
-                } else if (part == TrioSettingsPart.Readouts) {
-                    DrawingReadoutSample(settings, dark, Modifier.fillMaxWidth().height(58.dp))
-                } else {
-                    DrawingSmallPreview(settings, scene, dark, Modifier.fillMaxWidth().height(58.dp),
-                        outType = part == TrioSettingsPart.Type, outSignal = part == TrioSettingsPart.Mobile)
+                    if (!previewable) {
+                        Box(Modifier.fillMaxWidth().height(58.dp), contentAlignment = Alignment.Center) {
+                            Text(stringResource(R.string.drawing_preview_hidden), style = MiuixTheme.textStyles.footnote2,
+                                textAlign = TextAlign.Center)
+                        }
+                    } else if (part == TrioSettingsPart.Readouts) {
+                        DrawingReadoutSample(settings, dark, Modifier.fillMaxWidth().height(58.dp))
+                    } else {
+                        DrawingSmallPreview(settings, scene, dark, Modifier.fillMaxWidth().height(58.dp),
+                            outType = part == TrioSettingsPart.Type, outSignal = part == TrioSettingsPart.Mobile)
+                    }
+                    Text(stringResource(drawingPartLabel(part)), style = MiuixTheme.textStyles.footnote2,
+                        textAlign = TextAlign.Center)
+                    OutOrderArrows(
+                        // Right = towards the battery, left = outwards, matching the tiles.
+                        canMoveRight = stored > 0,
+                        canMoveLeft = stored < order.size - 1,
+                        onMoveRight = { onReorder(swapped(order, stored, stored - 1)) },
+                        onMoveLeft = { onReorder(swapped(order, stored, stored + 1)) },
+                    )
                 }
-                Text(stringResource(drawingPartLabel(part)), style = MiuixTheme.textStyles.footnote2,
-                    textAlign = TextAlign.Center)
             }
         }
+        // Which end is the battery is the one thing a horizontal row cannot say by itself.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.out_order_outwards),
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            Text(
+                text = stringResource(R.string.out_order_battery),
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                textAlign = TextAlign.End,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
+}
+
+/** One tile's left/right pair, disabled at the ends rather than hidden. */
+@Composable
+private fun OutOrderArrows(
+    canMoveRight: Boolean,
+    canMoveLeft: Boolean,
+    onMoveRight: () -> Unit,
+    onMoveLeft: () -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OrderButton(
+            icon = Lucide.ChevronLeft,
+            description = R.string.out_order_move_out,
+            enabled = canMoveLeft,
+        ) { onMoveLeft() }
+        OrderButton(
+            icon = Lucide.ChevronRight,
+            description = R.string.out_order_move_in,
+            enabled = canMoveRight,
+        ) { onMoveRight() }
+    }
+}
+
+/** {@code order} with two entries exchanged; a copy, so the snapshot stays immutable. */
+private fun swapped(order: IntArray, from: Int, to: Int): IntArray {
+    val next = order.copyOf()
+    if (from !in next.indices || to !in next.indices) return next
+    val held = next[from]
+    next[from] = next[to]
+    next[to] = held
+    return next
+}
+
+/** The tile a stored {@code OUT_SLOT_*} id stands for. */
+private fun trioSettingsPartFor(slot: Int): TrioSettingsPart? = when (slot) {
+    Prefs.OUT_SLOT_SIGNAL -> TrioSettingsPart.Mobile
+    Prefs.OUT_SLOT_READOUTS -> TrioSettingsPart.Readouts
+    Prefs.OUT_SLOT_TYPE -> TrioSettingsPart.Type
+    else -> null
 }
 
 /** Explain the saved component using the same runtime frame as the visible glyph. */
@@ -804,7 +944,12 @@ private fun applyZoneAssignment(
     repository: SettingsRepository,
     settings: TrioSettings,
 ) {
-    if (next.trioStyle == Prefs.STYLE_RING) {
+    // The slot-driven arrangements write the whole layout in one transaction. The capsule
+    // joined the ring here once its two dot rows became placements: its bands now come from
+    // ringZones too, so pushing only the switches would leave the rows un-moveable - which is
+    // the defect this path used to have, where the openings showed dots no setting could
+    // change.
+    if (TrioZones.hasSlots(next)) {
         repository.applyRingAssignment(next)
         return
     }
@@ -907,10 +1052,23 @@ private fun ZonePickerDialog(
                     val elsewhere = if (inZone) null else TrioZones.Zone.entries.firstOrNull { z ->
                         z != zone && appearance.ringZones[z.ordinal].contains(id)
                     }
-                    val reason = if (canPlace) null else stringResource(
-                        R.string.drawing_pick_impossible,
-                        stringResource(zoneLabelRes(zone, appearance)),
-                    )
+                    // A refusal has two shapes here, and they are different sentences. The
+                    // ring's middle does not hold a signal row at all - a rule about the
+                    // band, which no switch can change (see TrioZones.ringAccepts) - while
+                    // anything else the solver cannot place is a frame that does not exist
+                    // yet. Saying "the middle does not fit this component" for the first
+                    // would leave the user hunting for a setting that would fix it.
+                    val reason = when {
+                        canPlace -> null
+                        !TrioZones.accepts(zone, part, settings) -> stringResource(
+                            R.string.drawing_pick_signal_in_centre,
+                            stringResource(occupantLabelRes(part)),
+                        )
+                        else -> stringResource(
+                            R.string.drawing_pick_impossible,
+                            stringResource(zoneLabelRes(zone, appearance)),
+                        )
+                    }
                     val summary = reason ?: when {
                         current == part -> stringResource(R.string.drawing_pick_showing_now)
                         inZone -> stringResource(R.string.drawing_pick_promote_summary)
@@ -1128,9 +1286,46 @@ private fun PriorityPreferenceRow(
     isDrawing: Boolean,
     onMove: (Int, Int) -> Unit,
     onRemove: () -> Unit,
+    onEdit: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.weight(1f)) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                // The library row offers onClick and nothing else, so the long press goes on
+                // this wrapper instead of changing the library.
+                //
+                // detectTapGestures would not do: the row IS a clickable, so it consumes the
+                // press before an ancestor sees it, and that helper only watches unconsumed
+                // input. Waiting on the raw stream instead is what makes the gesture fire, and
+                // since nothing here consumes anything the row keeps every event it had - its
+                // own tap still lands, and the arrow buttons beside it are outside this Box.
+                .pointerInput(part, onEdit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        // The block returns normally when the gesture ENDS (finger up, or a
+                        // drag past touch slop) and is cancelled by the timeout when it does
+                        // not. So only a null result means "held long enough" - returning from
+                        // the block is the opposite answer. Getting that backwards would open
+                        // the sheet on every ordinary tap.
+                        val endedEarly = withTimeoutOrNull(
+                                viewConfiguration.longPressTimeoutMillis) {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                    ?: continue
+                                if (!change.pressed ||
+                                    (change.position - down.position).getDistance() >
+                                    viewConfiguration.touchSlop) {
+                                    break
+                                }
+                            }
+                            true
+                        }
+                        if (endedEarly == null) onEdit()
+                    }
+                },
+        ) {
             RadioButtonPreference(
                 title = stringResource(occupantLabelRes(part)),
                 // Where this row sits in the chain, and - when it is the head - whether it

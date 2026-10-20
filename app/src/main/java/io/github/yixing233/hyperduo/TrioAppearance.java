@@ -50,6 +50,18 @@ public final class TrioAppearance {
      * it.
      */
     public final boolean ring;
+    /**
+     * True when this arrangement places pieces in <b>bands</b> - the ring and the capsule.
+     *
+     * <p>The question every placement row asks before offering a position: the ring has three
+     * thirds and the capsule three bands, and both read their contents from the layout. The
+     * rectangle has none - its columns and slots are derived from the switches - so a
+     * position row there would offer a choice nothing reads.
+     *
+     * <p>Stated here rather than as {@code !rect} at each call site: the expression was
+     * correct only while the capsule had no cells, and this feature exists because it did.
+     */
+    public final boolean slotted;
     /** The master switch. False hands every slot back to MIUI. */
     public final boolean glyph;
     /** The Wi-Fi arcs are wanted; ink also needs a signal - see {@link #wifiInk}. */
@@ -191,6 +203,25 @@ public final class TrioAppearance {
      * conversion keeps them from rounding differently.
      */
     public final int boltScale;
+    /**
+     * Size of the ring's level-dot rows, as a percentage of the bead the stroke implies.
+     *
+     * <p>Ask {@link #dotScaleFactor()} rather than dividing by 100 at each call site, for
+     * the same reason as {@link #boltScaleFactor()}.
+     *
+     * <p>One value for the top and the bottom rows: they are the same ink, and the two rows
+     * are what makes the ring read as cut into segments rather than as a closed outline.
+     */
+    public final int dotScale;
+    /**
+     * The out-of-ring order, nearest the battery first - see {@link Prefs#KEY_OUT_ORDER}.
+     *
+     * <p>An order, not a priority: {@link Prefs#OUT_PRIORITY} still decides which piece the
+     * strip drops when it does not fit. Kept here with the other out-of-ring geometry
+     * because the layout and the reserve pass both read it, and they must agree about where
+     * each piece sits.
+     */
+    public final int[] outOrder;
     public final int typeWeight;
 
     private TrioAppearance(TrioSettings c) {
@@ -198,6 +229,7 @@ public final class TrioAppearance {
         rect = c.trioStyle == Prefs.STYLE_RECT;
         capsule = c.trioStyle == Prefs.STYLE_CAPSULE;
         ring = c.trioStyle == Prefs.STYLE_RING;
+        slotted = !rect;
         ringZones = TrioSettings.copyZones(c.ringZones);
 
         glyph = c.enabled;
@@ -245,6 +277,9 @@ public final class TrioAppearance {
         outSignalMargin = c.outSignalMargin;
         typeSuffixScale = c.typeSuffixScale;
         boltScale = c.boltScale;
+        dotScale = c.dotScale;
+        outOrder = c.outOrder == null
+                ? Prefs.OUT_DEFAULT_ORDER.clone() : c.outOrder.clone();
         typeWeight = c.typeWeight;
     }
 
@@ -379,22 +414,26 @@ public final class TrioAppearance {
         if (signalOutOfRing) {
             return false;
         }
-        // The ring is slot-based, so a card has to be placed there to be drawn. The capsule
-        // and the rectangle derive what they draw from the switches alone - they have no
-        // slots - so for them the switch IS the answer.
+        // The ring is slot-based, so a card has to be placed there to be drawn. The rectangle
+        // derives what it draws from the switch alone - it has no slots - so there the switch
+        // IS the answer. The capsule is asked through its resolved cells instead: its rows are
+        // placements now, so "the switch is on" is no longer the same question as "an opening
+        // holds a row". Capsule answers that itself in its constructor, using this method only
+        // for the legacy no-placement fallback.
         return mobile && (!ring || hasRingPart(Prefs.PART_MOBILE));
     }
 
     /**
      * Whether the glyph draws SIM 1's own row this frame.
      *
-     * <p>Placement is the only thing that can turn a per-card row on: the row
-     * exists as a <em>slot occupant</em>, and only the free ring has slots. The
-     * automatic layouts keep the aggregate meter they have always drawn, because
-     * they have no place to put a second independent piece - so answering "yes"
-     * there would claim the native mobile slot while drawing nothing at all.
-     * The switch is still independent of its twin: it gates the row without the
-     * slot (a reserved slot with the switch off draws nothing, as with Wi-Fi).
+     * <p>Placement is the only thing that can turn a per-card row on: the row exists as a
+     * <em>slot occupant</em>, and both slot-driven arrangements have slots - the ring's
+     * openings and the capsule's bands. The rectangle keeps the aggregate meter it has always
+     * drawn, because it has no band to put a second independent piece in, so answering "yes"
+     * there would claim the native mobile slot while drawing nothing.
+     *
+     * <p>The switch is still independent of its twin: it gates the row without the slot (a
+     * reserved slot with the switch off draws nothing, as with Wi-Fi).
      *
      * <p>Deliberately not gated on the two-SIM condition {@link #dualSimRows}
      * needs: a row is one card's reading, so a single-SIM device can still place
@@ -402,13 +441,13 @@ public final class TrioAppearance {
      * reading should look like.
      */
     public boolean drawsSim1() {
-        return showSim1 && mobile && ring && !signalOutOfRing
+        return showSim1 && mobile && slotted && !signalOutOfRing
                 && hasRingPart(Prefs.PART_SIM_1);
     }
 
     /** Whether the glyph draws SIM 2's own row this frame; see {@link #drawsSim1()}. */
     public boolean drawsSim2() {
-        return showSim2 && mobile && ring && !signalOutOfRing
+        return showSim2 && mobile && slotted && !signalOutOfRing
                 && hasRingPart(Prefs.PART_SIM_2);
     }
 
@@ -459,6 +498,20 @@ public final class TrioAppearance {
      */
     public float boltScaleFactor() {
         return Prefs.clamp(boltScale, Prefs.MIN_BOLT_SCALE, Prefs.MAX_BOLT_SCALE) / 100f;
+    }
+
+    /**
+     * The ring's level-dot size multiplier, 1.0 for the bead the stroke implies.
+     *
+     * <p>Clamped here for the same reason as {@link #boltScaleFactor()}: this is the one
+     * place a value from a broadcast or a stale build reaches the canvas, and an
+     * out-of-range bead would overlap the arc's caps.
+     *
+     * <p>A multiplier rather than a radius: the fitted radius already knows the opening's
+     * room, and the user is asking to scale what is there, not to overrule the gap.
+     */
+    public float dotScaleFactor() {
+        return Prefs.clamp(dotScale, Prefs.MIN_DOT_SCALE, Prefs.MAX_DOT_SCALE) / 100f;
     }
 
     /**
@@ -616,25 +669,6 @@ public final class TrioAppearance {
         }
 
         /**
-         * The first entry of {@code order} that has ink on this frame, or {@link
-         * Prefs#PART_NONE}.
-         *
-         * <p>Skipping rather than stopping is the whole behaviour: a candidate whose own
-         * switch is off, or which has no reading to show, is simply passed over and the next
-         * one is tried. That is why a zone does not go blank when the top of its list happens
-         * to be a piece with nothing to draw.
-         *
-         * <p>Each condition is the same one that piece would test on its own - a percentage
-         * needs a level, the arcs need a signal, the bolt only exists while charging, and a
-         * card answers to its own switch - so a place's list cannot resurrect something the
-         * user switched off.
-         */
-        private static int firstDrawable(TrioAppearance a, int[] order, int level,
-                                         boolean charging, int wifiLevel, String mobileType) {
-            return firstInk(a, order, level, charging, wifiLevel, mobileType);
-        }
-
-        /**
          * Whether one piece would draw ink on this frame, judging only its SWITCH and the
          * frame's readings - never the layout.
          *
@@ -675,8 +709,14 @@ public final class TrioAppearance {
                 // and the arcs step in on a frame where it does not - so a zone never goes
                 // blank while any of its pieces could draw. Order is therefore the only
                 // arbitration, which is exactly what dragging the list edits.
-                parts[z] = firstDrawable(a, a.ringZones[z], level, charging, wifiLevel,
-                        mobileType);
+                //
+                // Skipped as well are the placements the ring refuses in this band - a
+                // signal row in the middle, see Prefs.zoneAccepts. Decoding a stored layout
+                // repairs that already, but this loop is what the hooked process runs and it
+                // can be reached from a broadcast that never went through a decode, so the
+                // refusal is enforced here rather than trusted to have arrived.
+                parts[z] = firstDrawableInk(a, a.ringZones[z], z,
+                        level, charging, wifiLevel, mobileType);
             }
             wifi = drawWifi = a.wifiInk(wifiLevel);
             bolt = charging && a.drawsBolt();
@@ -781,11 +821,20 @@ public final class TrioAppearance {
             case Prefs.PART_TYPE:
                 return a.typeInRing && mobileType != null && !mobileType.isEmpty();
             case Prefs.PART_MOBILE:
-                return a.mobile && a.ring && !a.signalOutOfRing;
+                return a.mobile && !a.signalOutOfRing && (a.ring ? a.hasRingPart(Prefs.PART_MOBILE) : true);
+            // The per-card rows are placeable in BOTH slot-based arrangements: the ring threads
+            // them onto its openings and the capsule lays them across its two. Only the
+            // rectangle has no slot for one - it derives its columns from the mobile switch -
+            // so `rect` is the exclusion here, not `!ring`.
+            //
+            // This used to read `a.ring`, which made the capsule's openings impossible to fill
+            // from a layout even though the capsule has always drawn dots there: the rows came
+            // from the mobile switch alone, so the user saw signal dots they could not move or
+            // remove. See the Capsule class comment.
             case Prefs.PART_SIM_1:
-                return a.mobile && a.ring && a.showSim1 && !a.signalOutOfRing;
+                return a.mobile && a.showSim1 && !a.signalOutOfRing && !a.rect;
             case Prefs.PART_SIM_2:
-                return a.mobile && a.ring && a.showSim2 && !a.signalOutOfRing;
+                return a.mobile && a.showSim2 && !a.signalOutOfRing && !a.rect;
             case Prefs.PART_CLOCK:
                 // The clock always has something to say; whether the arrangement shows it
                 // is the renderer's business.
@@ -827,6 +876,43 @@ public final class TrioAppearance {
     }
 
     /**
+     * The same, for one band of the ring, where a piece can also be refused by
+     * {@link Prefs#zoneAccepts(int, int)}.
+     *
+     * <p>A layout stored before that rule existed can still name a signal row in the middle
+     * band, and decoding repairs it - but the drawing has to be right on its own too: it is
+     * what the hooked process runs, it is reachable from a broadcast that never went through
+     * a decode, and a band's occupant is otherwise decided by this one loop. So a refused
+     * candidate is passed over exactly as a switched-off one is, and the fallback behind it
+     * takes the band.
+     *
+     * <p>Asked of {@code Prefs} rather than of {@code TrioZones} on purpose: this class is
+     * compiled on its own by several harnesses, and it already has no dependency on the
+     * editor's geometry. The rule is the same one either way - {@code TrioZones} defers to
+     * the same method.
+     *
+     * <p>Passing the refused candidate instead would draw the very thing the rule exists to
+     * prevent; leaving the band blank would contradict the list the user can see in the
+     * priority editor.
+     */
+    private static int firstDrawableInk(TrioAppearance a, int[] order, int band,
+                                        int level, boolean charging, int wifiLevel,
+                                        String mobileType) {
+        if (order == null) {
+            return Prefs.PART_NONE;
+        }
+        for (int i = 0; i < order.length; i++) {
+            if (!Prefs.zoneAccepts(band, order[i])) {
+                continue;
+            }
+            if (hasInk(a, order[i], level, charging, wifiLevel, mobileType)) {
+                return order[i];
+            }
+        }
+        return Prefs.PART_NONE;
+    }
+
+    /**
      * Where each piece goes in the capsule arrangement.
      *
      * <p>The capsule has the same <b>three</b> placeable bands as the ring, mapped onto its own
@@ -848,6 +934,14 @@ public final class TrioAppearance {
      * interior), which reproduces the shipped look exactly. Once the user places anything the
      * layout is authoritative.
      *
+     * <p><b>The two dot rows are a placement like any other.</b> They used to be drawn from
+     * {@link TrioAppearance#signalDots()} alone, which made them the one piece of capsule ink
+     * the user could see and could not move or remove: the openings held dots whether or not
+     * any cell named them, so tapping the top band offered only readings. A {@code PART_SIM_*}
+     * row placed in TOP/BOTTOM now decides which opening carries dots, exactly as it does in
+     * the ring; {@link #dots} is true when either band holds one, and an install with nothing
+     * placed keeps the old always-on look through the same migration branch as the readings.
+     *
      * <p>Immutable.
      */
     public static final class Capsule {
@@ -861,10 +955,23 @@ public final class TrioAppearance {
         public final boolean type;
         /** The time is drawn in some cell. */
         public final boolean clock;
-        /** The two dot rows are drawn (the mobile switch is on). */
+        /**
+         * The dot rows are drawn at all - i.e. at least one opening holds one.
+         *
+         * <p>Ask {@link #dotsIn} for a specific band. This is the question the outline's gap
+         * and the charged-fraction pass ask, because the stroke is cut at both openings
+         * whether one row or two are there, and a half-drawn outline would read as damage.
+         */
         public final boolean dots;
         /** The rows carry one SIM each - SIM 1 on top, SIM 2 below. */
         public final boolean dual;
+        /**
+         * Which bands carry a dot row, indexed by {@link TrioZones.Zone#ordinal}.
+         *
+         * <p>False for the interior: it is a reading's band in every arrangement. The two
+         * openings are independent, so a user can draw SIM 1 at the top and nothing below.
+         */
+        public final boolean[] dotBands;
         /**
          * Per-cell occupants, indexed by {@link TrioZones.Zone#ordinal}, or
          * {@code PART_NONE} for a cell that draws nothing.
@@ -874,21 +981,21 @@ public final class TrioAppearance {
         private Capsule(TrioAppearance a, int level, boolean charging, int wifiLevel,
                         String mobileType, int sims) {
             parts = new int[Prefs.ZONE_COUNT];
-            dots = a.signalDots();
-            dual = a.dualSimRows(false, charging, sims);
+            dotBands = new boolean[Prefs.ZONE_COUNT];
 
-            // Two placeable cells, because the clock owns the left column: the top opening and
-            // the interior to its right. BOTTOM is the dot rows and is not a placed piece.
-            parts[TrioZones.Zone.TOP.ordinal()] =
-                    firstInk(a, a.ringZones[TrioZones.Zone.TOP.ordinal()],
-                            level, charging, wifiLevel, mobileType);
-            parts[TrioZones.Zone.CENTRE.ordinal()] =
-                    firstInk(a, a.ringZones[TrioZones.Zone.CENTRE.ordinal()],
-                            level, charging, wifiLevel, mobileType);
-            parts[TrioZones.Zone.BOTTOM.ordinal()] = Prefs.PART_NONE;
+            // Every band is a real cell now: the two openings hold either a reading or a dot
+            // row, and only the interior is a reading's alone.
+            for (TrioZones.Zone band : TrioZones.Zone.values()) {
+                parts[band.ordinal()] = firstInk(a, a.ringZones[band.ordinal()],
+                        level, charging, wifiLevel, mobileType);
+            }
+            for (TrioZones.Zone band : TrioZones.Zone.values()) {
+                dotBands[band.ordinal()] = isDotRow(parts[band.ordinal()]);
+            }
 
-            final boolean anyPlaced = parts[TrioZones.Zone.TOP.ordinal()] != Prefs.PART_NONE
-                    || parts[TrioZones.Zone.CENTRE.ordinal()] != Prefs.PART_NONE;
+            final boolean anyPlaced = anyPlaced(parts)
+                    || dotBands[TrioZones.Zone.TOP.ordinal()]
+                    || dotBands[TrioZones.Zone.BOTTOM.ordinal()];
             if (!anyPlaced) {
                 // Nothing has ever been placed: behave exactly as before these cells existed,
                 // so an upgrading install looks unchanged. The clock is fixed either way.
@@ -904,14 +1011,51 @@ public final class TrioAppearance {
                         : valueWanted ? Prefs.PART_VALUE
                         : typeWanted ? Prefs.PART_TYPE
                         : Prefs.PART_NONE;
+                // And the shipped look's dot rows, which this arrangement always drew. They
+                // are the SAME condition signalDots() applies, so an untouched install draws
+                // precisely the pixels it used to.
+                final boolean legacyDots = a.signalDots();
+                dotBands[TrioZones.Zone.TOP.ordinal()] = legacyDots;
+                dotBands[TrioZones.Zone.BOTTOM.ordinal()] = legacyDots;
             }
 
+            // A band that holds a dot row draws the row, not a reading: the row IS that band's
+            // piece. Clearing `parts` for it keeps the two answers from both claiming the band.
+            for (TrioZones.Zone band : TrioZones.Zone.values()) {
+                if (dotBands[band.ordinal()]) {
+                    parts[band.ordinal()] = Prefs.PART_NONE;
+                }
+            }
+
+            dots = dotBands[TrioZones.Zone.TOP.ordinal()]
+                    || dotBands[TrioZones.Zone.BOTTOM.ordinal()];
+            dual = a.dualSimRows(false, charging, sims);
             bolt = contains(parts, Prefs.PART_BOLT);
             wifi = contains(parts, Prefs.PART_WIFI);
             value = contains(parts, Prefs.PART_VALUE);
             type = contains(parts, Prefs.PART_TYPE);
             // The clock is not a placement: it is always drawn, in its own column.
             clock = true;
+        }
+
+        /** Whether {@code band} carries a row of level dots. */
+        public boolean dotsIn(TrioZones.Zone band) {
+            return dotBands != null && band != null && dotBands[band.ordinal()];
+        }
+
+        /** Whether {@code id} is one of the two rows of level dots. */
+        private static boolean isDotRow(int id) {
+            return id == Prefs.PART_SIM_1 || id == Prefs.PART_SIM_2
+                    || id == Prefs.PART_MOBILE;
+        }
+
+        private static boolean anyPlaced(int[] ids) {
+            for (int id : ids) {
+                if (id != Prefs.PART_NONE) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static boolean contains(int[] ids, int id) {

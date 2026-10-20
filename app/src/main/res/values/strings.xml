@@ -65,6 +65,10 @@
     <string name="drawing_occupant_sim_1">卡一信号点</string>
     <string name="drawing_occupant_sim_2">卡二信号点</string>
     <string name="drawing_outside_title">环外组件</string>
+    <string name="out_order_move_in">往电池方向移动</string>
+    <string name="out_order_move_out">往外移动</string>
+    <string name="out_order_outwards">← 往外</string>
+    <string name="out_order_battery">贴着电池 →</string>
     <string name="drawing_part_appearance">外观</string>
     <string name="drawing_part_battery">电池</string>
     <string name="drawing_part_readouts">读数组</string>
@@ -85,6 +89,7 @@
     <string name="drawing_feedback_wifi">%1$s已设在%2$s；当前预览没有 Wi-Fi，切换到“正常”预览查看。</string>
     <string name="drawing_feedback_other">%1$s已设在%2$s；当前预览显示%3$s。切换预览状态查看。</string>
     <string name="drawing_pick_impossible">%1$s放不下这个组件。</string>
+    <string name="drawing_pick_signal_in_centre">%1$s不能放在中部：中部是环内读数的地方，信号点只能放在上下两个缺口。</string>
     <string name="drawing_hint_top">上部</string>
     <string name="drawing_hint_centre">中部</string>
     <string name="drawing_hint_bottom">下部</string>
@@ -126,6 +131,8 @@
     <string name="bolt_scale_title">充电闪电大小</string>
     <string name="bolt_scale_summary">默认 100%，可调 60–160%。</string>
     <string name="show_bolt_summary">充电时环内改为闪电图标。</string>
+    <string name="dot_scale_title">环内信号点大小</string>
+    <string name="dot_scale_summary">上部与下部两排点共用。默认 100% 即点径等于环的粗细；可调 50–160%，放大会在上下的缺口里停止增长。</string>
 
     <string name="show_mobile_type_title">网络类型</string>
     <string name="show_mobile_type_summary">3G/4G/5G 等文字，可放在环内或环外。</string>

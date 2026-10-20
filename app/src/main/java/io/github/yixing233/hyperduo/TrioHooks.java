@@ -965,8 +965,15 @@ final class TrioHooks {
                             // numbers, and no spec mode has to be interpreted.
                             final int height = view.getMeasuredHeight();
                             final int width = TrioGeometry.capHostWidthPx(height);
+                            // The two opening bands are added to the HEIGHT, after the width
+                            // has been asked for the bare capsule. Width decides the drawing
+                            // scale, so leaving it alone is what keeps the capsule the same
+                            // size; the band is purely extra room above and below it.
+                            final int tall = TrioGeometry.capHostHeightPx(height);
                             final Method setter = sSetMeasuredDimension;
-                            if (width > 0 && width != view.getMeasuredWidth()
+                            if (width > 0 && tall > 0
+                                    && (width != view.getMeasuredWidth()
+                                        || tall != view.getMeasuredHeight())
                                     && setter != null) {
                                 // Reflectively, because View.setMeasuredDimension is
                                 // protected: only a subclass may call it on itself,
@@ -974,11 +981,11 @@ final class TrioHooks {
                                 // SDK stubs, so it is not a hidden API and no
                                 // restriction applies.
                                 Refl.invokeArgs(setter, view, new Object[] {
-                                        Integer.valueOf(width), Integer.valueOf(height) });
+                                        Integer.valueOf(width), Integer.valueOf(tall) });
                                 if (debugLog() && !sLoggedCapsuleMeasure) {
                                     sLoggedCapsuleMeasure = true;
                                     log(LOG_INFO, "capsule host widened to "
-                                            + width + "x" + height);
+                                            + width + "x" + tall);
                                 }
                             }
                         } catch (Throwable t) {
@@ -4190,21 +4197,105 @@ final class TrioHooks {
         return view.getMeasuredWidth();
     }
 
+    /**
+     * The three out-of-ring views in the user's chosen arrangement, nearest the battery
+     * first.
+     *
+     * <p>This is the single place the {@code out_ring_order} setting is turned into views,
+     * and it exists because the arrays handed to {@link OutRingLayout#solve} index the strip
+     * from the battery outwards: their order <em>is</em> the placement. Reading the setting
+     * at both call sites would be two chances to get the mapping wrong, and the two callers
+     * - the measure pass and the layout pass - disagreeing about which view is slot 0 is
+     * exactly a piece drawn over its neighbour.
+     *
+     * <p>{@link #outRingDropOrder} is <b>not</b> derived from this: the sacrificed piece is
+     * chosen by what the reading is worth, not by where the user put it.
+     */
+    private static View[] outRingViews(ViewGroup container) {
+        final int[] order = slotOrder(TrioConfig.appearance());
+        final View signal = findOutSignal(container);
+        final View perf = findPerfLabel(container);
+        final View type = findOutTypeLabel(container);
+        final View[] views = new View[order.length];
+        for (int i = 0; i < order.length; i++) {
+            views[i] = slotView(order[i], signal, perf, type);
+        }
+        return views;
+    }
+
+    /** The stored arrangement, normalised: a settings read can never yield a short array. */
+    private static int[] slotOrder(TrioAppearance a) {
+        final int[] stored = a == null ? null : a.outOrder;
+        return stored == null ? Prefs.OUT_DEFAULT_ORDER : stored;
+    }
+
+    /** The view for one {@code OUT_SLOT_*} id. */
+    private static View slotView(int slot, View signal, View perf, View type) {
+        switch (slot) {
+            case Prefs.OUT_SLOT_SIGNAL: return signal;
+            case Prefs.OUT_SLOT_READOUTS: return perf;
+            case Prefs.OUT_SLOT_TYPE: return type;
+            default: return null;
+        }
+    }
+
+    /**
+     * The slot indices to sacrifice when the strip overflows, least important first.
+     *
+     * <p>Translated from {@link Prefs#OUT_PRIORITY} through the <em>current</em> arrangement,
+     * so priority survives the user reordering: the type label is the cheapest to lose
+     * because it is one unchanging string, wherever the user chose to put it.
+     */
+    private static int[] outRingDropOrder(TrioAppearance a) {
+        final int[] order = slotOrder(a);
+        final int[] drop = new int[Prefs.OUT_PRIORITY.length];
+        int n = 0;
+        // The solver drops the LAST entry of the list first, so the array is filled from the
+        // back: index 0 here must be the most important, which is how OUT_PRIORITY reads.
+        for (int i = 0; i < Prefs.OUT_PRIORITY.length; i++) {
+            final int at = Prefs.outOrderIndex(order, Prefs.OUT_PRIORITY[i]);
+            if (at >= 0 && at < order.length) {
+                drop[drop.length - 1 - n] = at;
+                n++;
+            }
+        }
+        // Anything not named (a repaired or partial order) is left out, and the solver falls
+        // back to the positional rule for it.
+        if (n == drop.length) {
+            return drop;
+        }
+        final int[] trimmed = new int[n];
+        System.arraycopy(drop, drop.length - n, trimmed, 0, n);
+        return trimmed;
+    }
+
     /** Reflow all siblings together; a changed member cannot leave stale neighbours. */
     private static OutRingLayout.Plan outRingPlan(ViewGroup container, View icons) {
-        final View[] views = {findOutSignal(container), findPerfLabel(container),
-                findOutTypeLabel(container)};
-        final int[] widths = new int[3];
-        final int[] heights = new int[3];
+        final View[] views = outRingViews(container);
+        final int[] widths = new int[views.length];
+        final int[] heights = new int[views.length];
         for (int i = 0; i < views.length; i++) {
             widths[i] = outRingSlotWidth(views[i]);
             heights[i] = widths[i] > 0 ? views[i].getMeasuredHeight() : 0;
         }
+        final TrioAppearance appearance = TrioConfig.appearance();
+        final int[] order = slotOrder(appearance);
         final boolean rtl = container.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
         final int[] margins = outLabelMargins(container);
         final int inward = rtl ? margins[0] : margins[1];
-        final int[] gaps = {outSignalMargin(container), inward, inward};
-        final int outward = widths[2] > 0 ? (rtl ? margins[1] : margins[0]) : 0;
+        final int[] gaps = new int[views.length];
+        for (int i = 0; i < views.length; i++) {
+            // Each slot keeps its OWN gap, so a piece carries its spacing with it when the
+            // arrangement changes: the reading keeps the battery margin, the type label keeps
+            // its label margins. One shared gap would silently reset a tuned value the moment
+            // two pieces swapped places.
+            gaps[i] = outGapFor(order[i], container, inward);
+        }
+        // The outward gap belongs to the piece actually furthest out, whichever that is.
+        final int outermost = order.length == 0 ? Prefs.OUT_SLOT_TYPE
+                : order[order.length - 1];
+        final int outward = widths[views.length - 1] > 0 && outermost == Prefs.OUT_SLOT_TYPE
+                ? (rtl ? margins[1] : margins[0]) : 0;
         final int[] saved = icons != null ? OUT_PAD_SAVED.get(icons) : null;
         // Current padding already includes our reserve; deduct only the original.
         final int baseLeft = saved != null ? saved[0] : (icons != null ? icons.getPaddingLeft() : 0);
@@ -4213,7 +4304,21 @@ final class TrioHooks {
                 - container.getPaddingTop() - container.getPaddingBottom());
         return OutRingLayout.solve(icons != null ? icons.getWidth() : 0,
                 rtl ? baseRight : baseLeft, rtl ? baseLeft : baseRight,
-                islandBoundaryPx(icons), height, widths, heights, gaps, outward);
+                islandBoundaryPx(icons), height, widths, heights, gaps, outward,
+                outRingDropOrder(appearance));
+    }
+
+    /** The gap one {@code OUT_SLOT_*} keeps towards its inner neighbour, in pixels. */
+    private static int outGapFor(int slot, ViewGroup container, int labelInward) {
+        if (slot == Prefs.OUT_SLOT_SIGNAL) {
+            return outSignalMargin(container);
+        }
+        if (slot == Prefs.OUT_SLOT_TYPE) {
+            return labelInward;
+        }
+        // The performance readout is text like the label and shares its inward margin; it
+        // has never had a margin setting of its own.
+        return labelInward;
     }
 
     private static final Map<View, Boolean> OUT_RESERVE_PENDING =
@@ -4239,8 +4344,7 @@ final class TrioHooks {
         final View host = hostIn(container);
         final View meter = host != null ? meterIn(host, container) : null;
         final View centre = meter != null ? meter : anchor;
-        final View[] views = {findOutSignal(container), findPerfLabel(container),
-                findOutTypeLabel(container)};
+        final View[] views = outRingViews(container);
         final OutRingLayout.Plan plan = outRingPlan(container, icons);
         final boolean rtl = container.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
         final boolean ready = icons != null && icons.getWidth() > 0 && centre != null;

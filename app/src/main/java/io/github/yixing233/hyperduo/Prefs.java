@@ -143,6 +143,77 @@ public final class Prefs {
     public static final String KEY_RING_LAYOUT = "ring_layout";
 
     /**
+     * Suffix that makes a component setting belong to the capsule instead of the ring.
+     *
+     * <p>Appended to a {@link #STYLED_KEYS base key}: {@code show_wifi@capsule}. The ring's
+     * own key keeps its <b>historical, unsuffixed</b> name - the arrangement that was there
+     * first - so every value an existing install already holds stays exactly where it is and
+     * needs no migration.
+     */
+    public static final String STYLE_SUFFIX = "@capsule";
+
+    /**
+     * The keys whose values belong to <b>one arrangement</b> rather than to the module.
+     *
+     * <p>These are the switches that decide <em>what the glyph draws and where</em>. They were
+     * single values shared by both arrangements, and that made switching style destructive in a
+     * way the user could see: placing the percentage in the ring's middle and then trying the
+     * capsule silently emptied one of the two, because both were writing the same three slots.
+     * Splitting the storage is what lets each arrangement keep its own arrangement.
+     *
+     * <p>Deliberately <b>not</b> here: every size, weight, stroke and colour. Those are
+     * properties of the component itself - a user who made the digits 40pt wants them 40pt in
+     * whichever shape happens to be drawn - and duplicating them would mean writing every
+     * future slider twice.
+     */
+    public static final java.util.Set<String> STYLED_KEYS = styledKeys();
+
+    /**
+     * Builds {@link #STYLED_KEYS}.
+     *
+     * <p>A method rather than a field initialiser because the keys it names are declared
+     * further down this class: a field initialiser may not forward-reference them, and moving
+     * every key up here to satisfy that would scatter the declarations away from their
+     * documentation.
+     */
+    private static java.util.Set<String> styledKeys() {
+        return new java.util.HashSet<>(java.util.Arrays.asList(
+                KEY_SHOW_WIFI, KEY_SHOW_MOBILE, KEY_SHOW_VALUE, KEY_SHOW_BOLT,
+                KEY_SHOW_SIM_1, KEY_SHOW_SIM_2, KEY_MOBILE_TYPE_MODE, KEY_RING_LAYOUT,
+                KEY_SIGNAL_MODE, KEY_STACKED_SIGNAL, KEY_DUAL_SIM, KEY_VALUE_CENTRED));
+    }
+
+    /**
+     * The storage key for {@code base} under {@code style}.
+     *
+     * <p>The ring returns {@code base} unchanged: it is the arrangement that was there before
+     * the split, so its keys are the ones an existing install already filled. Only the capsule
+     * is moved to a suffixed name, and a capsule value that does not exist yet falls back to
+     * the ring's - see {@code TrioSettings.readStyled} - so an upgrade inherits the look the
+     * user already had instead of resetting one arrangement to defaults.
+     *
+     * @param style one of {@link #STYLE_RING} / {@link #STYLE_CAPSULE}
+     */
+    public static String styledKey(String base, int style) {
+        if (base == null || !STYLED_KEYS.contains(base)) {
+            return base;
+        }
+        return style == STYLE_CAPSULE ? base + STYLE_SUFFIX : base;
+    }
+
+    /** Whether {@code key} is the capsule's copy of one of the {@link #STYLED_KEYS}. */
+    public static boolean isCapsuleKey(String key) {
+        return key != null && key.endsWith(STYLE_SUFFIX);
+    }
+
+    /** The {@link #STYLED_KEYS} base a storage key names, or the key itself. */
+    public static String styledBase(String key) {
+        return isCapsuleKey(key)
+                ? key.substring(0, key.length() - STYLE_SUFFIX.length())
+                : key;
+    }
+
+    /**
      * The retired one-piece-per-zone encodings, read once by
      * {@link #migrateLayout(String)}.
      */
@@ -196,6 +267,55 @@ public final class Prefs {
      */
     public static final int ZONE_COUNT = 3;
 
+    /** The middle band, in the order {@link #ZONE_COUNT} stores them. */
+    public static final int ZONE_CENTRE = 1;
+    /** The bottom band, in the same order. */
+    public static final int ZONE_BOTTOM = 2;
+
+    /**
+     * Whether the ring's zone {@code zone} may hold part {@code id}.
+     *
+     * <p>One placement is refused, and only one: a <b>signal row</b> - see
+     * {@link #isSignalRow(int)} - may not sit in the ring's <b>middle</b> band. This is the
+     * rule the whole feature hangs on, so it is stated here, next to the ids and the zone
+     * numbering it is about, rather than at any of the places that ask it.
+     *
+     * <p>Why the middle and not the ends: the ring's outline is already cut at 12 and 6
+     * o'clock, and those two openings are where a row of level beads belongs - it reads as
+     * the ring cut into segments, drawn in the same ink. The middle has no opening. The
+     * battery arc runs straight past both sides of it, so the same four beads there are a
+     * short horizontal smudge across a closed ring rather than a continuation of it, and
+     * the row is fitted to a reading's box ({@code TrioGeometry.DOT_BOX_CENTRE}) rather
+     * than a bead's. There is no size at which that is the right drawing, which is why this
+     * is a refusal rather than a slider.
+     *
+     * <p>Lives in {@code Prefs} rather than in {@code TrioZones} because the stored layout
+     * is decoded here - {@link #decodeLayout(String)} has to be able to apply it to a
+     * layout written before it existed - and because the hooked process and the settings
+     * app both need the answer without the settings app's own classes.
+     *
+     * <p>Applies to the ring only. The capsule draws its rows across its two openings, and
+     * the rectangle has no middle band at all, so neither can get this wrong; the style
+     * test belongs to the caller, which knows the arrangement.
+     *
+     * @param zone a zone index, {@code 0}..{@link #ZONE_COUNT}-1
+     * @param id a {@code PART_*} id; {@link #PART_NONE} (a cleared band) is always allowed
+     */
+    public static boolean zoneAccepts(int zone, int id) {
+        return !(zone == ZONE_CENTRE && isSignalRow(id));
+    }
+
+    /**
+     * Whether {@code id} is a row of level dots: the aggregate meter or either card's row.
+     *
+     * <p>Named for what the three have in common rather than for what they draw, because
+     * that is the property the rule is about - they are the only pieces whose ink is a
+     * horizontal row, and the only ones the notch geometry is designed around.
+     */
+    public static boolean isSignalRow(int id) {
+        return id == PART_MOBILE || id == PART_SIM_1 || id == PART_SIM_2;
+    }
+
     /**
      * Splits a layout into its sections, each an ordered id list.
      *
@@ -216,6 +336,64 @@ public final class Prefs {
         for (int z = 0; z < ZONE_COUNT; z++) {
             out[z] = decodeSection(z < sections.length ? sections[z] : "");
         }
+        return repair(out);
+    }
+
+    /**
+     * Moves a stored middle signal row to the bottom band, where the drawing wants it.
+     *
+     * <p>A layout written before {@link #zoneAccepts(int, int)} existed can name one, and
+     * the choice on reading it is between three answers: honour it (draw the smudge the
+     * rule exists to prevent), drop it (silently delete a piece the user placed), or move
+     * it (keep it, and put it where the ring's own signal meter has always sat). The third
+     * is the only one that neither lies about the drawing nor loses the user's setting, so
+     * it is what decoding does - once, at the boundary, so nothing downstream has to know
+     * the rule was ever missing.
+     *
+     * <p>Appended to the bottom band rather than put at its front: a band whose head was
+     * promoted deliberately keeps that precedence, and the moved row takes its place behind
+     * it as a fallback. Dropped instead if the bottom band already holds it, since a piece
+     * appears at most once in a layout.
+     */
+    private static int[][] repair(int[][] zones) {
+        final java.util.List<Integer> kept = new java.util.ArrayList<>();
+        int[] bottom = zones[ZONE_BOTTOM];
+        boolean moved = false;
+        for (int id : zones[ZONE_CENTRE]) {
+            if (!isSignalRow(id)) {
+                kept.add(id);
+                continue;
+            }
+            moved = true;
+            if (!containsId(bottom, id)) {
+                bottom = appendId(bottom, id);
+            }
+        }
+        if (!moved) {
+            return zones;
+        }
+        final int[] centre = new int[kept.size()];
+        for (int i = 0; i < centre.length; i++) {
+            centre[i] = kept.get(i);
+        }
+        zones[ZONE_CENTRE] = centre;
+        zones[ZONE_BOTTOM] = bottom;
+        return zones;
+    }
+
+    private static boolean containsId(int[] ids, int id) {
+        for (int existing : ids) {
+            if (existing == id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int[] appendId(int[] ids, int id) {
+        final int[] out = new int[ids.length + 1];
+        System.arraycopy(ids, 0, out, 0, ids.length);
+        out[ids.length] = id;
         return out;
     }
 
@@ -744,6 +922,131 @@ public final class Prefs {
      * {@link #KEY_MOBILE_TYPE_MODE}.
      */
     public static final String KEY_OUT_SIGNAL_MARGIN = "out_signal_margin_dp";
+
+    /**
+     * The order of the three out-of-ring pieces, from the battery outwards.
+     *
+     * <p>Before this existed the order was hard-coded as signal, readouts, type - and it
+     * was <em>also</em> the priority order, because {@code OutRingLayout} drops the last
+     * slot first when the strip does not fit. Those are two different questions that were
+     * answered by one list: which reading does the user want nearest the battery, and which
+     * one is cheapest to lose. Keeping them fused would mean that moving a piece to the
+     * front also made it the piece that survives an island, which is not what "I want the
+     * temperature first" means.
+     *
+     * <p>So this key carries the <b>order only</b>. Priority stays where it belongs, in
+     * {@link #OUT_PRIORITY}, and is the fixed judgement that the live signal reading
+     * outlives the static type label.
+     *
+     * <p>Stored as a comma-separated list of {@link #OUT_SLOT_SIGNAL} /
+     * {@link #OUT_SLOT_READOUTS} / {@link #OUT_SLOT_TYPE} ids, mirroring the ring layout's
+     * string-of-lists idea rather than inventing a second encoding style. Always exactly
+     * three entries once normalised, so a missing or duplicated id is repaired rather than
+     * losing a piece.
+     */
+    public static final String KEY_OUT_ORDER = "out_ring_order";
+
+    /** Packed ids for {@link #KEY_OUT_ORDER}; deliberately not {@code PART_*} values. */
+    public static final int OUT_SLOT_SIGNAL = 1;
+    public static final int OUT_SLOT_READOUTS = 2;
+    public static final int OUT_SLOT_TYPE = 3;
+    public static final int OUT_SLOT_COUNT = 3;
+
+    /**
+     * Which slot is dropped first when the strip overflows, in the order they are lost.
+     *
+     * <p>A fixed statement, not a setting: the type label is the one piece that is the same
+     * string all day, so it is the right thing to lose first; the level reading is what
+     * changes every second and is what the user is watching. Note this is <b>independent of
+     * {@link #KEY_OUT_ORDER}</b> - the user decides what sits nearest the battery, and this
+     * decides what survives a notification island. Fusing them is the mistake the order key
+     * exists to avoid.
+     */
+    public static final int[] OUT_PRIORITY = {
+            OUT_SLOT_SIGNAL, OUT_SLOT_READOUTS, OUT_SLOT_TYPE };
+
+    /** The order a fresh install and every existing one starts with. */
+    public static final int[] OUT_DEFAULT_ORDER = {
+            OUT_SLOT_SIGNAL, OUT_SLOT_READOUTS, OUT_SLOT_TYPE };
+
+    /**
+     * The default order, as the stored string.
+     *
+     * <p>Written literally rather than by encoding {@link #OUT_DEFAULT_ORDER} so the two can
+     * be compared: {@code checkOrderDefaults()} in this class would otherwise agree with
+     * itself no matter what.
+     */
+    public static final String OUT_DEFAULT_ORDER_STRING = "1,2,3";
+
+    /**
+     * Decodes {@link #KEY_OUT_ORDER}, repairing anything a hand-edited file or an older
+     * build might hold.
+     *
+     * <p>Never returns null, never throws, and always returns exactly
+     * {@link #OUT_SLOT_COUNT} ids: unknown values are dropped, duplicates are collapsed, and
+     * whatever is missing is appended in default order. A partial value therefore keeps the
+     * order the user did express instead of resetting the whole thing - the same tolerance
+     * {@link #decodeLayout(String)} shows the ring.
+     */
+    public static int[] decodeOutOrder(String stored) {
+        final java.util.List<Integer> ids = new java.util.ArrayList<>();
+        if (stored != null && !stored.isEmpty()) {
+            for (String piece : stored.split(",", -1)) {
+                final Integer id = parseIntOrNull(piece);
+                if (id == null || id < OUT_SLOT_SIGNAL || id > OUT_SLOT_COUNT) {
+                    continue;
+                }
+                if (!ids.contains(id)) {
+                    ids.add(id);
+                }
+            }
+        }
+        for (int id : OUT_DEFAULT_ORDER) {
+            if (!ids.contains(id)) {
+                ids.add(id);
+            }
+        }
+        final int[] out = new int[OUT_SLOT_COUNT];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = ids.get(i);
+        }
+        return out;
+    }
+
+    /** The inverse of {@link #decodeOutOrder(String)}. */
+    public static String encodeOutOrder(int[] order) {
+        final int[] safe = order == null ? OUT_DEFAULT_ORDER : order;
+        final int[] normalised = decodeOutOrder(joinInts(safe));
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < normalised.length; i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append(normalised[i]);
+        }
+        return sb.toString();
+    }
+
+    private static String joinInts(int[] values) {
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < values.length; i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append(values[i]);
+        }
+        return sb.toString();
+    }
+
+    /** The reverse of {@link #KEY_OUT_ORDER}: which position a slot sits at, 0 = nearest. */
+    public static int outOrderIndex(int[] order, int slot) {
+        for (int i = 0; i < order.length; i++) {
+            if (order[i] == slot) {
+                return i;
+            }
+        }
+        return OUT_SLOT_COUNT;
+    }
     /**
      * How large a trailing "A" is drawn against the rest of the network type, as
      * a percentage.
@@ -773,6 +1076,30 @@ public final class Prefs {
      * <p>Only the in-glyph bolt: the out-of-ring readings have their own sizes.
      */
     public static final String KEY_BOLT_SCALE = "bolt_scale";
+    /**
+     * Size of the ring's level-dot rows, as a percentage of the bead the stroke implies.
+     *
+     * <p><b>One key for the top and the bottom</b>, and that is the design rather than a
+     * shortcut: the two rows are the same ink - four beads threaded onto the ring's own
+     * openings - and the whole point of them is that they read as the ring cut into
+     * segments. A user who thinks the dots are too small means both rows; two settings
+     * would let the glyph be drawn with a thick row above and a thin one below, which is
+     * two different rings stacked in one icon.
+     *
+     * <p>The reference size is the one {@code TrioGeometry.arcRowDotR} derives from the
+     * stroke - bead <em>diameter equals the ring's thickness</em>. 100% keeps that exactly,
+     * so an install that never touches this key looks unchanged; below 100 the beads pull
+     * inside the stroke's width, above it they swell past it.
+     *
+     * <p>The opening's own room still caps the result: four beads and the arc's caps have
+     * to fit the gap, so a large value crowded against a thick stroke stops growing rather
+     * than overrunning the arc. That is why this multiplies a fitted radius instead of
+     * setting one.
+     *
+     * <p>Ring only. The capsule draws its rows across its openings by its own fit and the
+     * rectangle's columns are square, so neither has a bead to grow.
+     */
+    public static final String KEY_DOT_SCALE = "dot_scale";
     public static final String KEY_TYPE_WEIGHT = "type_weight";
     public static final String KEY_TRACK_ALPHA = "track_alpha";
 
@@ -1047,6 +1374,12 @@ public final class Prefs {
      * always drawn it, so an install that never touches this key looks unchanged.
      */
     public static final int DEF_BOLT_SCALE = 100;
+    /**
+     * 100%: a bead whose diameter is exactly the ring's thickness, which is what
+     * {@code TrioGeometry.arcRowDotR} derives, so an install that never touches this key
+     * looks unchanged.
+     */
+    public static final int DEF_DOT_SCALE = 100;
     public static final int DEF_TYPE_WEIGHT = 700;
     public static final int DEF_TRACK_ALPHA = 56;
 
@@ -1180,6 +1513,16 @@ public final class Prefs {
      */
     public static final int MIN_BOLT_SCALE = 60;
     public static final int MAX_BOLT_SCALE = 160;
+    /**
+     * The ring's level-dot span, in percent of the bead the stroke implies.
+     *
+     * <p>50 keeps four separate beads rather than one smeared line at the thinnest stroke;
+     * 160 is where the beads start reaching the arc's caps at the thickest one, so the
+     * rows stop reading as segments of the outline. The opening's own room caps the result
+     * inside this span, so the ceiling is a look limit rather than the mechanical one.
+     */
+    public static final int MIN_DOT_SCALE = 50;
+    public static final int MAX_DOT_SCALE = 160;
     public static final int MIN_TYPE_WEIGHT = 100;
     public static final int MAX_TYPE_WEIGHT = 900;
     public static final int MIN_TRACK_ALPHA = 0;
