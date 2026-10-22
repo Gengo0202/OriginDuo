@@ -166,6 +166,11 @@ release 开启 `isMinifyEnabled` + `isShrinkResources`，但 `proguard-rules.pro
 
 ### 发布流水线
 
+**写说明之前先读 [RELEASE-NOTES-STYLE.md](RELEASE-NOTES-STYLE.md)。** 那份规则规定了固定的三节
+结构（功能添加 / 功能修复 / 功能变更）、每一条的写法，以及五类绝对不能出现的内容 ——
+「未验证」「未包含」、issue 对照表、代码标识符、内部取舍的来龙去脉。这些不是风格偏好，
+都是实际写错过的地方。
+
 发布是**一条本地命令**，没有 CI。`release.ps1` 发完主仓后**自动**调用 `release-module.ps1`，
 把同一个 APK、同一份说明发到 LSPosed 模块仓（模块页的下载链接走这里），两个仓库永远同版本：
 

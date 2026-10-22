@@ -11,6 +11,7 @@
 | [SWITCHES-REVIEW.md](SWITCHES-REVIEW.md) | 开关与设置项的系统性复盘：每一项的门控是否与渲染一致、哪些是死代码、门禁逻辑的边界。 |
 | [CAPSULE-INTEGRATION.md](CAPSULE-INTEGRATION.md) | 胶囊样式的接入说明。 |
 | [ISSUE-CODE-REVIEW-2026-10-16.md](ISSUE-CODE-REVIEW-2026-10-16.md) | 针对一批 issue 的代码审查记录与修复方案。 |
+| [RELEASE-NOTES-STYLE.md](RELEASE-NOTES-STYLE.md) | **发布说明撰写规则**：固定三节结构、每条怎么写、绝对不要写的五种东西、写完自查表。写 `release-notes/` 下任何一份之前先看这个。 |
 | [ISSUES-2026-10-22.md](ISSUES-2026-10-22.md) | **待办与问题清单。当前唯一在维护的一份**：已关闭项、P0/P1/P2 待办、本轮踩过的坑。要看「接下来做什么」就看这里。 |
 | [history/1003-todo.md](history/1003-todo.md) | **历史交接记录（已归档）**。v1.5 → v1.7.1 的逐轮工作日志，2400 行。待办部分已作废；仍有价值的是开头那张**经验索引**——发布流程坑、PowerShell/编码坑、工装与换环境的约束。 |
 
@@ -22,7 +23,11 @@
 **这些文件必须入库。** 两个仓库的 Releases 页都只保留最新一版（旧 Release 会被脚本清理），
 所以删掉 Release 之后，这里就是旧版本 changelog 的**唯一副本**。
 
-发新版时照着已有文件的格式写一份放进该目录，然后：
+写之前先看 **[RELEASE-NOTES-STYLE.md](RELEASE-NOTES-STYLE.md)** —— 固定的三节结构
+（功能添加 / 功能修复 / 功能变更）、每一条该怎么写、哪五类内容绝对不能出现。
+以 `release-notes-1.7.2.md` 为范例。
+
+写好后放进该目录，然后：
 
 ```powershell
 git push origin main
