@@ -1115,6 +1115,36 @@ public final class Prefs {
      * growing rather than spilling over the outline.
      */
     public static final String KEY_WIFI_SCALE = "wifi_scale";
+
+    /**
+     * Drops the network type while Wi-Fi is connected, for issue 48.
+     *
+     * <p>The type label says what the cellular radio is doing. With Wi-Fi up it is a fact
+     * nobody is acting on, and it shares the bar with the arcs - which are the thing the user
+     * IS reading. So it steps aside while the arcs are on, and comes back the moment the
+     * connection drops or traffic moves to the cellular radio.
+     *
+     * <p>Off by default. A label that disappears on its own is surprising unless asked for,
+     * and an install that never touches this key must keep drawing what it drew.
+     */
+    public static final String KEY_TYPE_HIDE_ON_WIFI = "type_hide_on_wifi";
+
+    /**
+     * While charging, the ring's centre shows the percentage whatever the layout put there,
+     * returning to the layout's own content when the cable is pulled.
+     *
+     * <p>Not an edit to the layout: the layout is what the user arranged, and a charger that
+     * silently rewrote it would have to be undone again on unplug - losing whatever was there
+     * if the two ever disagreed. This is a lens over the centre zone for the duration of the
+     * charge, applied where the frame is resolved, so nothing stored changes.
+     *
+     * <p>Off by default. An install that never touches it keeps drawing its own arrangement,
+     * and the option exists because the wearer of a charger wants the number, not the signal
+     * row they can get at any time.
+     */
+    public static final String KEY_CHARGING_SHOWS_VALUE = "charging_shows_value";
+    public static final boolean DEF_CHARGING_SHOWS_VALUE = false;
+    public static final boolean DEF_TYPE_HIDE_ON_WIFI = false;
     /**
      * Size of the ring's level-dot rows, as a percentage of the bead the stroke implies.
      *

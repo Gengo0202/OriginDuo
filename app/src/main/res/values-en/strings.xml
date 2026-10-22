@@ -103,6 +103,8 @@
     <string name="show_sim_2_title">SIM 2 dots</string>
     <string name="show_sim_2_summary">Draw SIM 2\'s level as its own row of four dots.</string>
 
+    <string name="charging_shows_value_title">Show the percentage while charging</string>
+    <string name="charging_shows_value_summary">Puts the number in the ring’s middle while charging and restores the previous content on unplug. Ring style only.</string>
     <string name="show_value_title">Show battery number</string>
     <string name="show_value_summary">Show the battery percentage inside the ring.</string>
 
@@ -114,6 +116,8 @@
     <string name="dot_scale_title">In-ring signal dot size</string>
     <string name="dot_scale_summary">One size for both the top and the bottom row. The default 100% makes each dot as thick as the ring; the slider covers 50–160%, and growing stops where the openings run out of room.</string>
 
+    <string name="type_hide_on_wifi_title">Hide the network type on Wi-Fi</string>
+    <string name="type_hide_on_wifi_summary">Drops the label while Wi-Fi is connected; it comes back when the connection does.</string>
     <string name="show_mobile_type_title">Network type</string>
     <string name="show_mobile_type_summary">The 3G/4G/5G label, inside the ring or outside it.</string>
     <string name="mobile_type_off">Off</string>

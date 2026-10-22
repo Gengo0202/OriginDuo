@@ -1149,6 +1149,65 @@ public class IssueRegressionTest {
    TrioSettings on=s.copy();on.perfTempChargingOnly=true;
    ok("the charging-only temperature participates in equality",!s.equals(on));
   }
+  // 12. A charger can put the number in the ring centre (issue 34).
+  {
+   // The request: "replace whatever is displayed inside the ring with the battery percentage
+   // while charging, and return to the previous display when charging stops."
+   TrioSettings s = TrioSettings.defaults();
+   ok("the centre keeps its own content by default", !s.chargingShowsValue);
+   s.trioStyle = Prefs.STYLE_RING;
+   TrioSettings on = s.copy();
+   on.chargingShowsValue = true;
+   ok("the setting reaches the appearance", TrioAppearance.of(on).chargingShowsValue);
+   ok("and copy() carries it", on.copy().chargingShowsValue);
+   ok("and the bundle round-trips it",
+      TrioSettings.fromBundle(on.toBundle()).chargingShowsValue);
+   ok("and the remote key applies it",
+      TrioSettings.defaults().applyKeyFrom(on, Prefs.KEY_CHARGING_SHOWS_VALUE));
+   ok("it participates in equality", !s.equals(on));
+   // The override is per frame: charging must CHANGE the centre, unplugged must not, and the
+   // stored layout must never be touched - a charger that rewrote the arrangement would have
+   // to be undone on unplug, losing whatever had been there.
+   // The centre refuses signal rows (Prefs.zoneAccepts), so what sits there is the arcs -
+   // a piece the ring does allow in the middle, and one whose ink only needs a live level.
+   on.ringZones[TrioZones.Zone.CENTRE.ordinal()] = new int[] { Prefs.PART_WIFI };
+   final TrioAppearance ap = TrioAppearance.of(on);
+   ok("charging substitutes the percentage",
+      ap.ring(66, true, 3, "5G", 1).parts[TrioZones.Zone.CENTRE.ordinal()]
+      == Prefs.PART_VALUE);
+   ok("unplugged leaves the layout alone",
+      ap.ring(66, false, 3, "5G", 1).parts[TrioZones.Zone.CENTRE.ordinal()]
+      == Prefs.PART_WIFI);
+   // Negative control: the SAME layout with the switch off must keep the arcs in the middle,
+   // otherwise the assertion above could pass for the wrong reason.
+   final TrioSettings off = on.copy();
+   off.chargingShowsValue = false;
+   ok("with the switch off the layout keeps the centre",
+      TrioAppearance.of(off).ring(66, true, 3, "5G", 1)
+        .parts[TrioZones.Zone.CENTRE.ordinal()] == Prefs.PART_WIFI);
+   // Only the centre: the openings are why the ring was opened, and a mouth holding a
+   // different piece would change the outline as a side effect of a preference.
+   ok("the openings are untouched",
+      ap.ring(66, true, 3, "5G", 1).parts[0]
+      == ap.ring(66, false, 3, "5G", 1).parts[0]);
+  }
+  // 11. The network type can step aside while Wi-Fi is up (issue 48).
+  {
+   TrioSettings s = TrioSettings.defaults();
+   ok("the label stays put by default", !s.typeHideOnWifi
+      && !Prefs.DEF_TYPE_HIDE_ON_WIFI);
+   // The flag reaches the appearance, which is what the renderer consults.
+   TrioSettings hiding = s.copy();
+   hiding.typeHideOnWifi = true;
+   ok("the flag survives appearance resolution",
+      TrioAppearance.of(hiding).typeHideOnWifi);
+   ok("and copy() carries it", hiding.copy().typeHideOnWifi);
+   ok("and the bundle round-trips it",
+      TrioSettings.fromBundle(hiding.toBundle()).typeHideOnWifi);
+   ok("and the remote key applies it",
+      TrioSettings.defaults().applyKeyFrom(hiding, Prefs.KEY_TYPE_HIDE_ON_WIFI));
+   ok("it participates in equality", !s.equals(hiding));
+  }
   // 10. The Wi-Fi arcs have a size of their own, and it reaches the canvas.
   {
    // Before this there was no way to ask for larger arcs: the fit was derived from the
@@ -1448,6 +1507,16 @@ if ($preview -match 'TrioZones\.boxes\(highlight') {
     throw 'the preview is back on the hit regions'
 }
 Write-Output 'PASS: the preview highlight is its own geometry, not the hit region'
+# TrioAppearance is a pure snapshot of the settings. Whether Wi-Fi is CONNECTED is runtime
+# state, and folding it in there would make the preview (a fixed scene) and the bar (live)
+# draw one stored setting two ways - the defect that took a round to undo earlier. The flag
+# lives there; the decision belongs to the renderer, which already reads TrioState.
+$appea = [IO.File]::ReadAllText((Join-Path $trio 'TrioAppearance.java'))
+if ($appea -match 'TrioState\.' -or $appea -match 'WifiPresence\.') {
+    throw 'TrioAppearance reads runtime state, so preview and bar can disagree'
+}
+if ($appea -notmatch 'typeHideOnWifi') { throw 'the Wi-Fi suppression flag is gone' }
+Write-Output 'PASS: the network-type suppression is a flag, not a runtime read'
 # These pins check the Compose bridge only; recogniser timing and dialog rendering
 # still require Android. The runtime occupant used here is executed in wifi/clear.
 #

@@ -17,6 +17,7 @@
 # Scratch space: decompiled sources, uiautomator dumps, screenshots from
 # on-device verification. Nothing here is needed to build.
 /.tmp/
+/.local/
 /.zcode/
 
 # Build output

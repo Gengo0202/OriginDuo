@@ -206,6 +206,10 @@ public final class TrioSettings {
     public int boltScale;
     /** Wi-Fi arcs' size, in percent; see {@link Prefs#KEY_WIFI_SCALE}. */
     public int wifiScale;
+    /** Drop the network type while Wi-Fi is up; see {@link Prefs#KEY_TYPE_HIDE_ON_WIFI}. */
+    public boolean typeHideOnWifi;
+    /** While charging the ring centre shows the percentage; see {@link Prefs#KEY_CHARGING_SHOWS_VALUE}. */
+    public boolean chargingShowsValue;
     /**
      * Size of the ring's level-dot rows, as a percentage of the bead the stroke implies.
      *
@@ -342,6 +346,8 @@ public final class TrioSettings {
         s.typeSuffixScale = Prefs.DEF_TYPE_SUFFIX_SCALE;
         s.boltScale = Prefs.DEF_BOLT_SCALE;
         s.wifiScale = Prefs.DEF_WIFI_SCALE;
+        s.typeHideOnWifi = Prefs.DEF_TYPE_HIDE_ON_WIFI;
+        s.chargingShowsValue = Prefs.DEF_CHARGING_SHOWS_VALUE;
         s.dotScale = Prefs.DEF_DOT_SCALE;
         s.outOrder = Prefs.OUT_DEFAULT_ORDER.clone();
         s.typeWeight = Prefs.DEF_TYPE_WEIGHT;
@@ -521,6 +527,10 @@ public final class TrioSettings {
         s.wifiScale = Prefs.clamp(
                 p.getInt(Prefs.KEY_WIFI_SCALE, Prefs.DEF_WIFI_SCALE),
                 Prefs.MIN_WIFI_SCALE, Prefs.MAX_WIFI_SCALE);
+        s.typeHideOnWifi = p.getBoolean(Prefs.KEY_TYPE_HIDE_ON_WIFI,
+                Prefs.DEF_TYPE_HIDE_ON_WIFI);
+        s.chargingShowsValue = p.getBoolean(Prefs.KEY_CHARGING_SHOWS_VALUE,
+                Prefs.DEF_CHARGING_SHOWS_VALUE);
         s.dotScale = Prefs.clamp(
                 p.getInt(Prefs.KEY_DOT_SCALE, Prefs.DEF_DOT_SCALE),
                 Prefs.MIN_DOT_SCALE, Prefs.MAX_DOT_SCALE);
@@ -860,6 +870,8 @@ public final class TrioSettings {
         s.typeSuffixScale = typeSuffixScale;
         s.boltScale = boltScale;
         s.wifiScale = wifiScale;
+        s.typeHideOnWifi = typeHideOnWifi;
+        s.chargingShowsValue = chargingShowsValue;
         s.dotScale = dotScale;
         s.outOrder = outOrder == null ? Prefs.OUT_DEFAULT_ORDER.clone() : outOrder.clone();
         s.typeWeight = typeWeight;
@@ -945,6 +957,8 @@ public final class TrioSettings {
             case Prefs.KEY_TYPE_SUFFIX_SCALE: typeSuffixScale = src.typeSuffixScale; return true;
             case Prefs.KEY_BOLT_SCALE: boltScale = src.boltScale; return true;
             case Prefs.KEY_WIFI_SCALE: wifiScale = src.wifiScale; return true;
+            case Prefs.KEY_TYPE_HIDE_ON_WIFI: typeHideOnWifi = src.typeHideOnWifi; return true;
+            case Prefs.KEY_CHARGING_SHOWS_VALUE: chargingShowsValue = src.chargingShowsValue; return true;
             case Prefs.KEY_DOT_SCALE: dotScale = src.dotScale; return true;
             case Prefs.KEY_OUT_ORDER:
                 outOrder = src.outOrder == null
@@ -1086,6 +1100,10 @@ public final class TrioSettings {
         s.wifiScale = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_WIFI_SCALE, Prefs.DEF_WIFI_SCALE),
                 Prefs.MIN_WIFI_SCALE, Prefs.MAX_WIFI_SCALE);
+        s.typeHideOnWifi = bundle.getBoolean(Prefs.KEY_TYPE_HIDE_ON_WIFI,
+                Prefs.DEF_TYPE_HIDE_ON_WIFI);
+        s.chargingShowsValue = bundle.getBoolean(Prefs.KEY_CHARGING_SHOWS_VALUE,
+                Prefs.DEF_CHARGING_SHOWS_VALUE);
         s.dotScale = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_DOT_SCALE, Prefs.DEF_DOT_SCALE),
                 Prefs.MIN_DOT_SCALE, Prefs.MAX_DOT_SCALE);
@@ -1187,6 +1205,8 @@ public final class TrioSettings {
         b.putInt(Prefs.KEY_TYPE_SUFFIX_SCALE, typeSuffixScale);
         b.putInt(Prefs.KEY_BOLT_SCALE, boltScale);
         b.putInt(Prefs.KEY_WIFI_SCALE, wifiScale);
+        b.putBoolean(Prefs.KEY_TYPE_HIDE_ON_WIFI, typeHideOnWifi);
+        b.putBoolean(Prefs.KEY_CHARGING_SHOWS_VALUE, chargingShowsValue);
         b.putInt(Prefs.KEY_DOT_SCALE, dotScale);
         b.putString(Prefs.KEY_OUT_ORDER, Prefs.encodeOutOrder(outOrder));
         b.putInt(Prefs.KEY_TYPE_WEIGHT, typeWeight);
@@ -1289,6 +1309,8 @@ public final class TrioSettings {
                 && typeSuffixScale == s.typeSuffixScale
                 && boltScale == s.boltScale
                 && wifiScale == s.wifiScale
+                && typeHideOnWifi == s.typeHideOnWifi
+                && chargingShowsValue == s.chargingShowsValue
                 && dotScale == s.dotScale
                 && java.util.Arrays.equals(outOrder, s.outOrder)
                 && typeWeight == s.typeWeight

@@ -207,6 +207,17 @@ final class TrioRenderer {
         // switches themselves, which is what used to let the two arrangements
         // drift apart - and let the documentation drift from both.
         final TrioAppearance appearance = TrioAppearance.of(cfg);
+        // The network type steps aside while Wi-Fi is up. Decided HERE rather than in
+        // TrioAppearance because that class is a pure snapshot of the settings - whether Wi-Fi
+        // is connected this instant is runtime state, and folding it in there would make the
+        // preview (a fixed scene) and the bar (live) draw one stored setting two ways. The
+        // renderer already reads TrioState for the same reason.
+        //
+        // Suppressing the STRING rather than a per-arrangement flag is what keeps this in one
+        // place: every arrangement already treats "no type" as "draw none of it", so the ring,
+        // the rectangle and the capsule all obey without knowing this setting exists.
+        final String shownType = (appearance.typeHideOnWifi && wifiLevel >= 1)
+                ? null : mobileType;
         // The capsule's length belongs to the frame: every horizontal quantity below reads it
         // through TrioGeometry, and setting it here - once, before anything is drawn - is what
         // keeps the outline, the fill, the cells and the hit boxes on one shape.
@@ -249,14 +260,14 @@ final class TrioRenderer {
         canvas.scale(scale, scale);
 
         if (capsule) {
-            drawCapsuleLayout(canvas, level, charging, quickCharging, wifiLevel, mobileLevel, mobileType,
+            drawCapsuleLayout(canvas, level, charging, quickCharging, wifiLevel, mobileLevel, shownType,
                     slots, sims, role, fg, appearance);
         } else if (rect) {
             drawRectLayout(canvas, level, charging, quickCharging, wifiLevel, mobileLevel,
-                    slots, sims, mobileType, role, fg, appearance);
+                    slots, sims, shownType, role, fg, appearance);
         } else {
             drawRingLayout(canvas, level, charging, quickCharging, wifiLevel, mobileLevel,
-                    slots, sims, mobileType, role, fg, appearance);
+                    slots, sims, shownType, role, fg, appearance);
         }
 
         canvas.restoreToCount(save);

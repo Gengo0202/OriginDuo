@@ -225,6 +225,17 @@ public final class TrioAppearance {
     /** Wi-Fi arcs' size, in percent; see {@link Prefs#KEY_WIFI_SCALE}. */
     public final int wifiScale;
     /**
+     * The network type steps aside while Wi-Fi is up; see {@link Prefs#KEY_TYPE_HIDE_ON_WIFI}.
+     *
+     * <p>The FLAG only, not the decision: whether Wi-Fi is up this instant is runtime state,
+     * and this class is a pure snapshot of the settings - it is compiled against desktop shims
+     * by the offline harness, and it is read from the settings process as well as SystemUI.
+     * The renderer, which already reads {@code TrioState}, applies the flag to the frame.
+     */
+    public final boolean typeHideOnWifi;
+    /** While charging the ring centre shows the percentage; see {@link Prefs#KEY_CHARGING_SHOWS_VALUE}. */
+    public final boolean chargingShowsValue;
+    /**
      * Size of the ring's level-dot rows, as a percentage of the bead the stroke implies.
      *
      * <p>Ask {@link #dotScaleFactor()} rather than dividing by 100 at each call site, for
@@ -276,6 +287,8 @@ public final class TrioAppearance {
         typeMode = c.mobileTypeMode;
         typeInRing = c.mobileTypeMode == Prefs.MOBILE_TYPE_IN_RING;
         typeOutOfRing = c.mobileTypeMode == Prefs.MOBILE_TYPE_OUT_RING;
+        typeHideOnWifi = c.typeHideOnWifi;
+        chargingShowsValue = c.chargingShowsValue;
         perfPower = c.perfPower;
         perfTemp = c.perfTemp;
         perfTempChargingOnly = c.perfTempChargingOnly;
@@ -802,6 +815,21 @@ public final class TrioAppearance {
                 // refusal is enforced here rather than trusted to have arrived.
                 parts[z] = firstDrawableInk(a, a.ringZones[z], z,
                         level, charging, wifiLevel, mobileType);
+            }
+            // A charger puts the number in the middle, whatever the layout arranged there.
+            //
+            // An override of what this FRAME shows, not an edit to what is stored: the
+            // layout is the user's arrangement, and rewriting it on plug-in would then have
+            // to be undone on unplug - losing whatever had been there if the two ever
+            // disagreed. Resolved here, next to the other per-frame answers, so the drawing,
+            // the preview window and the settings screen all see the same centre.
+            //
+            // Only the centre: the openings are what the ring was opened for, and a mouth
+            // with something else in it would change the outline's shape as a side effect of
+            // a preference about a number.
+            if (charging && a.chargingShowsValue && level >= 0
+                    && parts[TrioZones.Zone.CENTRE.ordinal()] != Prefs.PART_VALUE) {
+                parts[TrioZones.Zone.CENTRE.ordinal()] = Prefs.PART_VALUE;
             }
             wifi = drawWifi = a.wifiInk(wifiLevel);
             bolt = charging && a.drawsBolt();

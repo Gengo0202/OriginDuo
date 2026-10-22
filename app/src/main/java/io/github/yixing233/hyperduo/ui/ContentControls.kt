@@ -66,6 +66,8 @@ internal enum class ContentControl(val owner: TrioSettingsPart) {
     Sim1(TrioSettingsPart.Mobile),
     Sim2(TrioSettingsPart.Mobile),
     Value(TrioSettingsPart.Value),
+    /** A charger puts the number in the ring's middle; see Prefs.KEY_CHARGING_SHOWS_VALUE. */
+    ChargingShowsValue(TrioSettingsPart.Value),
     Bolt(TrioSettingsPart.Bolt),
     /**
      * Network type, and the ONE piece that has a position choice of its own.
@@ -77,6 +79,8 @@ internal enum class ContentControl(val owner: TrioSettingsPart) {
      * rather than a way of expressing the same thing twice.
      */
     Type(TrioSettingsPart.Type),
+    /** Drops the label while the arcs are on; see Prefs.KEY_TYPE_HIDE_ON_WIFI. */
+    TypeHideOnWifi(TrioSettingsPart.Type),
     // --- readouts and fixed pieces --------------------------------------------
     Power(TrioSettingsPart.Readouts),
     Temperature(TrioSettingsPart.Readouts),
@@ -102,7 +106,9 @@ internal fun ContentControlRow(
     val a = TrioAppearance.of(settings)
     val master = listOf(a.glyph to R.string.master_title)
     val positioned = when (control) {
-        ContentControl.Value -> TrioZones.Part.VALUE
+        ContentControl.Value -> TrioZones.Part.VALUE
+        // Not a position row: it is a lens over the centre, not a place for the number.
+        ContentControl.ChargingShowsValue -> null
         ContentControl.Bolt -> TrioZones.Part.BOLT
         ContentControl.Type -> TrioZones.Part.TYPE
         ContentControl.Clock -> TrioZones.Part.CLOCK
@@ -180,6 +186,14 @@ internal fun ContentControlRow(
         ContentControl.Value -> ContentToggle(a.value, R.string.show_value_title,
             null,
             master) { value -> update { it.setShowValue(value) } }
+        // A charger puts the number in the ring's middle, whatever the layout arranged
+        // there; the centre returns to its own content on unplug. Ring style only - the
+        // capsule and the rectangle have no single "middle" to lend.
+        ContentControl.ChargingShowsValue -> ContentToggle(a.chargingShowsValue,
+            R.string.charging_shows_value_title,
+            R.string.charging_shows_value_summary, master) { value ->
+                update { it.setChargingShowsValue(value) }
+            }
         // The signal's position is no longer a switch: a card placed in a third is drawn
         // there, and a card that is not placed hands the reading back to MIUI. There is no
         // third state to choose between, so the old row is gone.
@@ -193,6 +207,13 @@ internal fun ContentControlRow(
             null,
             listOf(R.string.mobile_type_off, R.string.mobile_type_inside, R.string.mobile_type_outside),
             master) { value -> update { it.setMobileTypeMode(value) } }
+        // Only meaningful when the label is drawn somewhere: with the type off there is
+        // nothing to step aside.
+        ContentControl.TypeHideOnWifi -> ContentToggle(settings.typeHideOnWifi,
+            R.string.type_hide_on_wifi_title,
+            R.string.type_hide_on_wifi_summary, master) { value ->
+                update { it.setTypeHideOnWifi(value) }
+            }
         ContentControl.Power -> ContentToggle(settings.perfPower, R.string.perf_power_title,
             null, master) { value -> update { it.setPerfPower(value) } }
         ContentControl.Temperature -> ContentToggle(settings.perfTemp, R.string.perf_temp_title,

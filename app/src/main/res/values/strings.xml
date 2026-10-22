@@ -124,6 +124,8 @@
     <string name="show_mobile_summary">底部绘制四个电平点表示移动信号强度。</string>
 
 
+    <string name="charging_shows_value_title">充电时环内显示电量</string>
+    <string name="charging_shows_value_summary">充电时中间显示电量百分比，拔线后恢复原来的内容。仅环形样式。</string>
     <string name="show_value_title">显示电量数字</string>
     <string name="show_value_summary">环内显示电量百分比。</string>
 
@@ -135,6 +137,8 @@
     <string name="dot_scale_title">环内信号点大小</string>
     <string name="dot_scale_summary">上部与下部两排点共用。默认 100% 即点径等于环的粗细；可调 50–160%，放大会在上下的缺口里停止增长。</string>
 
+    <string name="type_hide_on_wifi_title">连 Wi-Fi 时隐藏网络类型</string>
+    <string name="type_hide_on_wifi_summary">Wi-Fi 已连接时隐藏，断开或切到流量后自动恢复。</string>
     <string name="show_mobile_type_title">网络类型</string>
     <string name="show_mobile_type_summary">3G/4G/5G 等文字，可放在环内或环外。</string>
     <string name="mobile_type_off">关闭</string>

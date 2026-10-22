@@ -267,6 +267,12 @@ class SettingsRepository(context: Context) {
     fun setBoltScale(value: Int) = writeInt(Prefs.KEY_BOLT_SCALE, value)
     /** Wi-Fi arcs' size, in percent; see [Prefs.KEY_WIFI_SCALE]. */
     fun setWifiScale(value: Int) = writeInt(Prefs.KEY_WIFI_SCALE, value)
+    /** Drop the network type while Wi-Fi is up; see [Prefs.KEY_TYPE_HIDE_ON_WIFI]. */
+    fun setTypeHideOnWifi(value: Boolean) =
+        writeBoolean(Prefs.KEY_TYPE_HIDE_ON_WIFI, value)
+    /** While charging the ring centre shows the percentage; see [Prefs.KEY_CHARGING_SHOWS_VALUE]. */
+    fun setChargingShowsValue(value: Boolean) =
+        writeBoolean(Prefs.KEY_CHARGING_SHOWS_VALUE, value)
 
     /**
      * Size of the ring's level-dot rows, in percent - see [Prefs.KEY_DOT_SCALE].
@@ -441,6 +447,8 @@ class SettingsRepository(context: Context) {
             // unbound would otherwise never reach SystemUI.
             prefs.putInt(Prefs.KEY_BOLT_SCALE, snapshot.boltScale)
             prefs.putInt(Prefs.KEY_WIFI_SCALE, snapshot.wifiScale)
+            prefs.putBoolean(Prefs.KEY_TYPE_HIDE_ON_WIFI, snapshot.typeHideOnWifi)
+            prefs.putBoolean(Prefs.KEY_CHARGING_SHOWS_VALUE, snapshot.chargingShowsValue)
             prefs.putInt(Prefs.KEY_DOT_SCALE, snapshot.dotScale)
             prefs.putString(Prefs.KEY_OUT_ORDER, Prefs.encodeOutOrder(snapshot.outOrder))
 
