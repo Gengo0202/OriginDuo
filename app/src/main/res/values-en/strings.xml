@@ -16,10 +16,6 @@
 
     <string name="tab_home">Home</string>
 
-    <string name="drawing_zone_edit">Adjust…</string>
-    <string name="drawing_zone_add">Add…</string>
-    <string name="drawing_zone_manage">Manage…</string>
-    <string name="drawing_priority_title">Show order for %1$s</string>
     <string name="drawing_priority_empty_summary">Nothing placed here yet. Use "Add component" below.</string>
     <string name="drawing_signal_out_of_ring_notice">The mobile signal is set to "outside the ring", so its dots are not drawn inside it.</string>
     <string name="drawing_priority_first">#%1$d · shown first</string>
@@ -37,7 +33,6 @@
     <string name="drawing_move_summary">%1$s is currently in %2$s. Moving it here takes it out of %2$s.</string>
     <string name="drawing_move_confirm">Move here</string>
     <string name="drawing_priority_add">Add component</string>
-    <string name="drawing_priority_done">Done</string>
     <string name="drawing_occupant_clock">Time</string>
     <string name="drawing_clock_fixed">The clock is fixed in the capsule; its size and weight can be adjusted.</string>
     <string name="drawing_pick_title">%1$s: currently %2$s</string>
@@ -80,7 +75,6 @@
     <string name="out_order_battery">Next to battery →</string>
     <string name="drawing_readout_sample_summary">Sample readings show content and weight; final sizing follows the status bar.</string>
     <string name="drawing_preview_hidden">Hidden outside</string>
-    <string name="drawing_power_preview_hint">Select Charging to preview power</string>
     <string name="drawing_theme_system">System theme</string>
     <string name="drawing_theme_light">Light background</string>
     <string name="drawing_theme_dark">Dark background</string>
@@ -224,15 +218,6 @@
     <string name="about_module_version">Module version: %1$s</string>
     <string name="about_scope_count">Scoped apps</string>
     <string name="about_enabled_count">Enabled toggles</string>
-    <string name="preview_title">Preview</string>
-    <string name="preview_charging">Charging</string>
-    <string name="preview_quick_charge">Fast</string>
-    <string name="preview_normal">Normal</string>
-    <string name="preview_no_wifi">No Wi-Fi</string>
-    <string name="preview_low">Saver</string>
-    <string name="preview_critical">Critical</string>
-    <string name="preview_out_type">Out type</string>
-    <string name="preview_out_signal">Out signal</string>
     <string name="about_title">About</string>
     <string name="about_summary">HyperDuo · an iPhone-Duo style trio status bar icon</string>
 
@@ -298,12 +283,7 @@
     <string name="ring_position_clock">Clock position</string>
     <string name="drawing_part_battery">Battery outline</string>
     <string name="drawing_part_ring">Battery ring</string>
-    <string name="ring_value_summary">Show the battery percentage in its reserved slot, including while charging. Outside the ring, the system percentage setting applies.</string>
-    <string name="ring_bolt_summary">Show a bolt in its reserved slot while charging, independently of the percentage. When off, charging indication follows the system settings.</string>
-    <string name="ring_signal_position_summary">Reserves an inside slot independently of inside/outside signal mode. Outside mode keeps this reservation.</string>
     <!-- The capsule's left column used to be reserved for the clock. -->
-    <string name="drawing_capsule_left_title">Left column</string>
-    <string name="drawing_capsule_left_summary">What the left column of the capsule shows; the time by default.</string>
     <!-- issue #38: the launcher entry is an activity-alias and can be switched off. -->
     <string name="about_hide_icon">Hide launcher icon</string>
     <string name="about_hide_icon_summary">Only the launcher entry; the LSPosed manager still opens these settings.</string>

@@ -1296,6 +1296,35 @@ private fun LazyListScope.aboutTab(
             )
         }
     }
+    // issue #38: the launcher entry is a separate activity-alias, so it can be switched off
+    // without touching the LSPosed entry point (which is the MainActivity itself, advertising
+    // MODULE_SETTINGS). Disabling the alias is the documented way to hide an icon: unlike a
+    // launcher-side shortcut it survives reboots, and unlike removing the filter it leaves the
+    // activity reachable from the manager.
+    //
+    // A card of its own, like the log switch above. It used to sit inside InfoCard's column,
+    // under the key/value rows - where its own inside margin and its 4dp title/summary gap
+    // had nothing to align against, so the row read as inset against the values above it and
+    // as a slab against the footnote below.
+    item {
+        Card {
+            val context = LocalContext.current
+            // Asked of the component rather than cached across launches: the alias can also be
+            // toggled by the system (a launcher cleaning up, a restore), and a remembered flag
+            // would then show a switch that disagrees with what the launcher does.
+            var iconHidden by remember(context) { mutableStateOf(isLauncherIconHidden(context)) }
+            SwitchPreference(
+                checked = iconHidden,
+                title = stringResource(R.string.about_hide_icon),
+                summary = stringResource(R.string.about_hide_icon_summary),
+                insideMargin = SettingsItemMargin,
+                onCheckedChange = { hide ->
+                    setLauncherIconHidden(context, hide)
+                    iconHidden = hide
+                },
+            )
+        }
+    }
     // The shell's own appearance. It lives on the About page rather than the drawing page
     // because it is about this screen, not about the glyph the drawing page edits.
     item {
@@ -1801,24 +1830,6 @@ private fun InfoCard(service: XposedService?) {
                 label = stringResource(R.string.info_android_version),
                 value = module.androidVersion,
                 bottomPadding = 12.dp,
-            )
-
-            // issue #38: the launcher entry is a separate activity-alias, so it can be
-            // switched off without touching the LSPosed entry point (which is the
-            // MainActivity itself, advertising MODULE_SETTINGS). Disabling the alias is
-            // the documented way to hide an icon: unlike a launcher-side shortcut it
-            // survives reboots, and unlike removing the filter it leaves the activity
-            // reachable from the manager.
-            var iconHidden by remember { mutableStateOf(isLauncherIconHidden(context)) }
-            SwitchPreference(
-                checked = iconHidden,
-                title = stringResource(R.string.about_hide_icon),
-                summary = stringResource(R.string.about_hide_icon_summary),
-                insideMargin = SettingsItemMargin,
-                onCheckedChange = { hide ->
-                    setLauncherIconHidden(context, hide)
-                    iconHidden = hide
-                },
             )
             Text(
                 text = stringResource(R.string.about_summary),

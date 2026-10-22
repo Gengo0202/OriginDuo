@@ -16,10 +16,6 @@
     <string name="drawing_quick_edit_title">快捷编辑</string>
     <string name="drawing_order_title">组件排序</string>
 
-    <string name="drawing_zone_edit">调整…</string>
-    <string name="drawing_zone_add">添加…</string>
-    <string name="drawing_zone_manage">管理…</string>
-    <string name="drawing_priority_title">%1$s 的显示顺序</string>
     <string name="drawing_priority_empty_summary">这一处还没有组件，点下面的「添加组件」</string>
     <string name="drawing_signal_out_of_ring_notice">移动信号已设为「环外」，信号点不会画在环内。</string>
     <string name="drawing_priority_first">第 %1$d 位 · 优先显示</string>
@@ -37,13 +33,10 @@
     <string name="drawing_move_summary">%1$s 目前在%2$s。移到这里后，%2$s 就不再有它了。</string>
     <string name="drawing_move_confirm">移到这里</string>
     <string name="drawing_priority_add">添加组件</string>
-    <string name="drawing_priority_done">完成</string>
     <string name="show_sim_1_title">显示卡一信号点</string>
     <string name="show_sim_1_summary">把卡一自己的信号画成一行四点。</string>
     <string name="show_sim_2_title">显示卡二信号点</string>
     <string name="show_sim_2_summary">把卡二自己的信号画成一行四点。</string>
-    <string name="ring_value_summary">环内显示电量百分比。</string>
-    <string name="ring_bolt_summary">充电时环内改为闪电图标。</string>
     <string name="ring_position_wifi">Wi-Fi 弧形的位置</string>
     <string name="ring_position_mobile">移动信号的位置</string>
     <string name="signal_mode_in_ring">环内</string>
@@ -61,7 +54,6 @@
     <string name="ring_position_type">网络类型的位置</string>
     <string name="ring_position_clock">时钟的位置</string>
     <string name="ring_position_native">归还系统</string>
-    <string name="ring_signal_position_summary">放环内就画成信号点；不放进环内时交回系统图标。</string>
     <string name="drawing_occupant_sim_1">卡一信号点</string>
     <string name="drawing_occupant_sim_2">卡二信号点</string>
     <string name="drawing_outside_title">环外组件</string>
@@ -74,7 +66,6 @@
     <string name="drawing_part_readouts">读数组</string>
     <string name="drawing_part_ring">环内组件</string>
     <string name="drawing_parts_title">组件外观</string>
-    <string name="drawing_power_preview_hint">充电时这里显示功率</string>
     <string name="drawing_preview_hidden">预览已隐藏</string>
     <string name="drawing_readout_sample_summary">环外读数组的示例，实际内容随状态变化。</string>
     <string name="drawing_theme_dark">深色</string>
@@ -245,15 +236,6 @@
     <string name="about_module_version">模块版本：%1$s</string>
     <string name="about_scope_count">作用域应用</string>
     <string name="about_enabled_count">已开启显示项</string>
-    <string name="preview_title">效果预览</string>
-    <string name="preview_charging">充电</string>
-    <string name="preview_quick_charge">快充</string>
-    <string name="preview_normal">正常</string>
-    <string name="preview_no_wifi">无 Wi-Fi</string>
-    <string name="preview_low">省电</string>
-    <string name="preview_critical">危险</string>
-    <string name="preview_out_type">环外类型</string>
-    <string name="preview_out_signal">环外信号</string>
     <string name="about_title">关于</string>
     <string name="about_summary">HyperDuo · 仿 iPhone Duo 三合一状态栏图标</string>
 
@@ -301,8 +283,6 @@
     <!-- Tooltip on a row greyed out by another setting; %1$s is that setting's name. -->
     <string name="gate_hint">需要先打开「%1$s」</string>
     <!-- The capsule's left column used to be reserved for the clock. -->
-    <string name="drawing_capsule_left_title">左列内容</string>
-    <string name="drawing_capsule_left_summary">胶囊左侧那一格放什么，默认是时间。</string>
     <!-- issue #38: the launcher entry is an activity-alias and can be switched off. -->
     <string name="about_hide_icon">隐藏桌面图标</string>
     <string name="about_hide_icon_summary">只关掉桌面入口，LSPosed 里仍可打开设置。</string>
