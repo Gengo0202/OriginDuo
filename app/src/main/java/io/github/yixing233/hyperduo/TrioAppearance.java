@@ -1,3 +1,13 @@
+/*
+ * Copyright (C) 2026 yixing233 and HyperDuo contributors
+ *
+ * This file is part of HyperDuo, released under the GNU General Public
+ * License v3.0. See the LICENSE file at the repository root, or
+ * <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package io.github.yixing233.hyperduo;
 
 /**
@@ -41,6 +51,11 @@ public final class TrioAppearance {
      * gauge - so only the tests that really care are written against it.
      */
     public final boolean capsule;
+    /** Interior cell nudges in design units; see Prefs.KEY_CAPSULE_LEFT_DX. */
+    public final int capsuleLeftDx;
+    public final int capsuleLeftDy;
+    public final int capsuleRightDx;
+    public final int capsuleRightDy;
     /**
      * True when {@link #style} is the ring.
      *
@@ -132,7 +147,9 @@ public final class TrioAppearance {
      */
     public final boolean perfPower;
     /** The battery temperature is drawn in the same out-of-ring strip. */
-    public final boolean perfTemp;
+    public final boolean perfTemp;
+    /** Drops the temperature unless a charger is attached; see {@link Prefs#KEY_PERF_TEMP_CHARGING_ONLY}. */
+    public final boolean perfTempChargingOnly;
     /**
      * Overall size of the two readouts, in percent of the adaptive fit.
      *
@@ -228,6 +245,10 @@ public final class TrioAppearance {
         style = c.trioStyle;
         rect = c.trioStyle == Prefs.STYLE_RECT;
         capsule = c.trioStyle == Prefs.STYLE_CAPSULE;
+        capsuleLeftDx = c.capsuleLeftDx;
+        capsuleLeftDy = c.capsuleLeftDy;
+        capsuleRightDx = c.capsuleRightDx;
+        capsuleRightDy = c.capsuleRightDy;
         ring = c.trioStyle == Prefs.STYLE_RING;
         slotted = !rect;
         ringZones = TrioSettings.copyZones(c.ringZones);
@@ -248,7 +269,8 @@ public final class TrioAppearance {
         typeInRing = c.mobileTypeMode == Prefs.MOBILE_TYPE_IN_RING;
         typeOutOfRing = c.mobileTypeMode == Prefs.MOBILE_TYPE_OUT_RING;
         perfPower = c.perfPower;
-        perfTemp = c.perfTemp;
+        perfTemp = c.perfTemp;
+        perfTempChargingOnly = c.perfTempChargingOnly;
         perfScale = c.perfScale;
         perfWeight = c.perfWeight;
         glyphScale = c.glyphScale;
@@ -795,8 +817,46 @@ public final class TrioAppearance {
      * renderer drawing the time and the hook hiding the bar's copy cannot
      * disagree - the failure being either a duplicated clock or none at all.
      */
+    /**
+     * Whether the capsule's left cell is drawing the CLOCK on this frame.
+     *
+     * <p>An empty list is the shipped look, where that cell holds the clock. A list with
+     * entries resolves through the same priority walk the drawing uses, so a piece that
+     * has nothing to show does not count as having taken the cell - which is what keeps
+     * the bar's own clock alive when the chosen reading is unavailable.
+     */
+    private boolean leftCellDrawsClock() {
+        final int[] order = ringZones[TrioZones.Zone.LEFT.ordinal()];
+        if (order.length == 0) {
+            return true;
+        }
+        // Asked of the FIRST entry, not of a priority walk: this class is compiled on its
+        // own by several harnesses and has no TrioState to read live readings from. What
+        // it CAN answer is which piece the cell is trying to show, and the renderer -
+        // which does have the readings - falls back to the bar's clock when that
+        // piece turns out to have no ink.
+        final int wanted = order[0];
+        return wanted == Prefs.PART_CLOCK;
+    }
+
     public boolean hidesStatusClock() {
-        return glyph && (capsule || (ring && hasRingPart(Prefs.PART_CLOCK)));
+        // The capsule hides the bar clock only while it is DRAWING the time. The left
+        // cell is the user's choice now, so a capsule that put something else there
+        // must leave the bar its clock - otherwise choosing Wi-Fi in that cell would
+        // simply delete the time from the phone.
+        // An EMPTY list means "nothing placed yet", which is the shipped look: the
+        // left cell draws the clock there too. That is why the empty case counts as
+        // the time rather than as nothing - reading it as nothing would bring the bar
+        // clock back beside a capsule that is still drawing the time, and the time
+        // would appear twice.
+        final int[] leftOrder = ringZones[TrioZones.Zone.LEFT.ordinal()];
+        // Whether the capsule is actually PUTTING INK in the left cell this frame, not
+        // whether the list names the clock. A short list can name a reading that has
+        // nothing to show - Wi-Fi with no connection, a type with no network - and
+        // hiding the bar clock in that case left the phone with no time at all. The
+        // rule is: the bar keeps its clock unless the capsule is really drawing one.
+        final boolean capsuleDrawsTheTime = capsule && leftCellDrawsClock();
+        return glyph && (capsuleDrawsTheTime || (ring && hasRingPart(Prefs.PART_CLOCK)));
     }
 
     /**
@@ -986,14 +1046,40 @@ public final class TrioAppearance {
             // Every band is a real cell now: the two openings hold either a reading or a dot
             // row, and only the interior is a reading's alone.
             for (TrioZones.Zone band : TrioZones.Zone.values()) {
-                parts[band.ordinal()] = firstInk(a, a.ringZones[band.ordinal()],
+                // The capsule reads FOUR cells: the three bands plus the left column, which
+            // is the layout's LEFT section. It used to be a key of its own, which is
+            // why this loop ran over the three bands only and the drawing dispatched the
+            // left column separately.
+            parts[band.ordinal()] = firstInk(a, a.ringZones[band.ordinal()],
                         level, charging, wifiLevel, mobileType);
             }
             for (TrioZones.Zone band : TrioZones.Zone.values()) {
                 dotBands[band.ordinal()] = isDotRow(parts[band.ordinal()]);
             }
 
-            final boolean anyPlaced = anyPlaced(parts)
+            // The left column comes from the layout's own section. The legacy
+            // capsule_left key is consulted only when that section is empty, so an
+            // install that set the column through the old control keeps its choice
+            // and the layout becomes the single source once the user picks something.
+            // From the layout, by the same priority rule the bands use: the first
+            // candidate that has ink this frame wins, the ones behind it are fallbacks.
+            //
+            // What it must NOT do is fall back to the old stand-alone capsule_left key -
+            // which is what it used to do when the list was empty. That key is never
+            // updated by the ordering rows, so the cell kept drawing whatever it held
+            // (Wi-Fi, in practice) no matter what the list said, and the preview looked
+            // stuck.
+            parts[TrioZones.Zone.LEFT.ordinal()] = firstInk(
+                    a, a.ringZones[TrioZones.Zone.LEFT.ordinal()],
+                    level, charging, wifiLevel, mobileType);
+            // "Has the user placed anything at all?" - which decides whether the
+            // shipped look is used. The LEFT cell counts only when the LAYOUT named
+            // something there: a cell filled from the list is a placement, while the
+            // clock this class puts there for an untouched install is not. Getting that
+            // distinction wrong is what made the cell ignore the list and draw the
+            // clock whatever the user picked.
+            final boolean anyPlaced = anyPlacedExceptLeft(parts)
+                    || a.ringZones[TrioZones.Zone.LEFT.ordinal()].length > 0
                     || dotBands[TrioZones.Zone.TOP.ordinal()]
                     || dotBands[TrioZones.Zone.BOTTOM.ordinal()];
             if (!anyPlaced) {
@@ -1017,6 +1103,12 @@ public final class TrioAppearance {
                 final boolean legacyDots = a.signalDots();
                 dotBands[TrioZones.Zone.TOP.ordinal()] = legacyDots;
                 dotBands[TrioZones.Zone.BOTTOM.ordinal()] = legacyDots;
+                // The left cell, which used to be a fixed column holding the time.
+                // An install that has never placed anything keeps exactly that: the
+                // clock, drawn where it always was. Without this the shipped look
+                // would come up with an empty left half and the time in the bar
+                // instead - a visible change on upgrade.
+                parts[TrioZones.Zone.LEFT.ordinal()] = Prefs.PART_CLOCK;
             }
 
             // A band that holds a dot row draws the row, not a reading: the row IS that band's
@@ -1030,10 +1122,20 @@ public final class TrioAppearance {
             dots = dotBands[TrioZones.Zone.TOP.ordinal()]
                     || dotBands[TrioZones.Zone.BOTTOM.ordinal()];
             dual = a.dualSimRows(false, charging, sims);
-            bolt = contains(parts, Prefs.PART_BOLT);
-            wifi = contains(parts, Prefs.PART_WIFI);
-            value = contains(parts, Prefs.PART_VALUE);
-            type = contains(parts, Prefs.PART_TYPE);
+            // The left column counts as a cell here. These four flags answer "does this
+            // piece have ink anywhere in the capsule on this frame", and the outline
+            // gap, the charged-fraction pass and the drawing all read them: leaving the
+            // left column out meant a piece placed there reported no ink, so nothing
+            // was drawn - the column looked simply empty (issues 44 and 47).
+            final int leftPart = parts[TrioZones.Zone.LEFT.ordinal()];
+            final boolean leftWifi = leftPart == Prefs.PART_WIFI;
+            final boolean leftValue = leftPart == Prefs.PART_VALUE;
+            final boolean leftType = leftPart == Prefs.PART_TYPE;
+            final boolean leftBolt = leftPart == Prefs.PART_BOLT;
+            bolt = contains(parts, Prefs.PART_BOLT) || leftBolt;
+            wifi = contains(parts, Prefs.PART_WIFI) || leftWifi;
+            value = contains(parts, Prefs.PART_VALUE) || leftValue;
+            type = contains(parts, Prefs.PART_TYPE) || leftType;
             // The clock is not a placement: it is always drawn, in its own column.
             clock = true;
         }
@@ -1049,7 +1151,17 @@ public final class TrioAppearance {
                     || id == Prefs.PART_MOBILE;
         }
 
-        private static boolean anyPlaced(int[] ids) {
+        /** As {@link #anyPlaced}, ignoring the capsule's LEFT cell. */
+    private static boolean anyPlacedExceptLeft(int[] ids) {
+        for (TrioZones.Zone zone : TrioZones.Zone.values()) {
+            if (zone != TrioZones.Zone.LEFT && ids[zone.ordinal()] != Prefs.PART_NONE) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean anyPlaced(int[] ids) {
             for (int id : ids) {
                 if (id != Prefs.PART_NONE) {
                     return true;

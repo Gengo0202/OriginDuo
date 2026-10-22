@@ -1,3 +1,13 @@
+/*
+ * Copyright (C) 2026 yixing233 and HyperDuo contributors
+ *
+ * This file is part of HyperDuo, released under the GNU General Public
+ * License v3.0. See the LICENSE file at the repository root, or
+ * <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package io.github.yixing233.hyperduo.ui
 
 import androidx.compose.runtime.Composable
@@ -70,6 +80,7 @@ internal enum class ContentControl(val owner: TrioSettingsPart) {
     // --- readouts and fixed pieces --------------------------------------------
     Power(TrioSettingsPart.Readouts),
     Temperature(TrioSettingsPart.Readouts),
+    ChargingTemp(TrioSettingsPart.Readouts),
     Clock(TrioSettingsPart.Clock),
 }
 
@@ -187,6 +198,11 @@ internal fun ContentControlRow(
             null, master) { value -> update { it.setPerfPower(value) } }
         ContentControl.Temperature -> ContentToggle(settings.perfTemp, R.string.perf_temp_title,
             null, master) { value -> update { it.setPerfTemp(value) } }
+        ContentControl.ChargingTemp -> ContentToggle(settings.perfTempChargingOnly,
+            R.string.perf_temp_charging_only_title,
+            R.string.perf_temp_charging_only_summary, master) { value ->
+                update { it.setPerfTempChargingOnly(value) }
+            }
         ContentControl.Clock -> Unit // Capsule time has a fixed slot.
     }
 }
@@ -335,9 +351,26 @@ private fun RingPositionControl(
     // reads where the piece sits and writes the same layout the editor's list edits. A piece
     // in more than one zone cannot happen (placing moves it), so one answer is enough.
     val zones = settings.ringZones
-    val placedAt = zones.indexOfFirst { it.contains(id) } + 1
-    val selected = if (part == TrioZones.Part.TYPE
-        && settings.mobileTypeMode == Prefs.MOBILE_TYPE_OUT_RING) 4 else placedAt
+    // The capsule has FOUR cells (top, left, right, bottom) and the ring has three, so
+    // the list of choices is per-arrangement. It used to be a fixed [native, top,
+    // centre, bottom]: in the capsule the cell at index 3 is the LEFT one, and that
+    // list labelled it 涓嬮儴 - a piece sitting on the left reported itself as being at
+    // the bottom. The order here is also the order the reader sees, so it has to match
+    // the tab strip.
+    val slots = if (settings.trioStyle == Prefs.STYLE_CAPSULE) {
+        listOf(TrioZones.Zone.TOP, TrioZones.Zone.LEFT, TrioZones.Zone.CENTRE,
+            TrioZones.Zone.BOTTOM)
+    } else {
+        listOf(TrioZones.Zone.TOP, TrioZones.Zone.CENTRE, TrioZones.Zone.BOTTOM)
+    }
+    // The stored index is a ZONE ordinal, and the choices are listed in [slots] order.
+    // Translate one into the other rather than assuming they agree - that assumption
+    // is what produced the wrong label.
+    val placedAt = zones.indexOfFirst { it.contains(id) }
+    val slotIndex = if (placedAt < 0) 0 else slots.indexOf(TrioZones.Zone.entries[placedAt]) + 1
+    val outOfRing = part == TrioZones.Part.TYPE
+            && settings.mobileTypeMode == Prefs.MOBILE_TYPE_OUT_RING
+    val selected = if (outOfRing) slots.size + 1 else slotIndex
     // The row's title is the SLOT it picks, never the component's own switch name.
     // Reusing the switch title put "显示移动信号点" above "显示移动信号点" - two rows
     // with the same name and different meanings, which reads as a duplicate bug rather
@@ -354,8 +387,15 @@ private fun RingPositionControl(
     }
     ContentChoice(selected, title,
         null,
-        listOf(R.string.ring_position_native, R.string.drawing_hint_top,
-            R.string.drawing_hint_centre, R.string.drawing_hint_bottom) +
+        listOf(R.string.ring_position_native) + slots.map { zone ->
+            when (zone) {
+                TrioZones.Zone.TOP -> R.string.drawing_hint_top
+                TrioZones.Zone.LEFT -> R.string.drawing_hint_left
+                TrioZones.Zone.CENTRE -> if (settings.trioStyle == Prefs.STYLE_CAPSULE)
+                    R.string.drawing_hint_right else R.string.drawing_hint_centre
+                else -> R.string.drawing_hint_bottom
+            }
+        } +
             if (part == TrioZones.Part.TYPE) listOf(R.string.mobile_type_outside) else emptyList(),
         listOf(settings.enabled to R.string.master_title),
         // A signal row cannot be put in the middle band - see [middleBlocked]. The row is

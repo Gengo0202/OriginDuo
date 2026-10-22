@@ -293,4 +293,26 @@
 
     <!-- Tooltip on a row greyed out by another setting; %1$s is that setting's name. -->
     <string name="gate_hint">需要先打开「%1$s」</string>
+    <!-- The capsule's left column used to be reserved for the clock. -->
+    <string name="drawing_capsule_left_title">左列内容</string>
+    <string name="drawing_capsule_left_summary">胶囊左侧那一格放什么，默认是时间。</string>
+    <!-- issue #38: the launcher entry is an activity-alias and can be switched off. -->
+    <string name="about_hide_icon">隐藏桌面图标</string>
+    <string name="about_hide_icon_summary">只关掉桌面入口，LSPosed 里仍可打开设置。</string>
+    <!-- issue #45: show the temperature only while a charger is attached. -->
+    <string name="perf_temp_charging_only_title">温度仅充电时显示</string>
+    <string name="perf_temp_charging_only_summary">开启后温度随功率一起出现和消失。</string>
+    <string name="drawing_hint_left">左部</string>
+    <string name="drawing_hint_right">右部</string>
+        
+    
+    <!-- Capsule interior cell nudges, in design units. -->
+    <string name="capsule_nudge_left_dx_title">左格水平位置</string>
+    <string name="capsule_nudge_left_dx_summary">正值右移，负值左移。</string>
+    <string name="capsule_nudge_left_dy_title">左格垂直位置</string>
+    <string name="capsule_nudge_left_dy_summary">正值下移，负值上移。</string>
+    <string name="capsule_nudge_right_dx_title">右格水平位置</string>
+    <string name="capsule_nudge_right_dx_summary">正值右移，负值左移。</string>
+    <string name="capsule_nudge_right_dy_title">右格垂直位置</string>
+    <string name="capsule_nudge_right_dy_summary">正值下移，负值上移。</string>
 </resources>

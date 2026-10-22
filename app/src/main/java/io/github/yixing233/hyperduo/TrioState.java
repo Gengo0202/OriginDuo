@@ -1,3 +1,13 @@
+/*
+ * Copyright (C) 2026 yixing233 and HyperDuo contributors
+ *
+ * This file is part of HyperDuo, released under the GNU General Public
+ * License v3.0. See the LICENSE file at the repository root, or
+ * <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package io.github.yixing233.hyperduo;
 
 import android.content.Context;
@@ -525,7 +535,12 @@ final class TrioState {
                 + " dark=" + Integer.toHexString(darkColor)
                 + " intensity=" + darkIntensity
                 + " -> " + Integer.toHexString(resolved);
-        if (!note.equals(sLastTint)) {
+        // A diagnostic, not a state change: it rides on every foreground() call,
+        // and MIUI's intensity arrives with per-frame float jitter, so an
+        // unconditional INFO here floods logcat on the draw path (issue #40).
+        // Same rule as every other dump in TrioHooks: only when the user asked
+        // for verbose logging.
+        if (TrioHooks.debugLog() && !note.equals(sLastTint)) {
             sLastTint = note;
             TrioHooks.log(TrioHooks.LOG_INFO, note);
         }

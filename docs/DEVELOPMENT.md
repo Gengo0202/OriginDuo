@@ -1883,6 +1883,7 @@ hook 组 10 拦 `setIsHideBattery`，把值记进 `TrioState.sIslandHideBattery`
 ## 目录
 
 ```
+LICENSE                                 GNU GPL v3.0 全文（本仓库协议，源码的 SPDX 头指向它）
 app\build.gradle.kts                   Gradle 模块配置（namespace io.github.yixing233.hyperduo）
 app\src\main\java\io\github\yixing233\hyperduo\   hook 源码（Java）
 app\src\main\java\io\github\yixing233\hyperduo\ui\ 设置界面（Kotlin + Compose + Miuix）
@@ -1907,6 +1908,17 @@ work\overview\                         全部支持样式的状态总览图（�
 .tools\                                JDK / Gradle / SDK / 本地 Maven 仓库
 .ref\                                  参考模块与 libxposed 源码（分析用，不入库）
 ```
+
+### 协议
+
+本仓库以 **GNU GPL v3.0**（`GPL-3.0-only`）发布，全文在根目录的 `LICENSE`。
+
+- 每个源码文件（`app/src` 下的 `.java` 与 `.kt`、`tests/` 里的 `.java`）头部都有一段
+  `SPDX-License-Identifier: GPL-3.0-only` 注释。新增文件照抄同一段头。
+- 改协议不是改一个文件：`LICENSE`、`README.md`、`module-README.md`（发布到 LSPosed 模块仓的
+  首页）三处写的都是它，必须一起动。
+- GPL 的传染性对**分发**生效，不分发就不触发。自己构建、自己装在手机上，不需要公开任何东西。
+- 分发 APK 时（第 6 条）要同时给出对应源码。release 的 tag 就是这个对应关系，别删 tag。
 
 ## 测试
 

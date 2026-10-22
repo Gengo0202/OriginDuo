@@ -1,7 +1,7 @@
 param(
     [string]$SourceDirectory,
-    [ValidateSet('signal','tint','assignment','wifi','clear','clock','centre','dots','outorder','capsule','isolation')]
-    [string[]]$Suite = @('signal','tint','assignment','wifi','clear','clock','centre','dots','outorder','capsule','isolation')
+    [ValidateSet('signal','tint','assignment','wifi','clear','clock','centre','dots','outorder','capsule','isolation','nudges')]
+    [string[]]$Suite = @('signal','tint','assignment','wifi','clear','clock','centre','dots','outorder','capsule','isolation','nudges')
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -328,6 +328,10 @@ public class IssueRegressionTest {
    TrioSettings s=TrioSettings.defaults();s.trioStyle=style;s.showValue=false;s.valueCentred=true;
    s.dualSim=false;s.mobileTypeMode=Prefs.MOBILE_TYPE_IN_RING;
    for(TrioZones.Zone zone:TrioZones.Zone.values()) {
+   // LEFT is the capsule's fourth cell; the ring and the rectangle have three.
+   // Asserting a clear on a cell an arrangement does not have would be asserting
+   // a shape it was never given, so the suite skips it there.
+   if(zone==TrioZones.Zone.LEFT && style!=Prefs.STYLE_CAPSULE) { continue; }
     TrioZones.Assignment a=TrioZones.assign(zone,style==Prefs.STYLE_RECT,null,s,2);
     ok("zone can be cleared "+style+"/"+zone,a!=null);
     for(boolean charging:new boolean[]{false,true})for(int wifi:new int[]{-1,3}) {
@@ -414,6 +418,55 @@ public class IssueRegressionTest {
   TrioConfig.settings.trioStyle=Prefs.STYLE_CAPSULE;TrioHooks.applyClockVisibility();
   TrioConfig.settings.enabled=false;TrioHooks.applyClockVisibility();
   ok("master off restores native clock",!TrioHooks.sClockHidden && clock.value==0);
+   // The left column is the user's now (issues 44 and 47). A capsule that puts
+   // something else there must leave the bar its clock: hiding the clock is only
+   // correct while the capsule is the one drawing the time.
+   TrioConfig.settings=TrioSettings.defaults();TrioConfig.settings.trioStyle=Prefs.STYLE_CAPSULE;
+   TrioConfig.settings.enabled=true;
+   TrioConfig.settings.ringZones=new int[][]{{},{},{},{Prefs.PART_CLOCK}};
+   ok("a capsule whose left cell holds the clock hides the bar clock",
+      TrioConfig.appearance().hidesStatusClock());
+   TrioConfig.settings.ringZones=new int[][]{{},{},{},{Prefs.PART_WIFI}};
+   ok("a left cell of Wi-Fi leaves the bar clock alone",
+      !TrioConfig.appearance().hidesStatusClock());
+   TrioConfig.settings.ringZones=new int[][]{{},{},{},{Prefs.PART_VALUE}};
+   ok("so does the percentage",!TrioConfig.appearance().hidesStatusClock());
+   TrioConfig.settings.ringZones=new int[][]{{},{},{},{}};
+   ok("an empty left list is the shipped look and keeps the clock",
+      TrioConfig.appearance().hidesStatusClock());
+   TrioConfig.settings.ringZones=new int[][]{{},{},{},{Prefs.PART_CLOCK,Prefs.PART_VALUE}};
+   ok("the left cell draws its first entry",
+      TrioConfig.appearance().capsule(73,false,3,"5GA",1)
+              .parts[TrioZones.Zone.LEFT.ordinal()]==Prefs.PART_CLOCK);
+   ok("and never the retired stand-alone setting",
+      TrioConfig.appearance().capsule(73,false,3,"5GA",1)
+              .parts[TrioZones.Zone.LEFT.ordinal()]!=Prefs.PART_WIFI);
+   TrioConfig.settings.ringZones=new int[][]{{},{},{},{Prefs.PART_VALUE}};
+   ok("a laid-out left cell is not overridden by the shipped look",
+      TrioConfig.appearance().capsule(73,false,3,"5GA",1)
+              .parts[TrioZones.Zone.LEFT.ordinal()]==Prefs.PART_VALUE);
+   TrioConfig.settings.mobileTypeMode=Prefs.MOBILE_TYPE_IN_RING;
+   TrioConfig.settings.ringZones=new int[][]{{},{},{},{Prefs.PART_TYPE,Prefs.PART_VALUE}};
+   ok("and the order decides between two live candidates",
+      TrioConfig.appearance().capsule(73,false,3,"5GA",1)
+              .parts[TrioZones.Zone.LEFT.ordinal()]==Prefs.PART_TYPE);
+
+
+   // issue 45: the temperature can be tied to the charger. A separate key, so an
+   // install that already shows the temperature keeps it after the upgrade - which
+   // is why the default has to stay off.
+   TrioSettings tempOff=TrioSettings.defaults();
+   ok("temperature is not tied to the charger by default",
+      !tempOff.perfTempChargingOnly && !Prefs.DEF_PERF_TEMP_CHARGING_ONLY);
+   tempOff.perfTemp=true;tempOff.perfTempChargingOnly=true;
+   ok("the flag survives appearance resolution",
+      TrioAppearance.of(tempOff).perfTempChargingOnly);
+   ok("and can be carried alone",
+      !TrioAppearance.of(tempOff.copy()).perfTempChargingOnly==false);
+   TrioSettings tempCopy=tempOff.copy();
+   ok("copy() carries the flag",tempCopy.perfTempChargingOnly);
+   ok("and the bundle round-trips it",
+      TrioSettings.fromBundle(tempOff.toBundle()).perfTempChargingOnly);
  }
  /**
   * A signal row may not be placed in the ring's middle band, and every path that could
@@ -993,8 +1046,207 @@ public class IssueRegressionTest {
    };
   }
  }
+ /**
+  * Every stored setting is a field the settings screen can actually see change.
+  *
+  * <p>The defect that put this here: the four capsule interior nudges were wired through
+  * defaults(), from(), copy(), applyKeyFrom() and both bundle directions, and were then
+  * left out of equals(). The settings page holds its snapshot in a mutableStateOf whose
+  * default policy is structural equality, so a write that moved only a nudge produced a
+  * value Compose considered identical and scheduled no recomposition: the thumb jumped
+  * back, the number stayed put, and the glyph did move - because the hooked process reads
+  * the same values through its own path. Dragging any OTHER slider made the page
+  * recompose for a reason, and the stale rows caught up. That is the "it only updates
+  * when I touch another slider" report, and nothing in the module could see it.
+  *
+  * <p>So this suite does not test the four fields. It tests the RULE that produced them:
+  * every public instance field must be compared by equals() and folded into hashCode().
+  * The next setting added to the snapshot is covered the moment it is declared, without
+  * anyone remembering this list exists.
+  */
+ static void nudges() {
+  // 1. The contract, over the real class rather than a hand-written list: every public
+  //    scalar setting has to be able to produce a snapshot equals() calls different.
+  {
+   TrioSettings base=TrioSettings.defaults();
+   java.lang.reflect.Field[] fields=TrioSettings.class.getFields();
+   int compared=0;
+   for(java.lang.reflect.Field f:fields) {
+    int modifiers=f.getModifiers();
+    if(!java.lang.reflect.Modifier.isPublic(modifiers)
+       || java.lang.reflect.Modifier.isStatic(modifiers)) {
+     continue;
+    }
+    // Arrays are compared by deepEquals inside the class and are covered by their own
+    // suites; this sweep is about the scalars, which are the ones a list can silently
+    // stop growing.
+    Class<?> t=f.getType();
+    if(t!=int.class && t!=boolean.class) {
+     continue;
+    }
+    TrioSettings moved=base.copy();
+    try {
+     if(t==boolean.class) {
+      f.set(moved,Boolean.valueOf(!((Boolean)f.get(base)).booleanValue()));
+     } else {
+      // One away from the stored value, in whichever direction has room: an int that
+      // sits on some ceiling still has to be distinguishable from its neighbour.
+      int now=f.getInt(base);
+      f.set(moved,Integer.valueOf(now+1));
+      if(now+1>9999) {
+       f.set(moved,Integer.valueOf(now-1));
+      }
+     }
+    } catch(IllegalAccessException ex) {
+     throw new AssertionError("cannot move "+f.getName(),ex);
+    }
+    ok("equals() sees a change in "+f.getName(),!base.equals(moved));
+    compared++;
+   }
+   ok("the sweep reached the whole snapshot",compared>=40);
+   // The other half of the contract: values equals() calls the same must hash the same.
+   TrioSettings again=TrioSettings.defaults();
+   ok("equal snapshots agree on their hash",base.equals(again)
+      && base.hashCode()==again.hashCode());
+  }
+  // 2. The four nudges by name, so a rename cannot quietly drop them from the sweep.
+  {
+   TrioSettings s=TrioSettings.defaults();
+   ok("a fresh install does not nudge",s.capsuleLeftDx==Prefs.DEF_CAPSULE_NUDGE
+      && s.capsuleLeftDy==Prefs.DEF_CAPSULE_NUDGE
+      && s.capsuleRightDx==Prefs.DEF_CAPSULE_NUDGE
+      && s.capsuleRightDy==Prefs.DEF_CAPSULE_NUDGE);
+   for(String name:new String[]{"capsuleLeftDx","capsuleLeftDy","capsuleRightDx","capsuleRightDy"}) {
+    TrioSettings moved=s.copy();
+    setNudge(moved,name,3);
+    ok(name+" is a stored setting, not a derived one",!s.equals(moved));
+    ok(name+" survives copy()",currentNudge(moved.copy(),name)==3);
+    ok(name+" survives the bundle",currentNudge(
+       TrioSettings.fromBundle(moved.toBundle()),name)==3);
+    ok(name+" is applied from the remote key",
+       applyNudgeKey(name,prefKeyFor(name),s));
+   }
+   // 3. The clamp is on both doors: the stored file and the broadcast extras.
+   Map prefs=new Map();
+   prefs.m.put(Prefs.KEY_CAPSULE_LEFT_DX,Integer.valueOf(9999));
+   prefs.m.put(Prefs.KEY_CAPSULE_LEFT_DY,Integer.valueOf(-9999));
+   ok("a wild x nudge is clamped on read",
+      TrioSettings.from(prefs,3f).capsuleLeftDx==Prefs.MAX_CAPSULE_NUDGE_X);
+   ok("a wild y nudge is clamped on read",
+      TrioSettings.from(prefs,3f).capsuleLeftDy==Prefs.MIN_CAPSULE_NUDGE);
+   android.os.Bundle wild=new android.os.Bundle();
+   wild.putInt(Prefs.KEY_CAPSULE_RIGHT_DX,9999);
+   // The RIGHT cell has its own mirrored span, so a wild value lands on ITS ceiling.
+   ok("the broadcast extras are clamped too",
+      TrioSettings.fromBundle(wild).capsuleRightDx==Prefs.MAX_CAPSULE_NUDGE_X_RIGHT);
+   // 4. The appearance carries them, since the renderer reads that view of the snapshot.
+   TrioSettings nudged=TrioSettings.defaults();nudged.capsuleRightDy=5;
+   ok("the renderer sees the nudge",TrioAppearance.of(nudged).capsuleRightDy==5);
+  }
+  // 5. issue 45's flag, found by the same audit and left out of equals() too.
+  {
+   TrioSettings s=TrioSettings.defaults();
+   TrioSettings on=s.copy();on.perfTempChargingOnly=true;
+   ok("the charging-only temperature participates in equality",!s.equals(on));
+  }
+  // 7. A capsule offset must mean the SAME thing in the preview and on the status bar.
+  {
+   // The defect: the interior was divided by the strings actually drawn, and the settings
+   // preview runs a fixed scene while the bar shows live readings. Same stored offset, two
+   // different pictures - a style that cannot be reproduced in the preview is one the user
+   // cannot configure. The split is now keyed off the KIND of piece, so it is a function of
+   // the layout alone.
+   TrioSettings s1=TrioSettings.defaults();
+   s1.trioStyle=Prefs.STYLE_CAPSULE;
+   s1.ringZones=Prefs.decodeLayout("||"+Prefs.PART_VALUE+"|"+Prefs.PART_TYPE);
+   TrioSettings s2=s1.copy();
+   // Same layout, completely different live readings - the sort of difference the preview
+   // and the bar genuinely have.
+   s1.valueSize=50; s2.valueSize=50;
+   ok("the layout, not the reading, decides the split",
+      java.util.Arrays.deepEquals(TrioAppearance.of(s1).ringZones,
+                                  TrioAppearance.of(s2).ringZones));
+   // A different PIECE must change the split, or the fix went too far and made it constant.
+   TrioSettings s3=TrioSettings.defaults();
+   s3.trioStyle=Prefs.STYLE_CAPSULE;
+   s3.ringZones=Prefs.decodeLayout("||"+Prefs.PART_VALUE+"|"+Prefs.PART_WIFI);
+   ok("a different piece in the left cell is a different layout",
+      !java.util.Arrays.equals(TrioAppearance.of(s1).ringZones[3],
+                               TrioAppearance.of(s3).ringZones[3]));
+  }
+  // 6. Each capsule cell has the horizontal travel its own edge implies.
+  {
+   // The cells lean outwards, so each travels INTO the interior and barely past its own
+   // edge. Sharing one span handed both of them most of their travel in the direction they
+   // cannot use, which is the "the slider moves a bit then stops" report.
+   // Both spans are symmetric and equal: neither end is bounded by the outline any more,
+   // because the draw is not clipped to it and overhanging a reading is a thing users ask
+   // for. What has to hold is that each cell can travel a real distance in BOTH directions -
+   // the earlier cuts failed that by giving most of the span to one side.
+   ok("the left cell travels both ways",
+      Prefs.MIN_CAPSULE_NUDGE_X < -10 && Prefs.MAX_CAPSULE_NUDGE_X > 10);
+   ok("and so does the right cell",
+      Prefs.MIN_CAPSULE_NUDGE_X_RIGHT < -10 && Prefs.MAX_CAPSULE_NUDGE_X_RIGHT > 10);
+   ok("the two spans are equal",
+      Prefs.MIN_CAPSULE_NUDGE_X == Prefs.MIN_CAPSULE_NUDGE_X_RIGHT
+      && Prefs.MAX_CAPSULE_NUDGE_X == Prefs.MAX_CAPSULE_NUDGE_X_RIGHT);
+   // ...and wider than the safe interior, so a reading really can overhang the outline.
+   ok("the span reaches past the interior's own margin",
+      Prefs.MIN_CAPSULE_NUDGE_X <= -20 && Prefs.MAX_CAPSULE_NUDGE_X >= 20);
+   // Both cells start at zero, which is inside both spans - a default outside its own
+   // slider range would be a row that cannot represent its own value.
+   ok("zero is inside both horizontal spans",
+      Prefs.MIN_CAPSULE_NUDGE_X < 0 && Prefs.MAX_CAPSULE_NUDGE_X > 0
+      && Prefs.MIN_CAPSULE_NUDGE_X_RIGHT < 0 && Prefs.MAX_CAPSULE_NUDGE_X_RIGHT > 0);
+   // The readers clamp each cell to ITS OWN span on both doors: a value the right slider
+   // can produce must survive the stored read and the broadcast read, or it snaps back.
+   Map right=new Map();
+   right.m.put(Prefs.KEY_CAPSULE_RIGHT_DX,Integer.valueOf(Prefs.MIN_CAPSULE_NUDGE_X_RIGHT));
+   ok("the stored read keeps the right cell at its own minimum",
+      TrioSettings.from(right,3f).capsuleRightDx==Prefs.MIN_CAPSULE_NUDGE_X_RIGHT);
+   android.os.Bundle rightBundle=new android.os.Bundle();
+   rightBundle.putInt(Prefs.KEY_CAPSULE_RIGHT_DX,Prefs.MIN_CAPSULE_NUDGE_X_RIGHT);
+   ok("and so does the broadcast read",
+      TrioSettings.fromBundle(rightBundle).capsuleRightDx==Prefs.MIN_CAPSULE_NUDGE_X_RIGHT);
+   // While a value only the LEFT span allows is trimmed for the right cell, which is what
+   // keeps the two from silently sharing a range again.
+   Map shared=new Map();
+   shared.m.put(Prefs.KEY_CAPSULE_RIGHT_DX,Integer.valueOf(Prefs.MAX_CAPSULE_NUDGE_X));
+   ok("a left-only value is trimmed for the right cell",
+      TrioSettings.from(shared,3f).capsuleRightDx==Prefs.MAX_CAPSULE_NUDGE_X_RIGHT);
+  }
+ }
+ /** Writes one of the four nudge fields by name, so a rename fails loudly here. */
+ static void setNudge(TrioSettings s,String name,int value) {
+  try { TrioSettings.class.getField(name).setInt(s,value); }
+  catch(Exception e) { throw new AssertionError("missing field "+name,e); }
+ }
+ /**
+  * The storage key a nudge field is written under, read off the Prefs constant so this
+  * cannot drift from the class it describes: capsuleLeftDx -> KEY_CAPSULE_LEFT_DX.
+  */
+ static String prefKeyFor(String field) {
+  String constant="KEY_"+field.replaceAll("([A-Z])","_$1").toUpperCase(java.util.Locale.ROOT);
+  try { return (String)Prefs.class.getField(constant).get(null); }
+  catch(Exception e) { throw new AssertionError("missing constant "+constant,e); }
+ }
+ /**
+  * Drives the remote-preference path: TrioConfig applies ONE key at a time, so a key that
+  * applyKeyFrom() does not recognise silently repaints nothing.
+  */
+ static boolean applyNudgeKey(String field,String key,TrioSettings src) {
+  TrioSettings moved=src.copy();
+  setNudge(moved,field,3);
+  TrioSettings into=src.copy();
+  return into.applyKeyFrom(moved,key) && currentNudge(into,field)==3;
+ }
+ /** Reads one of the four nudge fields by name, so a rename fails loudly here. */
+ static int currentNudge(TrioSettings s,String name) {
+  try { return TrioSettings.class.getField(name).getInt(s); }
+  catch(Exception e) { throw new AssertionError("missing field "+name,e); }
+ }
  public static void main(String[] args)throws Throwable {
-  switch(args[0]){case "signal":signal();break;case "tint":tint();break;case "assignment":assignment();break;case "wifi":wifi();break;case "clear":clear();break;case "clock":clock();break;case "centre":centre();break;case "dots":dots();break;case "outorder":outorder();break;case "capsule":capsule();break;case "isolation":isolation();break;default:throw new AssertionError(args[0]);}
+  switch(args[0]){case "signal":signal();break;case "tint":tint();break;case "assignment":assignment();break;case "wifi":wifi();break;case "clear":clear();break;case "clock":clock();break;case "centre":centre();break;case "dots":dots();break;case "outorder":outorder();break;case "capsule":capsule();break;case "isolation":isolation();break;case "nudges":nudges();break;default:throw new AssertionError(args[0]);}
   System.out.println("PASS: "+args[0]+" / "+checks+" assertions");
  }
 }
@@ -1011,6 +1263,21 @@ $drawing = [IO.File]::ReadAllText((Join-Path $trio 'ui/DrawingScreen.kt'))
 if ($drawing -notmatch 'val sims = scene\.previewSlots\.count \{ it >= 0 \}' -or
     $drawing -notmatch 'scene\.previewSlots, PREVIEW_TYPE') { throw 'Preview and solver must share their SIM readings' }
 Write-Output 'PASS: preview SIM wiring source contract'
+# The capsule's interior split must not read the live readings. It is a property of the
+# LAYOUT: the settings preview runs a fixed scene while the bar shows whatever the radio is
+# doing, so a split that looked at the strings drew two different pictures for one stored
+# offset. Guarded at the source because the two callers are a renderer and a preview, and no
+# assertion on either alone can see the divergence.
+$renderer = [IO.File]::ReadAllText((Join-Path $trio 'TrioRenderer.java'))
+$split = [regex]::Match($renderer, '(?s)private static float\[\] interiorTextUnits\(.*?\n    \}').Value
+if (!$split) { throw 'the capsule interior split is missing' }
+if ($split -match 'TrioState') { throw 'the capsule split reads live state, so preview and bar can disagree' }
+if ($split -match 'int level') { throw 'the capsule split takes the live level as an argument' }
+$units = [regex]::Match($renderer, '(?s)private static float textUnitsFor\(.*?\n    \}').Value
+if (!$units) { throw 'the per-piece width table is missing' }
+if ($units -match 'TrioState') { throw 'the per-piece width table reads live state' }
+if ($units -notmatch '_SAMPLE') { throw 'the per-piece width table no longer costs a sample string' }
+Write-Output 'PASS: capsule split is layout-driven, not reading-driven'
 # These pins check the Compose bridge only; recogniser timing and dialog rendering
 # still require Android. The runtime occupant used here is executed in wifi/clear.
 #

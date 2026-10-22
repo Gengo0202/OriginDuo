@@ -1,3 +1,13 @@
+/*
+ * Copyright (C) 2026 yixing233 and HyperDuo contributors
+ *
+ * This file is part of HyperDuo, released under the GNU General Public
+ * License v3.0. See the LICENSE file at the repository root, or
+ * <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package io.github.yixing233.hyperduo.ui
 
 import androidx.compose.foundation.background
@@ -625,21 +635,54 @@ private fun DrawingStyleSelector(
     }
 }
 
+/**
+ * Puts one [TrioPreviewView] into the state a preview wants.
+ *
+ * <p>Called from BOTH the factory and the update block, which is the point. A Compose
+ * {@code AndroidView} runs {@code factory} once and {@code update} only on a
+ * recomposition of that node; a LazyColumn item whose parent does not recompose can
+ * therefore live its whole life with the state its factory gave it. The factory above
+ * used to construct the view and leave it at its defaults - an empty ring - so the
+ * preview showed the shipped look instead of the user's, and every settings tile drew
+ * the same thing whatever they configured. One function, called from both places, is
+ * what makes "the preview shows what you picked" true rather than likely.
+ */
+private fun applyPreviewState(
+    view: TrioPreviewView,
+    settings: TrioSettings,
+    scene: PreviewScene,
+    dark: Boolean,
+    outType: Boolean = false,
+    outSignal: Boolean = false,
+    highlight: TrioZones.Zone? = null,
+) {
+    view.setSettings(settings)
+    view.setOutTypeOnly(outType)
+    view.setOutSignalOnly(outSignal)
+    view.setHighlight(highlight)
+    view.setPreviewBackground(if (dark) 0xFF1C1B1F.toInt() else 0xFFF2F2F7.toInt())
+    view.setForeground(if (dark) 0xFFFFFFFF.toInt() else 0xFF000000.toInt())
+    view.setState(scene.level, scene.charging, scene.quickCharging, scene.powerSave,
+        scene.low, scene.wifiLevel, MOBILE_LEVEL, scene.previewSlots, PREVIEW_TYPE)
+}
+
 @Composable
 private fun DrawingSmallPreview(
     settings: TrioSettings, scene: PreviewScene, dark: Boolean, modifier: Modifier,
     outType: Boolean = false, outSignal: Boolean = false,
 ) {
-    AndroidView(modifier = modifier, factory = { TrioPreviewView(it) }, update = { view ->
-        view.setSettings(settings)
-        view.setOutTypeOnly(outType)
-        view.setOutSignalOnly(outSignal)
-        view.setHighlight(null)
-        view.setPreviewBackground(if (dark) 0xFF1C1B1F.toInt() else 0xFFF2F2F7.toInt())
-        view.setForeground(if (dark) 0xFFFFFFFF.toInt() else 0xFF000000.toInt())
-        view.setState(scene.level, scene.charging, scene.quickCharging, scene.powerSave,
-            scene.low, scene.wifiLevel, MOBILE_LEVEL, scene.previewSlots, PREVIEW_TYPE)
-    })
+    AndroidView(
+        modifier = modifier,
+        // The state is applied here as well as in update: see applyPreviewState.
+        factory = { context ->
+            TrioPreviewView(context).also {
+                applyPreviewState(it, settings, scene, dark, outType, outSignal)
+            }
+        },
+        update = { view ->
+            applyPreviewState(view, settings, scene, dark, outType, outSignal)
+        },
+    )
 }
 
 /**
@@ -1472,21 +1515,17 @@ private fun DrawingGlyph(
             // Fills the square Box above; the aspect ratio belongs to the Box so the
             // gesture detector covers exactly the area the glyph is drawn in.
             modifier = Modifier.fillMaxSize(),
+            // Applied in the factory too: an AndroidView whose node never recomposes
+            // keeps whatever its factory gave it, and a view left at its defaults draws
+            // the shipped look rather than the user's. See applyPreviewState.
             factory = { context ->
-                TrioPreviewView(context).also { holder[0] = it }
+                TrioPreviewView(context).also { view ->
+                    holder[0] = view
+                    applyPreviewState(view, settings, scene, dark, highlight = pressed)
+                }
             },
             update = { view ->
-                view.setSettings(settings)
-                view.setOutTypeOnly(false)
-                view.setOutSignalOnly(false)
-                view.setPreviewBackground(if (dark) 0xFF1C1B1F.toInt() else 0xFFF2F2F7.toInt())
-                view.setForeground(if (dark) 0xFFFFFFFF.toInt() else 0xFF000000.toInt())
-                view.setHighlight(pressed)
-                view.setState(
-                    scene.level, scene.charging, scene.quickCharging, scene.powerSave,
-                    scene.low, scene.wifiLevel, MOBILE_LEVEL,
-                    scene.previewSlots, PREVIEW_TYPE,
-                )
+                applyPreviewState(view, settings, scene, dark, highlight = pressed)
             },
         )
     }
@@ -1519,12 +1558,33 @@ private fun occupantLabelRes(part: TrioZones.Part?): Int = when (part) {
  */
 private fun zoneLabelRes(zone: TrioZones.Zone, a: TrioAppearance): Int = when (zone) {
     TrioZones.Zone.TOP -> R.string.drawing_hint_top
-    TrioZones.Zone.CENTRE -> R.string.drawing_hint_centre
+    // In the capsule the interior is two cells side by side, so its right half is
+    // the RIGHT cell rather than a centre. The ring and the rectangle keep 涓儴: for
+    // them the interior really is the middle, and a single cell.
+    TrioZones.Zone.CENTRE -> if (a.capsule) R.string.drawing_hint_right
+        else R.string.drawing_hint_centre
     TrioZones.Zone.BOTTOM -> R.string.drawing_hint_bottom
+    TrioZones.Zone.LEFT -> R.string.drawing_hint_left
 }
 
 /** The zones this arrangement shows, in tab order. All three styles have the same three. */
-private fun zonesFor(a: TrioAppearance): List<TrioZones.Zone> = TrioZones.Zone.entries.toList()
+/**
+ * The zones this arrangement shows, in tab order.
+ *
+ * <p>The capsule has four cells - the two openings, its right-hand interior and its
+ * left-hand interior - so it shows four. The ring and the rectangle have three, and
+ * LEFT is not one of them: their interiors are single cells.
+ */
+private fun zonesFor(a: TrioAppearance): List<TrioZones.Zone> =
+    if (a.capsule) {
+        // Four cells, clockwise from the top: the two openings and the interior
+        // split into a left and a right half. Spatially ordered rather than
+        // enum-ordered, so the strip reads the way the glyph is laid out.
+        listOf(TrioZones.Zone.TOP, TrioZones.Zone.LEFT, TrioZones.Zone.CENTRE,
+                TrioZones.Zone.BOTTOM)
+    } else {
+        listOf(TrioZones.Zone.TOP, TrioZones.Zone.CENTRE, TrioZones.Zone.BOTTOM)
+    }
 
 /**
  * Says that the signal rows are drawn outside the ring, whatever this list holds.

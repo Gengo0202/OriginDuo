@@ -1,3 +1,13 @@
+/*
+ * Copyright (C) 2026 yixing233 and HyperDuo contributors
+ *
+ * This file is part of HyperDuo, released under the GNU General Public
+ * License v3.0. See the LICENSE file at the repository root, or
+ * <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package io.github.yixing233.hyperduo;
 
 /**
@@ -1099,21 +1109,14 @@ final class TrioGeometry {
     /** Outer bounds of the capsule outline, in design units. */
     static final float CAP_LEFT = 1.0f;
     /**
-     * Right edge of the outline.
+     * Right edge of the outline, at the reference's own 2.34:1 width.
      *
-     * <p>Set so the shape is the reference's own 2.34:1 - the width the design was
-     * drawn at. It is a free parameter rather than a derived one because the host
-     * is no longer a fixed box: {@code MiuiBatteryMeterIconView.onMeasure} used to
-     * pin the glyph's width to MIUI's 28dp battery, which left the fit decided by
-     * the width and forced the shape down to 2:1 (84x46px in a 60px-tall bar, with
-     * a third of the bar's height unused). The module now answers that measurement
-     * with the width this aspect ratio asks for, so the proportions are the
-     * designer's again rather than the stock icon's.
-     *
-     * <p>The height is untouched by that: {@link #CAP_BOTTOM} is what the bar
-     * offers, and only the width grows to meet it.
+     * <p>The design width. The host is sized from it by capHostWidthPx, and every
+     * horizontal quantity of the capsule derives from it.
      */
     static final float CAP_RIGHT = 139.0f;
+
+
     static final float CAP_TOP = 1.0f;
     /**
      * Bottom edge of the outline.
@@ -1136,6 +1139,8 @@ final class TrioGeometry {
      * rather than a rounded rectangle.
      */
     static final float CAP_RADIUS = (CAP_BOTTOM - CAP_TOP) * 0.5f;
+
+
 
     /**
      * The outline's thickness, as a fraction of {@code ringStroke}.
@@ -1615,14 +1620,77 @@ final class TrioGeometry {
         return capReadingsWidth(stroke) * (1f - CAP_TIME_WIDTH_SHARE);
     }
 
+    /**
+     * The width a cell's READING may use, divided by what the two cells actually draw.
+     *
+     * <p>{@link #capTimeSlotWidth} and {@link #capValueSlotWidth} divide the interior by a
+     * FIXED ratio - the natural widths of "19:41" and "100" - which was right while the left
+     * cell was always the clock. It stopped being right when the left column became a cell the
+     * user fills: the fixed split still reserves the clock's 60% even when that cell holds
+     * "5GA" or "64", and it still hands the right cell only 40% even when that cell holds the
+     * time. The reserved width is width the reading cannot use, so the SLOT - not the user's
+     * size slider - is what caps the drawing, and the slider stops responding before its own
+     * maximum.
+     *
+     * <p>Measured, at the shipped stroke: the interior gives 114.4 units to the pair. The
+     * fixed split hands the left cell 68.7 and the right 45.8, so both are capped at em 27.25
+     * - while a user at setting 44 is asking for 27.37 and a "5GA" only needs 1.94 units per
+     * em against the 2.52 the split assumes. Dividing by the strings actually drawn lets the
+     * same interior carry em 31.6 for that pair: the size the user asked for, not the width
+     * reserved for a string that is not on screen.
+     *
+     * <p>The total is unchanged - the two shares always sum to the whole interior - so this
+     * cannot make the readings collide, and a cell holding nothing contributes nothing.
+     *
+     * @param leftPerUnit  natural width of the left cell's string per em, or 0 when empty
+     * @param rightPerUnit the same for the right cell
+     * @param forLeft      which of the two widths to answer with
+     */
+    static float capReadingSlotWidth(float stroke, float leftPerUnit, float rightPerUnit,
+                                     boolean forLeft) {
+        final float total = leftPerUnit + rightPerUnit;
+        if (!(total > 0f)) {
+            // Neither cell draws text: the split is unused, so answer with the historical one
+            // rather than dividing by zero.
+            return forLeft ? capTimeSlotWidth(stroke) : capValueSlotWidth(stroke);
+        }
+        final float mine = forLeft ? leftPerUnit : rightPerUnit;
+        return capReadingsWidth(stroke) * (mine / total);
+    }
+
     /** Centre of the left-hand slot: the time's own place. */
     static float capLeftCx(float stroke) {
         return capTextLeft(stroke) + capTimeSlotWidth(stroke) * 0.5f;
     }
 
+    /**
+     * The LEFT cell's anchor: its inner-left edge, not the slot's centre.
+     *
+     * <p>The capsule's left cell reads left-aligned, like a sentence starting at the
+     * shape's edge. Centring it in the half-slot left a gap on the left and pushed the
+     * ink toward the middle, so a piece there looked dragged rightwards instead of
+     * sitting in its own cell.
+     */
+    static float capLeftAlignedX(float stroke) {
+        return capTextLeft(stroke);
+    }
+
     /** Centre of the right-hand slot: the percentage, the arcs or the bolt. */
     static float capRightCx(float stroke) {
         return capTextRight(stroke) - capValueSlotWidth(stroke) * 0.5f;
+    }
+
+    /**
+     * The inner edge a capsule body cell hangs its ink from.
+     *
+     * <p>The left cell reads FROM the interior's left edge and the right cell reads TO its right
+     * edge, so the pair frames the interior from both sides the way two columns of text frame a
+     * measure. That is what makes the readings look placed rather than dropped in: a CENTRED
+     * right cell leaves a gap of whatever its slot had spare between the number and the outline,
+     * and widening the slot then moves the number's left edge instead of its right one.
+     */
+    static float capReadingEdge(float stroke, boolean forLeft) {
+        return forLeft ? capTextLeft(stroke) : capTextRight(stroke);
     }
 
     /**
@@ -1833,6 +1901,9 @@ final class TrioGeometry {
      * @param heightPx the height the bar is offering, in pixels
      * @return the width to measure at, or 0 when there is no height to work from
      */
+
+
+
     static int capHostWidthPx(int heightPx) {
         if (heightPx <= 0) {
             return 0;
@@ -1840,19 +1911,7 @@ final class TrioGeometry {
         return Math.round(heightPx * (CAP_INK_W / CAP_INK_H));
     }
 
-    /**
-     * The height to ask the status bar for, given the height it offered.
-     *
-     * <p>The bar offers {@code CAP_INK_H}'s worth of pixels and the module answers the width
-     * question with the aspect ratio's answer. The two opening bands are added to the
-     * <em>height</em> afterwards: growing the width instead would change the aspect ratio, and
-     * as the fit is decided by whichever axis binds, that would shrink the capsule rather than
-     * enlarge the box. Adding the bands to the height leaves the width - and so the scale -
-     * alone, which is what keeps the capsule exactly the size it shipped at.
-     *
-     * @param heightPx the height the bar is offering, in pixels
-     * @return the height to measure the host at
-     */
+
     static int capHostHeightPx(int heightPx) {
         if (heightPx <= 0) {
             return 0;

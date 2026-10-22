@@ -1,3 +1,13 @@
+/*
+ * Copyright (C) 2026 yixing233 and HyperDuo contributors
+ *
+ * This file is part of HyperDuo, released under the GNU General Public
+ * License v3.0. See the LICENSE file at the repository root, or
+ * <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package io.github.yixing233.hyperduo.ui
 
 import android.content.Context
@@ -82,6 +92,7 @@ class SettingsRepository(context: Context) {
         e.putInt(k, value) }
     /** Stored IDs stay 0 = ring and 2 = capsule; retired ID 1 returns to the ring. */
     fun setTrioStyle(value: Int) = writeInt(Prefs.KEY_TRIO_STYLE, Prefs.normalizeTrioStyle(value))
+
     fun setNavStyle(value: Int) = writeInt(Prefs.KEY_NAV_STYLE, Prefs.normalizeNavStyle(value))
     fun setNavLabels(value: Int) = writeInt(Prefs.KEY_NAV_LABELS, Prefs.normalizeNavLabels(value))
 
@@ -145,11 +156,26 @@ class SettingsRepository(context: Context) {
      * the mapping is kept - the ring's editor drives the priority lists directly.
      */
     fun setRingPartPosition(part: io.github.yixing233.hyperduo.TrioZones.Part, position: Int) {
-        val zones = io.github.yixing233.hyperduo.TrioZones.Zone.entries
         val current = TrioSettings.from(preferences(), density)
-        if (position in 1..3) {
+        // The choices a caller can pass are the arrangement's own cells, in the order
+        // the dropdown lists them. The capsule lists four (top, left, right, bottom)
+        // and the ring three, so the mapping from "choice number" to "zone" is read
+        // from the same list rather than assumed to be "index - 1". Assuming it was
+        // what wrote the capsule's left cell into the bottom zone.
+        val slots = if (current.trioStyle == Prefs.STYLE_CAPSULE) {
+            listOf(io.github.yixing233.hyperduo.TrioZones.Zone.TOP,
+                io.github.yixing233.hyperduo.TrioZones.Zone.LEFT,
+                io.github.yixing233.hyperduo.TrioZones.Zone.CENTRE,
+                io.github.yixing233.hyperduo.TrioZones.Zone.BOTTOM)
+        } else {
+            listOf(io.github.yixing233.hyperduo.TrioZones.Zone.TOP,
+                io.github.yixing233.hyperduo.TrioZones.Zone.CENTRE,
+                io.github.yixing233.hyperduo.TrioZones.Zone.BOTTOM)
+        }
+        if (position in 1..slots.size) {
             applyRingAssignment(
-                io.github.yixing233.hyperduo.TrioZones.withPiece(current, position - 1, part)
+                io.github.yixing233.hyperduo.TrioZones.withPiece(
+                    current, slots[position - 1].ordinal, part)
             )
         } else {
             val next = current.copy()
@@ -160,7 +186,8 @@ class SettingsRepository(context: Context) {
             }
             if (part == io.github.yixing233.hyperduo.TrioZones.Part.TYPE) {
                 next.mobileTypeMode =
-                    if (position == 4) Prefs.MOBILE_TYPE_OUT_RING else Prefs.MOBILE_TYPE_OFF
+                    if (position == slots.size + 1) Prefs.MOBILE_TYPE_OUT_RING
+                    else Prefs.MOBILE_TYPE_OFF
             }
             applyRingAssignment(next)
         }
@@ -209,6 +236,9 @@ class SettingsRepository(context: Context) {
     fun setPerfPower(value: Boolean) = writeBoolean(Prefs.KEY_PERF_POWER, value)
     /** Battery temperature in the out-of-ring strip - see [Prefs.KEY_PERF_TEMP]. */
     fun setPerfTemp(value: Boolean) = writeBoolean(Prefs.KEY_PERF_TEMP, value)
+    /** Temperature only while charging - see [Prefs.KEY_PERF_TEMP_CHARGING_ONLY]. */
+    fun setPerfTempChargingOnly(value: Boolean) =
+        writeBoolean(Prefs.KEY_PERF_TEMP_CHARGING_ONLY, value)
     /** Overall size of the two readouts, in percent - see [Prefs.KEY_PERF_SCALE]. */
     fun setPerfScale(value: Int) = writeInt(Prefs.KEY_PERF_SCALE, value)
     /** Weight of the two readouts - see [Prefs.KEY_PERF_WEIGHT]. */
@@ -288,6 +318,12 @@ class SettingsRepository(context: Context) {
     /** Overall size of the trio glyph, in percent - see [Prefs.KEY_GLYPH_SCALE]. */
     fun setGlyphScale(value: Int) = writeInt(Prefs.KEY_GLYPH_SCALE, value)
 
+    /** Interior cell nudges; see [Prefs.KEY_CAPSULE_LEFT_DX]. */
+    fun setCapsuleLeftDx(value: Int) = writeInt(Prefs.KEY_CAPSULE_LEFT_DX, value)
+    fun setCapsuleLeftDy(value: Int) = writeInt(Prefs.KEY_CAPSULE_LEFT_DY, value)
+    fun setCapsuleRightDx(value: Int) = writeInt(Prefs.KEY_CAPSULE_RIGHT_DX, value)
+    fun setCapsuleRightDy(value: Int) = writeInt(Prefs.KEY_CAPSULE_RIGHT_DY, value)
+
     // ---------------------------------------------------------------- advanced
 
     fun setDebugLog(value: Boolean) = writeBoolean(Prefs.KEY_DEBUG_LOG, value)
@@ -328,7 +364,20 @@ class SettingsRepository(context: Context) {
                 Prefs.encodeLayout(snapshot.ringZones))
             prefs.putBoolean(Prefs.KEY_DATA_SIM_ONLY, snapshot.dataSimOnly)
             prefs.putBoolean(Prefs.KEY_PERF_POWER, snapshot.perfPower)
-            prefs.putBoolean(Prefs.KEY_PERF_TEMP, snapshot.perfTemp)
+                prefs.putBoolean(Prefs.KEY_PERF_TEMP, snapshot.perfTemp)
+            prefs.putBoolean(Prefs.KEY_PERF_TEMP_CHARGING_ONLY, snapshot.perfTempChargingOnly)
+            // The two signal switches and the four capsule nudges. They were writable and
+            // they reached SystemUI on every individual write, so nothing looked wrong
+            // until the framework rebound: syncAllToFramework() is the ONLY path that
+            // replays values chosen while it was unbound, and a key missing from here is
+            // simply never restored - the status bar keeps drawing whatever it last heard.
+            prefs.putInt(Prefs.styledKey(Prefs.KEY_SIGNAL_MODE, style), snapshot.signalMode)
+            prefs.putBoolean(Prefs.styledKey(Prefs.KEY_STACKED_SIGNAL, style),
+                snapshot.stackedSignal)
+            prefs.putInt(Prefs.KEY_CAPSULE_LEFT_DX, snapshot.capsuleLeftDx)
+            prefs.putInt(Prefs.KEY_CAPSULE_LEFT_DY, snapshot.capsuleLeftDy)
+            prefs.putInt(Prefs.KEY_CAPSULE_RIGHT_DX, snapshot.capsuleRightDx)
+            prefs.putInt(Prefs.KEY_CAPSULE_RIGHT_DY, snapshot.capsuleRightDy)
             prefs.putInt(Prefs.KEY_PERF_SCALE, snapshot.perfScale)
             prefs.putInt(Prefs.KEY_PERF_WEIGHT, snapshot.perfWeight)
             prefs.putInt(Prefs.KEY_GLYPH_SCALE, snapshot.glyphScale)

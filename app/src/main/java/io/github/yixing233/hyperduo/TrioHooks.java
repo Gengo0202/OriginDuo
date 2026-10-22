@@ -1,3 +1,13 @@
+/*
+ * Copyright (C) 2026 yixing233 and HyperDuo contributors
+ *
+ * This file is part of HyperDuo, released under the GNU General Public
+ * License v3.0. See the LICENSE file at the repository root, or
+ * <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package io.github.yixing233.hyperduo;
 
 import android.content.Context;
@@ -1906,6 +1916,14 @@ final class TrioHooks {
         if (clock == null || setter == null) {
             return;
         }
+        // The bar keeps its own clock unless the capsule is REALLY drawing the time.
+        // Two things can make that false even with the clock placed: the capsule may be
+        // off, and the piece that took the left cell may have nothing to show this
+        // frame - Wi-Fi with no connection, a type with no network. In both cases the
+        // cell would otherwise be empty AND the bar's clock hidden, so the phone
+        // would simply have no time. Handing the cell back to the system is the
+        // fallback, and this is where it is decided because this is the only place that
+        // both owns the clock view and can read the live readings.
         final boolean hide = TrioConfig.appearance().hidesStatusClock();
         if (hide == sClockHidden) {
             return;
@@ -2065,7 +2083,9 @@ final class TrioHooks {
                 final Method m = methods[i];
                 if ("setBlockList".equals(m.getName()) && m.getParameterTypes().length == 1) {
                     m.invoke(manager, wanted);
-                    log(sModule, "keyguard block list set: " + wanted);
+                    if (debugLog()) {
+                        log(sModule, "keyguard block list set: " + wanted);
+                    }
                     return;
                 }
             }
@@ -2265,7 +2285,12 @@ final class TrioHooks {
         final String note = "skip container: " + chain;
         if (!note.equals(sLastSkipped)) {
             sLastSkipped = note;
-            log(sModule, note);
+            // Diagnostic, not an event: one line per container shape is still
+            // a dozen lines on a normal boot, and they all fire from the layout
+            // path (issue #40).
+            if (debugLog()) {
+                log(sModule, note);
+            }
         }
     }
 
@@ -2833,6 +2858,12 @@ final class TrioHooks {
             sb.append(p.getClass().getSimpleName()).append('<');
         }
         return sb.toString();
+    }
+
+
+    /** The capsule's stroke width for the current settings, in design units. */
+    private static float strokeForCapsule() {
+        return TrioConfig.appearance().ringStroke * TrioGeometry.CAP_STROKE_RATIO;
     }
 
     private static TrioState registerHost(View host) {
@@ -3765,7 +3796,15 @@ final class TrioHooks {
                 && !Float.isNaN(TrioState.sChargePowerW)) {
             text.append(powerText(TrioState.sChargePowerW));
         }
-        if (a.perfTemp && TrioState.sBatteryTempC != TrioState.TEMP_UNKNOWN) {
+        // The charging-only switch is a filter on the temperature, not a second reading:
+        // with it on, both halves of the strip appear and disappear together, which is the
+        // block a user watching a charge asked for (issue 45). Off - the default and the
+        // behaviour this shipped with - the temperature stands on its own, because it is a
+        // property of the battery rather than of the charger.
+        final boolean tempWanted = a.perfTemp
+                && TrioState.sBatteryTempC != TrioState.TEMP_UNKNOWN
+                && (!a.perfTempChargingOnly || TrioState.sChargingAttached);
+        if (tempWanted) {
             if (text.length() > 0) {
                 // One reading per line: the pair stacks instead of running on,
                 // so the view never grows a second reading wide. With only the

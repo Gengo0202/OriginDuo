@@ -1,3 +1,13 @@
+/*
+ * Copyright (C) 2026 yixing233 and HyperDuo contributors
+ *
+ * This file is part of HyperDuo, released under the GNU General Public
+ * License v3.0. See the LICENSE file at the repository root, or
+ * <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package io.github.yixing233.hyperduo;
 
 /**
@@ -81,7 +91,16 @@ public final class TrioZones {
         /** The ring interior, the rectangle's percentage, or the capsule's right-hand interior. */
         CENTRE,
         /** The 6 o'clock opening, the rectangle's dot columns and bar, or the capsule's bottom opening. */
-        BOTTOM
+        BOTTOM,
+        /**
+         * The capsule's left-hand interior. Nothing else uses it.
+         *
+         * <p>Last in the enum on purpose: the three bands keep their ordinals, so every
+         * stored layout that predates this cell still decodes to the cells it named. The
+         * capsule reads four cells (top, left, right, bottom); the ring and the rectangle
+         * ignore this one.
+         */
+        LEFT
     }
 
     /**
@@ -261,9 +280,14 @@ public final class TrioZones {
                 // whole width of the strip above the interior rather than a cell of it.
                 return new float[][] {
                         { left, TrioGeometry.CAP_INK_TOP - fringe, right, top } };
+            case LEFT:
+                // The interior to the left of the seam: the capsule own left cell. It is
+                // a cell of its own now, so a tap there has to resolve to it rather than
+                // falling through to the right half - which is what the preview needs in
+                // order to open the left cell when it is tapped.
+                return new float[][] { { left, top, split, bottom } };
             case CENTRE:
-                // The interior to the right of the fixed clock: the one cell of the body the
-                // user can put something in.
+                // The interior to the right of the seam.
                 return new float[][] { { split, top, right, bottom } };
             case BOTTOM:
             default:

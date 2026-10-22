@@ -179,3 +179,21 @@ adb logcat -v time -s LSPosedFramework:* | Select-String HyperDuo
 ## 致谢
 
 设置界面基于 Compose + [Miuix](https://github.com/miuix-kotlin-multiplatform/miuix) 实现 MIUI 风格。
+
+## 许可证
+
+**GNU General Public License v3.0（GPL-3.0）**，全文见 [LICENSE](LICENSE)。
+
+Copyright (C) 2026 yixing233 与 HyperDuo 贡献者。
+
+你可以自由使用、修改、再分发，包括商业用途。代价是：**分发修改过的版本时，必须以同一协议
+公开源码**，并保留署名与免责声明。GPL-3.0 还附带了专利授权，同时禁止把代码并入闭源专有程序。
+
+选它而不是 MIT / Apache-2.0，是因为这个模块改的是系统界面本身——谁改了哪一笔、为什么这么
+量，都应该回到同一个地方，而不是分叉成几个互相不知道对方存在的闭源版本。
+
+分发编译好的 APK 时同样受约束（GPL-3.0 第 6 条）：需要一并给出对应源码，指向本仓库该版本
+的 tag 即可。
+
+没有担保。GPL-3.0 第 15、16 条已经写明这一点，这里再说一遍：模块改的是系统界面，装错了
+开不了机是可能发生的，作者不为变砖负责。

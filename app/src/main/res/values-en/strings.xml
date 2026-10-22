@@ -294,4 +294,26 @@
     <string name="ring_value_summary">Show the battery percentage in its reserved slot, including while charging. Outside the ring, the system percentage setting applies.</string>
     <string name="ring_bolt_summary">Show a bolt in its reserved slot while charging, independently of the percentage. When off, charging indication follows the system settings.</string>
     <string name="ring_signal_position_summary">Reserves an inside slot independently of inside/outside signal mode. Outside mode keeps this reservation.</string>
+    <!-- The capsule's left column used to be reserved for the clock. -->
+    <string name="drawing_capsule_left_title">Left column</string>
+    <string name="drawing_capsule_left_summary">What the left column of the capsule shows; the time by default.</string>
+    <!-- issue #38: the launcher entry is an activity-alias and can be switched off. -->
+    <string name="about_hide_icon">Hide launcher icon</string>
+    <string name="about_hide_icon_summary">Only the launcher entry; the LSPosed manager still opens these settings.</string>
+    <!-- issue #45: show the temperature only while a charger is attached. -->
+    <string name="perf_temp_charging_only_title">Temperature only while charging</string>
+    <string name="perf_temp_charging_only_summary">On, the temperature appears and disappears together with the wattage.</string>
+    <string name="drawing_hint_left">Left</string>
+    <string name="drawing_hint_right">Right</string>
+        
+    
+    <!-- Capsule interior cell nudges, in design units. -->
+    <string name="capsule_nudge_left_dx_title">Left cell horizontal</string>
+    <string name="capsule_nudge_left_dx_summary">Positive moves right, negative left.</string>
+    <string name="capsule_nudge_left_dy_title">Left cell vertical</string>
+    <string name="capsule_nudge_left_dy_summary">Positive moves down, negative up.</string>
+    <string name="capsule_nudge_right_dx_title">Right cell horizontal</string>
+    <string name="capsule_nudge_right_dx_summary">Positive moves right, negative left.</string>
+    <string name="capsule_nudge_right_dy_title">Right cell vertical</string>
+    <string name="capsule_nudge_right_dy_summary">Positive moves down, negative up.</string>
 </resources>

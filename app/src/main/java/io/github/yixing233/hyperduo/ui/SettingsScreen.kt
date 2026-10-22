@@ -1,3 +1,13 @@
+/*
+ * Copyright (C) 2026 yixing233 and HyperDuo contributors
+ *
+ * This file is part of HyperDuo, released under the GNU General Public
+ * License v3.0. See the LICENSE file at the repository root, or
+ * <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package io.github.yixing233.hyperduo.ui
 
 import android.content.Context
@@ -1793,6 +1803,23 @@ private fun InfoCard(service: XposedService?) {
                 bottomPadding = 12.dp,
             )
 
+            // issue #38: the launcher entry is a separate activity-alias, so it can be
+            // switched off without touching the LSPosed entry point (which is the
+            // MainActivity itself, advertising MODULE_SETTINGS). Disabling the alias is
+            // the documented way to hide an icon: unlike a launcher-side shortcut it
+            // survives reboots, and unlike removing the filter it leaves the activity
+            // reachable from the manager.
+            var iconHidden by remember { mutableStateOf(isLauncherIconHidden(context)) }
+            SwitchPreference(
+                checked = iconHidden,
+                title = stringResource(R.string.about_hide_icon),
+                summary = stringResource(R.string.about_hide_icon_summary),
+                insideMargin = SettingsItemMargin,
+                onCheckedChange = { hide ->
+                    setLauncherIconHidden(context, hide)
+                    iconHidden = hide
+                },
+            )
             Text(
                 text = stringResource(R.string.about_summary),
                 style = MiuixTheme.textStyles.footnote1,
@@ -1800,6 +1827,48 @@ private fun InfoCard(service: XposedService?) {
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
+    }
+}
+
+/**
+ * Whether the launcher entry is currently switched off.
+ *
+ * <p>Asked of the component rather than stored: the alias can also be toggled by the
+ * system (a launcher cleaning up, a restore), and a cached flag would then show the
+ * user a switch that disagrees with what the launcher does.
+ */
+private fun isLauncherIconHidden(context: android.content.Context): Boolean {
+    val component = android.content.ComponentName(context.packageName,
+            context.packageName + ".ui.MainActivityAlias")
+    return try {
+        val state = context.packageManager.getComponentEnabledSetting(component)
+        state == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+    } catch (t: Throwable) {
+        false
+    }
+}
+
+/**
+ * Shows or hides the launcher icon by toggling the alias.
+ *
+ * <p>The alias is a separate component from MainActivity, which is what makes this safe:
+ * the LSPosed manager launches the activity directly (it advertises MODULE_SETTINGS), so
+ * hiding the icon does not cost the user their way in. The platform persists the
+ * component state, so the choice survives a reboot.
+ */
+private fun setLauncherIconHidden(context: android.content.Context, hidden: Boolean) {
+    val component = android.content.ComponentName(context.packageName,
+            context.packageName + ".ui.MainActivityAlias")
+    val state = if (hidden) {
+        android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+    } else {
+        android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+    }
+    try {
+        context.packageManager.setComponentEnabledSetting(component, state,
+                android.content.pm.PackageManager.DONT_KILL_APP)
+    } catch (t: Throwable) {
+        android.util.Log.w("HyperDuo", "cannot toggle launcher alias", t)
     }
 }
 
@@ -2019,7 +2088,12 @@ internal fun IntSlider(
         valueText = value.toString() + (valueTextSuffix ?: ""),
         enabled = enabled,
         valueRange = min.toFloat()..max.toFloat(),
-        steps = ((max - min) / step - 1).coerceAtLeast(0),
+        // NO discrete steps. Compose treats steps as the number of marks BETWEEN the
+        // ends, so a range of 70..100 with step 1 is 29 of them - and a thumb that
+        // snaps to 31 positions inside 30 integer values stops tracking the finger
+        // continuously. The value is rounded to the step in onValueChange anyway, so
+        // the coarse result is the same without the snapping.
+        steps = 0,
         insideMargin = SettingsItemMargin,
     )
 }

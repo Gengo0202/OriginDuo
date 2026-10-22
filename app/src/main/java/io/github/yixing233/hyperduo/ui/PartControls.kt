@@ -1,3 +1,13 @@
+/*
+ * Copyright (C) 2026 yixing233 and HyperDuo contributors
+ *
+ * This file is part of HyperDuo, released under the GNU General Public
+ * License v3.0. See the LICENSE file at the repository root, or
+ * <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package io.github.yixing233.hyperduo.ui
 
 import androidx.compose.foundation.layout.Arrangement
@@ -160,6 +170,7 @@ internal fun geometrySliders(): List<SliderSpec> {
             part = TrioZones.Part.CLOCK,
             min = Prefs.MIN_CLOCK_SIZE,
             max = Prefs.MAX_CLOCK_SIZE,
+            maxFor = { if (it.capsule) Prefs.MAX_CAPSULE_CLOCK_SIZE else Prefs.MAX_CLOCK_SIZE },
             read = { it.clockSize },
             write = { r, v -> r.setClockSize(v) },
             titleRes = { R.string.clock_size_title },
@@ -179,6 +190,51 @@ internal fun geometrySliders(): List<SliderSpec> {
             summaryRes = { R.string.clock_weight_summary },
             enabled = { it.glyph },
             hints = { listOf(it.glyph to R.string.master_title) },
+        ),
+        SliderSpec(
+            group = GeometryGroup.Scale,
+            part = null,
+            min = Prefs.MIN_CAPSULE_NUDGE_X,
+            max = Prefs.MAX_CAPSULE_NUDGE_X,
+            read = { it.capsuleLeftDx },
+            write = { r, v -> r.setCapsuleLeftDx(v) },
+            titleRes = { R.string.capsule_nudge_left_dx_title },
+            summaryRes = { R.string.capsule_nudge_left_dx_summary },
+            enabled = { it.glyph && it.capsule },
+        ),
+        SliderSpec(
+            group = GeometryGroup.Scale,
+            part = null,
+            min = Prefs.MIN_CAPSULE_NUDGE,
+            max = Prefs.MAX_CAPSULE_NUDGE,
+            read = { it.capsuleLeftDy },
+            write = { r, v -> r.setCapsuleLeftDy(v) },
+            titleRes = { R.string.capsule_nudge_left_dy_title },
+            summaryRes = { R.string.capsule_nudge_left_dy_summary },
+            enabled = { it.glyph && it.capsule },
+        ),
+        SliderSpec(
+            group = GeometryGroup.Scale,
+            part = null,
+            // Mirrored span: the right cell leans right, so its travel is to the LEFT.
+            min = Prefs.MIN_CAPSULE_NUDGE_X_RIGHT,
+            max = Prefs.MAX_CAPSULE_NUDGE_X_RIGHT,
+            read = { it.capsuleRightDx },
+            write = { r, v -> r.setCapsuleRightDx(v) },
+            titleRes = { R.string.capsule_nudge_right_dx_title },
+            summaryRes = { R.string.capsule_nudge_right_dx_summary },
+            enabled = { it.glyph && it.capsule },
+        ),
+        SliderSpec(
+            group = GeometryGroup.Scale,
+            part = null,
+            min = Prefs.MIN_CAPSULE_NUDGE,
+            max = Prefs.MAX_CAPSULE_NUDGE,
+            read = { it.capsuleRightDy },
+            write = { r, v -> r.setCapsuleRightDy(v) },
+            titleRes = { R.string.capsule_nudge_right_dy_title },
+            summaryRes = { R.string.capsule_nudge_right_dy_summary },
+            enabled = { it.glyph && it.capsule },
         ),
         SliderSpec(
             group = GeometryGroup.Scale,
@@ -265,11 +321,17 @@ internal fun geometrySliders(): List<SliderSpec> {
             part = value,
             min = Prefs.MIN_VALUE_SIZE,
             max = Prefs.MAX_VALUE_SIZE,
-            // The ring's slots are sized by the third each piece sits in, so a placed
-            // reading has more room than the capsule's or the rectangle's fixed slot. The
-            // extra ceiling applies only there: letting the other two ask for a size they
-            // cannot draw would be a slider that does nothing.
-            maxFor = { if (it.ring) Prefs.MAX_RING_VALUE_SIZE else Prefs.MAX_VALUE_SIZE },
+            // Each arrangement gets the ceiling it can actually draw to, and nothing more:
+            // a slider that runs past what the glyph can hold is a slider that does nothing
+            // at the top. The ring sizes a piece by the third it sits in; the capsule divides
+            // its interior by what its two cells draw; the rectangle has a fixed slot.
+            maxFor = {
+                when {
+                    it.ring -> Prefs.MAX_RING_VALUE_SIZE
+                    it.capsule -> Prefs.MAX_CAPSULE_VALUE_SIZE
+                    else -> Prefs.MAX_VALUE_SIZE
+                }
+            },
             read = { it.valueSize },
             write = { r, v -> r.setValueSize(v) },
             titleRes = { R.string.value_size_title },
@@ -347,6 +409,7 @@ internal fun geometrySliders(): List<SliderSpec> {
             part = type,
             min = Prefs.MIN_TYPE_SIZE,
             max = Prefs.MAX_TYPE_SIZE,
+            maxFor = { if (it.capsule) Prefs.MAX_CAPSULE_TYPE_SIZE else Prefs.MAX_TYPE_SIZE },
             read = { it.typeSize },
             write = { r, v -> r.setTypeSize(v) },
             titleRes = { R.string.type_size_title },

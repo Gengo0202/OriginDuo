@@ -1,3 +1,13 @@
+/*
+ * Copyright (C) 2026 yixing233 and HyperDuo contributors
+ *
+ * This file is part of HyperDuo, released under the GNU General Public
+ * License v3.0. See the LICENSE file at the repository root, or
+ * <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package io.github.yixing233.hyperduo;
 
 import android.content.SharedPreferences;
@@ -235,7 +245,9 @@ public final class TrioSettings {
      * view away entirely, and turning either on brings back the same view with
      * only the requested segment drawn.
      */
-    public boolean perfTemp;
+    public boolean perfTemp;
+    /** Drops the temperature unless charging; see {@link Prefs#KEY_PERF_TEMP_CHARGING_ONLY}. */
+    public boolean perfTempChargingOnly;
 
     /**
      * Overall size of the two readouts, as a percentage of the size the adaptive
@@ -263,6 +275,11 @@ public final class TrioSettings {
      * implies. Shrink-only; see {@link Prefs#KEY_GLYPH_SCALE}.
      */
     public int glyphScale;
+    /** Interior cell nudges, in design units; see Prefs.KEY_CAPSULE_LEFT_DX. */
+    public int capsuleLeftDx;
+    public int capsuleLeftDy;
+    public int capsuleRightDx;
+    public int capsuleRightDy;
 
     /** Only used by the settings app: the hooked side reads this via {@code TrioConfig}. */
     public boolean debugLog;
@@ -287,9 +304,14 @@ public final class TrioSettings {
         s.dataSimOnly = Prefs.DEF_DATA_SIM_ONLY;
         s.perfPower = Prefs.DEF_PERF_POWER;
         s.perfTemp = Prefs.DEF_PERF_TEMP;
+        s.perfTempChargingOnly = Prefs.DEF_PERF_TEMP_CHARGING_ONLY;
         s.perfScale = Prefs.DEF_PERF_SCALE;
         s.perfWeight = Prefs.DEF_PERF_WEIGHT;
         s.glyphScale = Prefs.DEF_GLYPH_SCALE;
+        s.capsuleLeftDx = Prefs.DEF_CAPSULE_NUDGE;
+        s.capsuleLeftDy = Prefs.DEF_CAPSULE_NUDGE;
+        s.capsuleRightDx = Prefs.DEF_CAPSULE_NUDGE;
+        s.capsuleRightDy = Prefs.DEF_CAPSULE_NUDGE;
 
         s.roleColors = Prefs.DEF_ROLE_COLORS;
         s.criticalOnDark = Prefs.DEF_COLOR_CRITICAL_ON_DARK;
@@ -366,6 +388,7 @@ public final class TrioSettings {
         // which key to read depends on it.
         s.navStyle = Prefs.normalizeNavStyle(p.getInt(Prefs.KEY_NAV_STYLE, Prefs.DEF_NAV_STYLE));
         s.navLabels = Prefs.normalizeNavLabels(p.getInt(Prefs.KEY_NAV_LABELS, Prefs.DEF_NAV_LABELS));
+
         s.trioStyle = styleOverride >= 0
                 ? Prefs.normalizeTrioStyle(styleOverride)
                 : Prefs.normalizeTrioStyle(
@@ -406,6 +429,8 @@ public final class TrioSettings {
         s.dataSimOnly = p.getBoolean(Prefs.KEY_DATA_SIM_ONLY, Prefs.DEF_DATA_SIM_ONLY);
         s.perfPower = p.getBoolean(Prefs.KEY_PERF_POWER, Prefs.DEF_PERF_POWER);
         s.perfTemp = p.getBoolean(Prefs.KEY_PERF_TEMP, Prefs.DEF_PERF_TEMP);
+        s.perfTempChargingOnly = p.getBoolean(Prefs.KEY_PERF_TEMP_CHARGING_ONLY,
+                Prefs.DEF_PERF_TEMP_CHARGING_ONLY);
         s.perfScale = Prefs.clamp(
                 p.getInt(Prefs.KEY_PERF_SCALE, Prefs.DEF_PERF_SCALE),
                 Prefs.MIN_PERF_SCALE, Prefs.MAX_PERF_SCALE);
@@ -415,7 +440,18 @@ public final class TrioSettings {
         s.glyphScale = Prefs.clamp(
                 p.getInt(Prefs.KEY_GLYPH_SCALE, Prefs.DEF_GLYPH_SCALE),
                 Prefs.MIN_GLYPH_SCALE, Prefs.MAX_GLYPH_SCALE);
-
+        s.capsuleLeftDx = Prefs.clamp(p.getInt(Prefs.KEY_CAPSULE_LEFT_DX,
+                Prefs.DEF_CAPSULE_NUDGE), Prefs.MIN_CAPSULE_NUDGE_X,
+                Prefs.MAX_CAPSULE_NUDGE_X);
+        s.capsuleLeftDy = Prefs.clamp(p.getInt(Prefs.KEY_CAPSULE_LEFT_DY,
+                Prefs.DEF_CAPSULE_NUDGE), Prefs.MIN_CAPSULE_NUDGE, Prefs.MAX_CAPSULE_NUDGE);
+        // Its own span: the right cell leans right, so its travel is leftwards. Sharing the
+        // left cell's range would silently trim every value the slider allows.
+        s.capsuleRightDx = Prefs.clamp(p.getInt(Prefs.KEY_CAPSULE_RIGHT_DX,
+                Prefs.DEF_CAPSULE_NUDGE), Prefs.MIN_CAPSULE_NUDGE_X_RIGHT,
+                Prefs.MAX_CAPSULE_NUDGE_X_RIGHT);
+        s.capsuleRightDy = Prefs.clamp(p.getInt(Prefs.KEY_CAPSULE_RIGHT_DY,
+                Prefs.DEF_CAPSULE_NUDGE), Prefs.MIN_CAPSULE_NUDGE, Prefs.MAX_CAPSULE_NUDGE);
         s.roleColors = p.getBoolean(Prefs.KEY_ROLE_COLORS, Prefs.DEF_ROLE_COLORS);
         s.criticalOnDark = p.getInt(Prefs.KEY_COLOR_CRITICAL_ON_DARK, Prefs.DEF_COLOR_CRITICAL_ON_DARK);
         s.criticalOnLight = p.getInt(Prefs.KEY_COLOR_CRITICAL_ON_LIGHT, Prefs.DEF_COLOR_CRITICAL_ON_LIGHT);
@@ -447,13 +483,13 @@ public final class TrioSettings {
         // invisible for a user who had changed the old setting.
         s.clockSize = Prefs.clamp(
                 p.getInt(Prefs.KEY_CLOCK_SIZE, s.valueSize),
-                Prefs.MIN_CLOCK_SIZE, Prefs.MAX_CLOCK_SIZE);
+                Prefs.MIN_CLOCK_SIZE, Prefs.maxClockSize(s.trioStyle));
         s.clockWeight = Prefs.clamp(
                 p.getInt(Prefs.KEY_CLOCK_WEIGHT, s.valueWeight),
                 Prefs.MIN_CLOCK_WEIGHT, Prefs.MAX_CLOCK_WEIGHT);
         s.typeSize = Prefs.clamp(
                 p.getInt(Prefs.KEY_TYPE_SIZE, Prefs.DEF_TYPE_SIZE),
-                Prefs.MIN_TYPE_SIZE, Prefs.MAX_TYPE_SIZE);
+                Prefs.MIN_TYPE_SIZE, Prefs.maxTypeSize(s.trioStyle));
         s.outTypeSize = readOutTypeSize(p, density);
         s.outSignalSize = Prefs.clamp(
                 p.getInt(Prefs.KEY_OUT_SIGNAL_SIZE, Prefs.DEF_OUT_SIGNAL_SIZE),
@@ -778,9 +814,14 @@ public final class TrioSettings {
         s.dataSimOnly = dataSimOnly;
         s.perfPower = perfPower;
         s.perfTemp = perfTemp;
+        s.perfTempChargingOnly = perfTempChargingOnly;
         s.perfScale = perfScale;
         s.perfWeight = perfWeight;
         s.glyphScale = glyphScale;
+        s.capsuleLeftDx = capsuleLeftDx;
+        s.capsuleLeftDy = capsuleLeftDy;
+        s.capsuleRightDx = capsuleRightDx;
+        s.capsuleRightDy = capsuleRightDy;
 
         s.roleColors = roleColors;
         s.criticalOnDark = criticalOnDark;
@@ -858,9 +899,14 @@ public final class TrioSettings {
             case Prefs.KEY_DATA_SIM_ONLY: dataSimOnly = src.dataSimOnly; return true;
             case Prefs.KEY_PERF_POWER: perfPower = src.perfPower; return true;
             case Prefs.KEY_PERF_TEMP: perfTemp = src.perfTemp; return true;
+            case Prefs.KEY_PERF_TEMP_CHARGING_ONLY: perfTempChargingOnly = src.perfTempChargingOnly; return true;
             case Prefs.KEY_PERF_SCALE: perfScale = src.perfScale; return true;
         case Prefs.KEY_PERF_WEIGHT: perfWeight = src.perfWeight; return true;
             case Prefs.KEY_GLYPH_SCALE: glyphScale = src.glyphScale; return true;
+            case Prefs.KEY_CAPSULE_LEFT_DX: capsuleLeftDx = src.capsuleLeftDx; return true;
+            case Prefs.KEY_CAPSULE_LEFT_DY: capsuleLeftDy = src.capsuleLeftDy; return true;
+            case Prefs.KEY_CAPSULE_RIGHT_DX: capsuleRightDx = src.capsuleRightDx; return true;
+            case Prefs.KEY_CAPSULE_RIGHT_DY: capsuleRightDy = src.capsuleRightDy; return true;
             case Prefs.KEY_ROLE_COLORS: roleColors = src.roleColors; return true;
             case Prefs.KEY_COLOR_CRITICAL_ON_DARK: criticalOnDark = src.criticalOnDark; return true;
             case Prefs.KEY_COLOR_CRITICAL_ON_LIGHT: criticalOnLight = src.criticalOnLight; return true;
@@ -941,6 +987,8 @@ public final class TrioSettings {
         s.dataSimOnly = bundle.getBoolean(Prefs.KEY_DATA_SIM_ONLY, Prefs.DEF_DATA_SIM_ONLY);
         s.perfPower = bundle.getBoolean(Prefs.KEY_PERF_POWER, Prefs.DEF_PERF_POWER);
         s.perfTemp = bundle.getBoolean(Prefs.KEY_PERF_TEMP, Prefs.DEF_PERF_TEMP);
+        s.perfTempChargingOnly = bundle.getBoolean(
+                Prefs.KEY_PERF_TEMP_CHARGING_ONLY, Prefs.DEF_PERF_TEMP_CHARGING_ONLY);
         s.perfScale = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_PERF_SCALE, Prefs.DEF_PERF_SCALE),
                 Prefs.MIN_PERF_SCALE, Prefs.MAX_PERF_SCALE);
@@ -950,7 +998,16 @@ public final class TrioSettings {
         s.glyphScale = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_GLYPH_SCALE, Prefs.DEF_GLYPH_SCALE),
                 Prefs.MIN_GLYPH_SCALE, Prefs.MAX_GLYPH_SCALE);
-
+        s.capsuleLeftDx = Prefs.clamp(bundle.getInt(Prefs.KEY_CAPSULE_LEFT_DX,
+                Prefs.DEF_CAPSULE_NUDGE), Prefs.MIN_CAPSULE_NUDGE_X,
+                Prefs.MAX_CAPSULE_NUDGE_X);
+        s.capsuleLeftDy = Prefs.clamp(bundle.getInt(Prefs.KEY_CAPSULE_LEFT_DY,
+                Prefs.DEF_CAPSULE_NUDGE), Prefs.MIN_CAPSULE_NUDGE, Prefs.MAX_CAPSULE_NUDGE);
+        s.capsuleRightDx = Prefs.clamp(bundle.getInt(Prefs.KEY_CAPSULE_RIGHT_DX,
+                Prefs.DEF_CAPSULE_NUDGE), Prefs.MIN_CAPSULE_NUDGE_X_RIGHT,
+                Prefs.MAX_CAPSULE_NUDGE_X_RIGHT);
+        s.capsuleRightDy = Prefs.clamp(bundle.getInt(Prefs.KEY_CAPSULE_RIGHT_DY,
+                Prefs.DEF_CAPSULE_NUDGE), Prefs.MIN_CAPSULE_NUDGE, Prefs.MAX_CAPSULE_NUDGE);
         s.roleColors = bundle.getBoolean(Prefs.KEY_ROLE_COLORS, Prefs.DEF_ROLE_COLORS);
         s.criticalOnDark = bundle.getInt(Prefs.KEY_COLOR_CRITICAL_ON_DARK, Prefs.DEF_COLOR_CRITICAL_ON_DARK);
         s.criticalOnLight = bundle.getInt(Prefs.KEY_COLOR_CRITICAL_ON_LIGHT, Prefs.DEF_COLOR_CRITICAL_ON_LIGHT);
@@ -979,13 +1036,13 @@ public final class TrioSettings {
         // shared-size look rather than snapping the time to a constant.
         s.clockSize = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_CLOCK_SIZE, s.valueSize),
-                Prefs.MIN_CLOCK_SIZE, Prefs.MAX_CLOCK_SIZE);
+                Prefs.MIN_CLOCK_SIZE, Prefs.maxClockSize(s.trioStyle));
         s.clockWeight = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_CLOCK_WEIGHT, s.valueWeight),
                 Prefs.MIN_CLOCK_WEIGHT, Prefs.MAX_CLOCK_WEIGHT);
         s.typeSize = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_TYPE_SIZE, Prefs.DEF_TYPE_SIZE),
-                Prefs.MIN_TYPE_SIZE, Prefs.MAX_TYPE_SIZE);
+                Prefs.MIN_TYPE_SIZE, Prefs.maxTypeSize(s.trioStyle));
         s.outTypeSize = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_OUT_TYPE_SIZE_DP, Prefs.DEF_OUT_TYPE_SIZE_DP),
                 Prefs.MIN_OUT_TYPE_SIZE_DP, Prefs.MAX_OUT_TYPE_SIZE_DP);
@@ -1074,9 +1131,14 @@ public final class TrioSettings {
         b.putBoolean(Prefs.KEY_DATA_SIM_ONLY, dataSimOnly);
         b.putBoolean(Prefs.KEY_PERF_POWER, perfPower);
         b.putBoolean(Prefs.KEY_PERF_TEMP, perfTemp);
+        b.putBoolean(Prefs.KEY_PERF_TEMP_CHARGING_ONLY, perfTempChargingOnly);
         b.putInt(Prefs.KEY_PERF_SCALE, perfScale);
         b.putInt(Prefs.KEY_PERF_WEIGHT, perfWeight);
         b.putInt(Prefs.KEY_GLYPH_SCALE, glyphScale);
+        b.putInt(Prefs.KEY_CAPSULE_LEFT_DX, capsuleLeftDx);
+        b.putInt(Prefs.KEY_CAPSULE_LEFT_DY, capsuleLeftDy);
+        b.putInt(Prefs.KEY_CAPSULE_RIGHT_DX, capsuleRightDx);
+        b.putInt(Prefs.KEY_CAPSULE_RIGHT_DY, capsuleRightDy);
 
         b.putBoolean(Prefs.KEY_ROLE_COLORS, roleColors);
         b.putInt(Prefs.KEY_COLOR_CRITICAL_ON_DARK, criticalOnDark);
@@ -1152,6 +1214,11 @@ public final class TrioSettings {
                 // on showing its old state.
                 && perfPower == s.perfPower
                 && perfTemp == s.perfTemp
+                // issue 45's own flag. It spent one release outside this list, and the
+                // symptom was exactly the one described above: the switch could be
+                // turned on, the value reached storage and SystemUI, and the row went on
+                // showing it off until some unrelated write forced a recomposition.
+                && perfTempChargingOnly == s.perfTempChargingOnly
                 // The two size sliders are stored settings like any other, and
                 // the issue 25 trap above applies unchanged: with either one left
                 // out, moving that slider would change nothing the screen can
@@ -1164,6 +1231,16 @@ public final class TrioSettings {
                 // the old number on the next recomposition.
                 && perfWeight == s.perfWeight
                 && glyphScale == s.glyphScale
+                // The four capsule nudges, and the reason this defect was noticed at all:
+                // they were added to defaults(), from(), copy(), applyKeyFrom() and both
+                // bundle directions - the whole pipeline except this list - so the only
+                // row in the module that could not move was the one they belong to. The
+                // readout row next to them is in the list, which is why dragging THAT one
+                // refreshed the whole page and made the nudges catch up.
+                && capsuleLeftDx == s.capsuleLeftDx
+                && capsuleLeftDy == s.capsuleLeftDy
+                && capsuleRightDx == s.capsuleRightDx
+                && capsuleRightDy == s.capsuleRightDy
                 && roleColors == s.roleColors
                 && criticalOnDark == s.criticalOnDark
                 && criticalOnLight == s.criticalOnLight
@@ -1205,6 +1282,11 @@ public final class TrioSettings {
         h = h * 31 + perfScale;
         h = h * 31 + perfWeight;
         h = h * 31 + glyphScale;
+        h = h * 31 + (perfTempChargingOnly ? 1 : 0);
+        h = h * 31 + capsuleLeftDx;
+        h = h * 31 + capsuleLeftDy;
+        h = h * 31 + capsuleRightDx;
+        h = h * 31 + capsuleRightDy;
         return h != 0 ? h : 1;
     }
 }

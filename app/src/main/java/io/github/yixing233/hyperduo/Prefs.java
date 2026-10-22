@@ -1,3 +1,13 @@
+/*
+ * Copyright (C) 2026 yixing233 and HyperDuo contributors
+ *
+ * This file is part of HyperDuo, released under the GNU General Public
+ * License v3.0. See the LICENSE file at the repository root, or
+ * <https://www.gnu.org/licenses/gpl-3.0.html>.
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ */
+
 package io.github.yixing233.hyperduo;
 
 /**
@@ -227,9 +237,11 @@ public final class Prefs {
      * look" - with priority lists there is no single arrangement to ship, and an empty
      * ring is an honest starting point that says "add something" instead of guessing.
      *
-     * <p>Three sections, not {@link #ZONE_COUNT}: {@link #decodeLayout} reads a short
-     * layout's missing sections as empty, so this one string serves both the three-zone
-     * arrangements and the capsule's five-section layout.
+     * <p>Two sections, not {@link #ZONE_COUNT}: {@link #decodeLayout} reads a short
+     * layout's missing sections as empty, so one string serves every arrangement -
+     * the ring's three bands, and the capsule's four cells (top, left, right, bottom).
+     * A layout written before the fourth cell existed therefore still decodes to the
+     * cells it named, with the left column left empty.
      */
     public static final String EMPTY_LAYOUT = "||";
 
@@ -258,14 +270,17 @@ public final class Prefs {
     /**
      * How many zones the layout has, in the order the layout string stores them.
      *
-     * <p>Three, whatever the arrangement: top, middle, bottom. The capsule maps them onto its
-     * own shape (top opening, interior right of the fixed clock, bottom opening) rather than
-     * having extra zones of its own - the clock is fixed there, so a fourth cell would be one
-     * the user could not change.
+     * <p>Four, whatever the arrangement. The ring and the rectangle use the first three as
+     * top, middle and bottom; the capsule uses all four as top opening, LEFT interior,
+     * RIGHT interior and bottom opening. The fourth index is the left-hand half of an
+     * interior that used to be one cell, so an install upgrading from the three-zone form
+     * decodes its old string with that cell empty and falls back to the clock there - see
+     * {@code TrioAppearance.Capsule}.
      *
      * <p>Append-only: reordering would reinterpret every stored layout.
      */
-    public static final int ZONE_COUNT = 3;
+    public static final int ZONE_COUNT = 4;
+
 
     /** The middle band, in the order {@link #ZONE_COUNT} stores them. */
     public static final int ZONE_CENTRE = 1;
@@ -745,6 +760,20 @@ public final class Prefs {
      * <p>A brand-new key with a brand-new name.
      */
     public static final String KEY_PERF_TEMP = "perf_temp";
+    /**
+     * Drops the temperature reading unless a charger is attached.
+     *
+     * <p>Off by default, which is the behaviour the module shipped with: temperature is a
+     * property of the battery, not of the charger, so it is drawn whether or not one is
+     * plugged in. On, the two readouts in that strip come and go together, which is what
+     * a user watching a charge cycle asked for (issue 45) - they want the pair as one
+     * block rather than a permanent temperature with an intermittent wattage beside it.
+     *
+     * <p>A separate key rather than changing what KEY_PERF_TEMP means: an install that
+     * already shows the temperature must keep showing it after the upgrade.
+     */
+    public static final String KEY_PERF_TEMP_CHARGING_ONLY = "perf_temp_charging_only";
+    public static final boolean DEF_PERF_TEMP_CHARGING_ONLY = false;
     /**
      * Overall size of the two performance readouts, as a percentage of the size
      * {@link #KEY_OUT_TYPE_SIZE_DP} and the adaptive fit settle on.
@@ -1262,6 +1291,70 @@ public final class Prefs {
      * settable, so an install that never touches the slider draws what it drew.
      */
     public static final int DEF_GLYPH_SCALE = 100;
+
+    /**
+     * Horizontal and vertical nudge for each of the capsule's two INTERIOR cells.
+     *
+     * <p>The interior is a fixed shape two readings are placed in: the left cell reads FROM
+     * its left edge and the right cell TO its right edge, so the pair frames the interior
+     * from both sides. A user who wants the pair a little higher, or a reading off the cap,
+     * has no other way to move them - the slot sizes change the text, not its place.
+     *
+     * <p>In design units, so the nudge scales with the glyph. Positive x is right and
+     * positive y is DOWN, matching the canvas. Four keys rather than one profile because
+     * the two cells need to move independently: the left one carries the clock and the
+     * right one the percentage, and they rarely want the same correction.
+     */
+    public static final String KEY_CAPSULE_LEFT_DX = "capsule_left_dx";
+    public static final String KEY_CAPSULE_LEFT_DY = "capsule_left_dy";
+    public static final String KEY_CAPSULE_RIGHT_DX = "capsule_right_dx";
+    public static final String KEY_CAPSULE_RIGHT_DY = "capsule_right_dy";
+    public static final int DEF_CAPSULE_NUDGE = 0;
+    public static final int MIN_CAPSULE_NUDGE = -20;
+    public static final int MAX_CAPSULE_NUDGE = 20;
+    /**
+     * Horizontal nudge, kept small on purpose.
+     *
+     * <p>Asymmetric because the cell LEANS: it reads from the interior's left edge, so its
+     * travel is inwards (positive) and its ink already starts a few units inside the outline -
+     * a negative nudge pushes the reading through the stroke and off the host, where it is
+     * clipped rather than moved.
+     *
+     * <p><b>Deliberately not limited to the interior.</b> An earlier cut bounded both ends
+     * by where the ink would touch the stroke, on the theory that a reading pushed past it
+     * would be "clipped rather than moved". That was wrong twice over: the draw is not
+     * clipped to the outline, so the reading really does travel; and the user's reason for
+     * moving a cell is often exactly to overhang - to sit a reading over the outline or out
+     * past the cap. A range that stops at the safe distance cannot express that, and reads
+     * as "the slider does nothing" long before it reaches a limit the user wanted.
+     *
+     * <p>So the span is the design box the glyph is costed in, centred on the cell, with
+     * room to spare at both ends. Overlap between the two readings is the user's to judge:
+     * they can see it, and they asked for the movement.
+     */
+    public static final int MIN_CAPSULE_NUDGE_X = -24;
+    public static final int MAX_CAPSULE_NUDGE_X = 24;
+    /**
+     * The RIGHT cell's horizontal range: the mirror of the pair above.
+     *
+     * <p>Why the two are not one range. The cells lean outwards - the left one reads from
+     * the interior's left edge and the right one to its right edge - so each has room in
+     * the direction it leans and none in the other. The left cell can travel INTO the
+     * interior (positive, rightwards) but not much outwards, where the stroke is; the right
+     * cell is the exact opposite. Sharing one span therefore handed each cell most of its
+     * travel in the direction it cannot use, and the slider felt like it moved one way for
+     * a few steps and then did nothing.
+     *
+     * <p>Mirrored from the pair above, and — now that neither end is bounded by the outline —
+     * symmetric with it. The cells still lean opposite ways and the anchors still sit on
+     * opposite edges, so the same number moves each cell the way its own lean makes natural:
+     * positive is rightwards for both, which is what the wireframe shows and what the slider
+     * promises.
+     */
+    public static final int MIN_CAPSULE_NUDGE_X_RIGHT = -24;
+    public static final int MAX_CAPSULE_NUDGE_X_RIGHT = 24;
+
+
     /**
      * 100%: the adaptive fit already balances the two readings against the icon,
      * so the shipped state is that answer unscaled.
@@ -1407,6 +1500,19 @@ public final class Prefs {
      */
     public static final int MAX_VALUE_SIZE = 44;
     /**
+     * The percentage ceiling in the CAPSULE, where the slot is measured per frame.
+     *
+     * <p>Higher than {@link #MAX_VALUE_SIZE} because the capsule is the one arrangement that
+     * divides its interior by what the two cells actually draw (see
+     * {@code TrioGeometry.capReadingSlotWidth}). Once the width follows the strings, the
+     * capsule can honestly hold more than the old fixed-slot figure: measured at the shipped
+     * stroke, a "5GA | 64" pair can be set to em 31.6, which is setting 50 - so a ceiling of
+     * 44 left about a seventh of the available size unused and the slider felt dead near the
+     * top. 56 is past the point the fit binds at every stroke in the range, so the reading
+     * is never asked for a size it cannot draw; the slot fit clamps on its own from there.
+     */
+    public static final int MAX_CAPSULE_VALUE_SIZE = 50;
+    /**
      * The percentage's ceiling when it is <em>placed in a ring slot</em>.
      *
      * <p>56: at the ring's interior the height cap is about 90pt and the width cap about 74,
@@ -1428,18 +1534,46 @@ public final class Prefs {
      * by the third it sits in and accept {@link #MAX_RING_VALUE_SIZE}; the capsule and the
      * rectangle have fixed slots and stop at {@link #MAX_VALUE_SIZE}.
      */
+    /** The clock's ceiling for the arrangement in force. */
+    public static int maxClockSize(int trioStyle) {
+        return trioStyle == STYLE_CAPSULE ? MAX_CAPSULE_CLOCK_SIZE : MAX_CLOCK_SIZE;
+    }
+
+    /** The network type's ceiling for the arrangement in force. */
+    public static int maxTypeSize(int trioStyle) {
+        return trioStyle == STYLE_CAPSULE ? MAX_CAPSULE_TYPE_SIZE : MAX_TYPE_SIZE;
+    }
+
     public static int maxValueSize(int trioStyle) {
-        return trioStyle == STYLE_RING ? MAX_RING_VALUE_SIZE : MAX_VALUE_SIZE;
+        if (trioStyle == STYLE_RING) {
+            return MAX_RING_VALUE_SIZE;
+        }
+        if (trioStyle == STYLE_CAPSULE) {
+            return MAX_CAPSULE_VALUE_SIZE;
+        }
+        return MAX_VALUE_SIZE;
     }
     public static final int MIN_VALUE_WEIGHT = 100;
     public static final int MAX_VALUE_WEIGHT = 900;
     /** The time's own size span. Wider at the top than the value's: "19:41" is the longer string and the left slot is the one with room to spare. */
     public static final int MIN_CLOCK_SIZE = 16;
     public static final int MAX_CLOCK_SIZE = 44;
+    /**
+     * The time's ceiling in the CAPSULE; see {@link #MAX_CAPSULE_VALUE_SIZE}.
+     *
+     * <p>Same reason as the percentage: the capsule divides its interior by what the two cells
+     * draw, so both can be set past the fixed-slot figure. A clock is the widest reading the
+     * capsule carries (2.52 units per em against the number's 1.68), so it gains the least -
+     * but with the arcs or the bolt beside it there is no second string competing for the
+     * width at all, and the full interior is its own.
+     */
+    public static final int MAX_CAPSULE_CLOCK_SIZE = 50;
     public static final int MIN_CLOCK_WEIGHT = 100;
     public static final int MAX_CLOCK_WEIGHT = 900;
     public static final int MIN_TYPE_SIZE = 16;
     public static final int MAX_TYPE_SIZE = 44;
+    /** The network type's ceiling in the CAPSULE; see {@link #MAX_CAPSULE_VALUE_SIZE}. */
+    public static final int MAX_CAPSULE_TYPE_SIZE = 50;
     public static final int MIN_OUT_TYPE_SIZE = 16;
     /**
      * Higher than {@link #MAX_TYPE_SIZE} on purpose: the out-of-ring label sits
