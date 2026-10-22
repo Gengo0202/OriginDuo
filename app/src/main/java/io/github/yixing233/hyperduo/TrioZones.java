@@ -258,6 +258,97 @@ public final class TrioZones {
         }
     }
 
+    /**
+     * The part of a zone a highlight should show, in design units.
+     *
+     * <p>Deliberately NOT {@link #boxes}: those are HIT regions, and they are generous on
+     * purpose. The ring's middle band spans the full 120-unit box so that a press anywhere
+     * across the glyph resolves to it, which is the right rule for a finger - but drawn as
+     * a highlight it is a rectangle running along the whole canvas, straight through the
+     * arc and out over the empty space beside it. It reads as a stray selection box rather
+     * than as "this cell is what the press will act on", which is the one thing the
+     * highlight exists to say.
+     *
+     * <p>So a highlight is inset to the zone's own content: the ring's interior for the
+     * middle band, the two openings for the outer bands, and the cells themselves for the
+     * capsule. The hit region stays as wide as it was; only the drawn guide narrows.
+     */
+    public static float[][] highlightBoxes(Zone zone, TrioAppearance a) {
+        if (a.capsule) {
+            // The two INTERIOR cells are already tight - each is the half of the body that
+            // holds its piece - so those are reused unchanged. The OPENINGS are not: their
+            // hit region spans the whole ink box (146.5 units at the shipped stroke) because a
+            // press anywhere along the top of the capsule should open that band, while the row
+            // of beads they hold is only as wide as the straight run between the caps (79).
+            // Drawn as a guide, the hit region is a rectangle reaching from one end of the
+            // capsule to the other, well past the dots it names.
+            if (zone == Zone.TOP || zone == Zone.BOTTOM) {
+                return new float[][] { openingGuide(zone, a) };
+            }
+            return boxes(zone, a);
+        }
+        if (a.rect) {
+            return boxes(zone, true);
+        }
+        // The ring. Inset to the ring's own interior instead of the full 120-unit box: the
+        // guide then sits over the piece the band holds rather than running along the whole
+        // canvas. The horizontal reach is the arc's inner radius, and the vertical one is the
+        // band between the cut lines the placement already uses.
+        final float cx = TrioGeometry.B_CX;
+        // The same width the ring's own cells are fitted to: 78 units less the stroke. Taking
+        // it from the drawing rather than from the ink box is what keeps the guide over the
+        // piece - the ink box is the outer reach of the whole glyph, including the stroke's
+        // own half-width, so a guide sized to it would sit outside the arc it names.
+        final float halfW = (78f - a.ringStroke) * 0.5f;
+        final float top;
+        final float bottom;
+        if (zone == Zone.TOP) {
+            top = TrioGeometry.INK_Y;
+            bottom = TrioGeometry.ZONE_CUT_TOP;
+        } else if (zone == Zone.BOTTOM) {
+            top = TrioGeometry.ZONE_CUT_BOTTOM;
+            bottom = TrioGeometry.INK_Y + TrioGeometry.INK_H;
+        } else {
+            top = TrioGeometry.ZONE_CUT_TOP;
+            bottom = TrioGeometry.ZONE_CUT_BOTTOM;
+        }
+        return new float[][] { { cx - halfW, top, cx + halfW, bottom } };
+    }
+    /**
+     * The guide for one of the capsule's openings: the strip beyond the outline, across the
+     * straight run the beads occupy.
+     *
+     * <p>Not the hit region: that spans the whole ink box so a press anywhere along the top
+     * of the shape resolves to the band. The strip the band actually DRAWS in is the flat run
+     * between the two caps - the dots sit on it, and a reading in an opening is fitted to it -
+     * so that is what a guide should outline.
+     */
+    private static float[] openingGuide(Zone zone, TrioAppearance a) {
+        final float stroke = a.ringStroke * TrioGeometry.CAP_STROKE_RATIO;
+        final float fringe = 1f;
+        // The BEAD ROW's own span, not the straight run between the caps. The two are very
+        // different figures: four beads at CAP_DOT_PITCH cover about 40 units, while the flat
+        // run they sit on is 79. Outlining the run - which is what this did - draws a box more
+        // than twice the width of the dots it is meant to name.
+        final float rowHalf = TrioGeometry.CAP_DOT_PITCH * 1.5f + TrioGeometry.CAP_DOT_R;
+        final float centre = TrioGeometry.capDotCx();
+        // A small margin so the guide reads as a box around the row rather than as a tight
+        // hull of it, but far less than the gap to the next bead pitch.
+        final float pad = TrioGeometry.CAP_DOT_R * 0.6f;
+        final float left = centre - rowHalf - pad;
+        final float right = centre + rowHalf + pad;
+        // The beads RIDE the outline's centreline, so the row straddles it: a bead's ink
+        // reaches stroke/2 + its radius to either side of CAP_TOP. A guide that stopped at the
+        // line would cover the upper half of the dots and miss the lower one, which reads as
+        // the box being offset rather than as a box around the row.
+        final boolean top = zone == Zone.TOP;
+        final float reach = stroke * 0.5f + TrioGeometry.CAP_DOT_R + pad;
+        final float line = top ? TrioGeometry.CAP_TOP : TrioGeometry.CAP_BOTTOM;
+        final float outer = top ? line - reach : line + reach;
+        final float inner = top ? line + reach : line - reach;
+        return new float[] { left, outer, right, inner };
+    }
+
     /** Layout-aware regions, including the capsule's four cells and its dot bands. */
     public static float[][] boxes(Zone zone, TrioAppearance a) {
         if (!a.capsule) {
@@ -266,13 +357,17 @@ public final class TrioZones {
         final float stroke = a.ringStroke * TrioGeometry.CAP_STROKE_RATIO;
         final float top = TrioGeometry.capInteriorTop(stroke);
         final float bottom = TrioGeometry.capInteriorBottom(stroke);
-        final float split = TrioGeometry.capLeftCx(stroke)
-                + TrioGeometry.capTimeSlotWidth(stroke) / 2f + TrioGeometry.CAP_TEXT_GAP / 2f;
+        // The seam the two interior cells meet at. With each cell sized by its own reading
+        // and hung off its own edge, the divide is simply the middle of the track: neither
+        // cell's width can move it, which is what keeps one component from squeezing the
+        // other.
+        final float split = TrioGeometry.capTextLeft(stroke)
+                + TrioGeometry.capReadingsWidth(stroke) / 2f;
         // Include the antialiased fringe outside the mathematical stroke bounds;
         // this does not move the seams between the readings and signal rows.
         final float fringe = 1f;
         final float left = TrioGeometry.CAP_INK_X - fringe;
-        final float right = TrioGeometry.CAP_INK_X + TrioGeometry.CAP_INK_W + fringe;
+        final float right = TrioGeometry.CAP_INK_X + TrioGeometry.capInkW() + fringe;
         switch (zone) {
             case TOP:
                 // The top opening: where the two dot rows cross the outline at 12 o'clock.

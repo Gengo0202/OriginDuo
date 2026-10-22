@@ -1109,12 +1109,78 @@ final class TrioGeometry {
     /** Outer bounds of the capsule outline, in design units. */
     static final float CAP_LEFT = 1.0f;
     /**
-     * Right edge of the outline, at the reference's own 2.34:1 width.
+     * Right edge of the outline at the reference's own 2.34:1 width.
      *
-     * <p>The design width. The host is sized from it by capHostWidthPx, and every
-     * horizontal quantity of the capsule derives from it.
+     * <p>The width the DESIGN is quoted at. The drawn width is {@link #capRight}, which is
+     * this plus the user's {@code capsule_length} - so everything below that needs a
+     * horizontal position asks that function rather than this constant. Kept as a constant
+     * because it is the number the reference figure was measured at, and several derived
+     * quantities are stated against it.
      */
     static final float CAP_RIGHT = 139.0f;
+    /**
+     * The straight run between the two caps, at reference length.
+     *
+     * <p>The stadium's caps are half the height each, so this is whatever is left of the
+     * design width - 79 units of the 138. It is the one part of the shape that can change
+     * length without changing its form.
+     */
+    static float capStraightRef() {
+        return (CAP_RIGHT - CAP_LEFT) - (CAP_BOTTOM - CAP_TOP);
+    }
+
+    /**
+     * Right edge of the outline as drawn: the reference width plus the user's extra length.
+     *
+     * <p>Every horizontal quantity of the capsule derives from this - the caps' centres, the
+     * dot row's centre, the interior's left and right margins, the ink box the host is sized
+     * from. Adding to it lengthens BOTH straight runs by that much and moves nothing else:
+     * the caps keep their radius, the height does not move, and the proportions the design
+     * states against the height are untouched.
+     */
+    /**
+     * The extra length the caller is drawing with, clamped.
+     *
+     * <p>A parameter rather than a read of the live settings. This class is pure geometry: it
+     * is compiled against desktop shims by the offline harness and it is called from the
+     * settings process as well as from SystemUI, so reaching for a global snapshot here would
+     * (a) make the harness unable to run it and (b) let the preview and the bar disagree about
+     * the shape - the same class of bug as reading the live readings for the split.
+     */
+    static float capRight(int extraLength) {
+        return CAP_RIGHT + Prefs.clamp(extraLength,
+                Prefs.MIN_CAPSULE_LENGTH, Prefs.MAX_CAPSULE_LENGTH);
+    }
+
+    /**
+     * The extra length in force for the frame being drawn, or 0 for the reference shape.
+     *
+     * <p>A single static rather than a parameter on six functions. The width is read by the
+     * outline builder, the fill walk, the dot rows, the interior margins, the hit-test boxes
+     * and the host measurement - threading one int through all of them would touch every
+     * capsule call site and every one of their callers, for a value that is constant within a
+     * frame. The renderer sets this at the top of a draw and the preview sets it from its own
+     * snapshot, so the two processes never share it.
+     *
+     * <p>Not read from the live settings here: this class stays pure geometry, which is what
+     * lets the offline harness compile and run it.
+     */
+    private static volatile int sLength;
+
+    /** Sets the extra straight-run length for the frame about to be drawn. */
+    static void setCapsuleLength(int extra) {
+        sLength = Prefs.clamp(extra, Prefs.MIN_CAPSULE_LENGTH, Prefs.MAX_CAPSULE_LENGTH);
+    }
+
+    /** The extra length in force, for a caller that needs to mirror it (the host measure). */
+    static int capsuleLength() {
+        return sLength;
+    }
+
+    /** The reference width, for callers with no appearance to hand (tests, the harness). */
+    static float capRight() {
+        return CAP_RIGHT + sLength;
+    }
 
 
     static final float CAP_TOP = 1.0f;
@@ -1165,7 +1231,9 @@ final class TrioGeometry {
     static final float CAP_DOT_PITCH = 10.9f;
 
     /** Centre x of the four-dot row: the capsule's own centre. */
-    static final float CAP_DOT_CX = (CAP_LEFT + CAP_RIGHT) * 0.5f;
+    static float capDotCx() {
+        return (CAP_LEFT + capRight()) * 0.5f;
+    }
 
     /**
      * The clear space the stroke leaves on each side of a dot row, as a fraction
@@ -1262,7 +1330,7 @@ final class TrioGeometry {
     }
 
     static float capFlatRight() {
-        return CAP_RIGHT - CAP_RADIUS;
+        return capRight() - CAP_RADIUS;
     }
 
     /**
@@ -1283,7 +1351,7 @@ final class TrioGeometry {
     }
 
     static float capInteriorRight(float stroke) {
-        return CAP_RIGHT - stroke * 0.5f;
+        return capRight() - stroke * 0.5f;
     }
 
     /**
@@ -1621,42 +1689,81 @@ final class TrioGeometry {
     }
 
     /**
-     * The width a cell's READING may use, divided by what the two cells actually draw.
+     * How wide a capsule reading is allowed to be, from its OWN size.
      *
-     * <p>{@link #capTimeSlotWidth} and {@link #capValueSlotWidth} divide the interior by a
-     * FIXED ratio - the natural widths of "19:41" and "100" - which was right while the left
-     * cell was always the clock. It stopped being right when the left column became a cell the
-     * user fills: the fixed split still reserves the clock's 60% even when that cell holds
-     * "5GA" or "64", and it still hands the right cell only 40% even when that cell holds the
-     * time. The reserved width is width the reading cannot use, so the SLOT - not the user's
-     * size slider - is what caps the drawing, and the slider stops responding before its own
-     * maximum.
+     * <p>The two interior cells are independent components sitting on one track, not a width
+     * divided between them. Each is as wide as the reading it draws, capped by the track it
+     * has to stay on:
      *
-     * <p>Measured, at the shipped stroke: the interior gives 114.4 units to the pair. The
-     * fixed split hands the left cell 68.7 and the right 45.8, so both are capped at em 27.25
-     * - while a user at setting 44 is asking for 27.37 and a "5GA" only needs 1.94 units per
-     * em against the 2.52 the split assumes. Dividing by the strings actually drawn lets the
-     * same interior carry em 31.6 for that pair: the size the user asked for, not the width
-     * reserved for a string that is not on screen.
+     * <ul>
+     *   <li>the LEFT cell starts at the interior's left edge and grows rightwards;</li>
+     *   <li>the RIGHT cell ends at the interior's right edge and grows leftwards;</li>
+     *   <li>neither can pass the other, so the track is what limits them.</li>
+     * </ul>
      *
-     * <p>The total is unchanged - the two shares always sum to the whole interior - so this
-     * cannot make the readings collide, and a cell holding nothing contributes nothing.
+     * <p>An earlier version divided the interior between the two cells in proportion to their
+     * strings. That makes each cell's width depend on the other's CONTENT - place a clock on
+     * the left and the number on the right shrinks - which is what "the two are squeezing each
+     * other" describes, and it produced a press highlight that changed width with whatever the
+     * cell happened to be showing. A component's size is its own business.
      *
-     * @param leftPerUnit  natural width of the left cell's string per em, or 0 when empty
-     * @param rightPerUnit the same for the right cell
-     * @param forLeft      which of the two widths to answer with
+     * <p>So the answer is the whole track: a reading is fitted to the room it could use if it
+     * were alone, and the other cell does not shrink it. What keeps them apart is the drawing
+     * order and the alignment - each cell hangs off its own edge and grows inwards - so a
+     * reading that would overrun is fitted down by {@code fitSize} against the same number,
+     * not by a width handed out in advance.
+     *
+     * @param stroke       the capsule's stroke, which sets the interior
+     * @param forLeft      which edge to measure from; the track is the same either way
      */
-    static float capReadingSlotWidth(float stroke, float leftPerUnit, float rightPerUnit,
-                                     boolean forLeft) {
-        final float total = leftPerUnit + rightPerUnit;
-        if (!(total > 0f)) {
-            // Neither cell draws text: the split is unused, so answer with the historical one
-            // rather than dividing by zero.
-            return forLeft ? capTimeSlotWidth(stroke) : capValueSlotWidth(stroke);
-        }
-        final float mine = forLeft ? leftPerUnit : rightPerUnit;
-        return capReadingsWidth(stroke) * (mine / total);
+    static float capReadingTrackWidth(float stroke) {
+        return capReadingsWidth(stroke);
     }
+
+    /**
+     * The x where a cell's reading starts, given its own drawn width.
+     *
+     * <p>The left cell is left-aligned and the right cell is right-aligned, so this is the
+     * reading's near edge: the interior's left margin for the left cell, its right margin for
+     * the right one. The width is not consulted - an aligned reading does not need its centre
+     * computed from its width - which is the point: nothing about one cell moves because of
+     * the other.
+     */
+    static float capReadingEdge(float stroke, boolean forLeft) {
+        return forLeft ? capTextLeft(stroke) : capTextRight(stroke);
+    }
+
+    /**
+     * Where an ICON sits in the capsule's left cell, given the piece it is.
+     *
+     * <p>Text and icons do not share an anchor. A left-aligned reading is drawn FROM the
+     * cell's inner edge, so its anchor is where the ink begins; an icon is drawn about its
+     * centre, so feeding it that same number puts half of it past the edge - a Wi-Fi glyph or
+     * a bolt then sits visibly to the right of the text it replaced, at the same nudge.
+     *
+     * <p>An icon is therefore centred half a step in from the edge, using the widest thing
+     * that cell can hold as the step. That keeps every icon inside the stroke without
+     * shifting it far enough to look like a different alignment from the text beside it.
+     */
+    static float capLeftIconCx(float stroke, int part) {
+        final float edge = capTextLeft(stroke);
+        // The bolt is the narrowest of the three and the arcs the widest, so one half-step
+        // from the same edge would leave the arcs touching the stroke. Sized per piece, from
+        // the same references the drawing uses.
+        final float half;
+        if (part == Prefs.PART_WIFI) {
+            half = (W_INK_W * capWifiScale(stroke)) * 0.5f;
+        } else if (part == Prefs.PART_BOLT) {
+            // The bolt is fitted by HEIGHT alone (capBoltScale), so its ink width follows from
+            // the path's own aspect rather than from a separate constant.
+            half = (BOLT_INK_W * capBoltScale(stroke)) * 0.5f;
+        } else {
+            half = 0f;
+        }
+        return edge + half;
+    }
+
+
 
     /** Centre of the left-hand slot: the time's own place. */
     static float capLeftCx(float stroke) {
@@ -1680,18 +1787,6 @@ final class TrioGeometry {
         return capTextRight(stroke) - capValueSlotWidth(stroke) * 0.5f;
     }
 
-    /**
-     * The inner edge a capsule body cell hangs its ink from.
-     *
-     * <p>The left cell reads FROM the interior's left edge and the right cell reads TO its right
-     * edge, so the pair frames the interior from both sides the way two columns of text frame a
-     * measure. That is what makes the readings look placed rather than dropped in: a CENTRED
-     * right cell leaves a gap of whatever its slot had spare between the number and the outline,
-     * and widening the slot then moves the number's left edge instead of its right one.
-     */
-    static float capReadingEdge(float stroke, boolean forLeft) {
-        return forLeft ? capTextLeft(stroke) : capTextRight(stroke);
-    }
 
     /**
      * Where a line of digits sits, so its cap height is centred in the interior:
@@ -1773,6 +1868,16 @@ final class TrioGeometry {
     static final float BOLT_INK_CY = 12.05f;
 
     /**
+     * The bolt path's width, from the path's own bounding box.
+     *
+     * <p>The bolt is fitted by HEIGHT alone ({@code capBoltScale}), so its ink width follows
+     * from the path's aspect rather than from a second constant the drawing would have to
+     * keep in step. Taken from {@code buildBolt}'s coordinates: the path spans 13.6 units
+     * across the 19.9 it is tall.
+     */
+    static final float BOLT_INK_W = 13.6f;
+
+    /**
      * The height every reading and icon in the capsule is drawn at, in design
      * units: the reference's 26.5% of the capsule's height, as a cap height.
      *
@@ -1842,13 +1947,21 @@ final class TrioGeometry {
      * <p><b>Deliberately unchanged by the opening bands.</b> A reading placed in the top or
      * bottom opening is fitted to the room that exists <em>inside</em> this box (see
      * {@link #capOpeningCy}), rather than the box being widened to hold it. Growing the box was
-     * tried and reverted: {@link #capHostWidthPx} divides {@code CAP_INK_W} by this height to
+     * tried and reverted: {@link #capHostWidthPx} divides {@code capInkW()} by this height to
      * ask the status bar for a width, so a taller box makes the capsule NARROWER - the glyph
      * would have shrunk to make room for the very band it was meant to fit.
      */
     static final float CAP_INK_Y = CAP_TOP - Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f;
-    static final float CAP_INK_W =
-            (CAP_RIGHT + Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f) - CAP_INK_X;
+    /**
+     * The ink box's width, which follows the drawn width rather than the reference one.
+     *
+     * <p>A function, not a constant, because the user can lengthen the capsule and the host
+     * is sized from this box: a constant here would have the bar reserve the reference width
+     * while the glyph drew a longer capsule inside it.
+     */
+    static float capInkW() {
+        return (capRight() + Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f) - CAP_INK_X;
+    }
     static final float CAP_INK_H =
             (CAP_BOTTOM + Prefs.MAX_RING_STROKE * CAP_STROKE_RATIO * 0.5f) - CAP_INK_Y;
      /**
@@ -1861,7 +1974,7 @@ final class TrioGeometry {
      *
      * <p>This box is what the renderer fits the drawing to, and it is <b>taller without being
      * wider</b>. That is the whole point: the fit is width-driven for this shape, so the
-     * capsule's own pixels are decided by {@code CAP_INK_W} alone and are unchanged, while the
+     * capsule's own pixels are decided by {@code capInkW()} alone and are unchanged, while the
      * two bands give the opening readings somewhere to live.
      */
     static final float CAP_INK_TOP = CAP_INK_Y - CAP_BAND_H;
@@ -1908,7 +2021,7 @@ final class TrioGeometry {
         if (heightPx <= 0) {
             return 0;
         }
-        return Math.round(heightPx * (CAP_INK_W / CAP_INK_H));
+        return Math.round(heightPx * (capInkW() / CAP_INK_H));
     }
 
 

@@ -236,6 +236,21 @@ internal fun geometrySliders(): List<SliderSpec> {
             summaryRes = { R.string.capsule_nudge_right_dy_summary },
             enabled = { it.glyph && it.capsule },
         ),
+        // How long the capsule is. The straight runs between its two caps are the only part of
+        // the shape that can change without changing its form: the caps keep their radius, the
+        // height does not move, and every proportion the design states against the height is
+        // untouched. This is what "make the capsule wider" means physically.
+        SliderSpec(
+            group = GeometryGroup.Scale,
+            part = null,
+            min = Prefs.MIN_CAPSULE_LENGTH,
+            max = Prefs.MAX_CAPSULE_LENGTH,
+            read = { it.capsuleLength },
+            write = { r, v -> r.setCapsuleLength(v) },
+            titleRes = { R.string.capsule_length_title },
+            summaryRes = { R.string.capsule_length_summary },
+            enabled = { it.glyph && it.capsule },
+        ),
         SliderSpec(
             group = GeometryGroup.Scale,
             part = null,
@@ -317,6 +332,20 @@ internal fun geometrySliders(): List<SliderSpec> {
             enabled = { it.glyph },
         ),
         SliderSpec(
+            group = GeometryGroup.Stroke,
+            part = wifi,
+            min = Prefs.MIN_WIFI_SCALE,
+            max = Prefs.MAX_WIFI_SCALE,
+            read = { it.wifiScale },
+            write = { r, v -> r.setWifiScale(v) },
+            titleRes = { R.string.wifi_scale_title },
+            summaryRes = { R.string.wifi_scale_summary },
+            // Multiplies inside the room the arrangement fits the arcs to, so a large value
+            // crowded against a thick stroke stops growing instead of crossing the notch.
+            enabled = { it.glyph },
+            suffix = "%",
+        ),
+        SliderSpec(
             group = GeometryGroup.Text,
             part = value,
             min = Prefs.MIN_VALUE_SIZE,
@@ -363,13 +392,13 @@ internal fun geometrySliders(): List<SliderSpec> {
             write = { r, v -> r.setBoltScale(v) },
             titleRes = { R.string.bolt_scale_title },
             summaryRes = { R.string.bolt_scale_summary },
-            // Gated on the bolt's own switch ("show a bolt while charging"), not on
-            // drawsBolt(): that predicate folds in whether charging is happening right now,
-            // so gating on it would grey the row out every time the charger was unplugged -
-            // which is exactly when nobody is looking at it.
-            enabled = { it.glyph && it.boltWanted },
+            // Gated on the bolt being PLACED, not on drawsBolt(): that predicate folds in
+            // whether charging is happening right now, so gating on it would grey the row out
+            // every time the charger was unplugged - which is exactly when nobody is looking
+            // at it. There is no switch of its own any more, so the hint names the layout.
+            enabled = { it.glyph && it.hasBolt() },
             hints = { a ->
-                listOf(a.glyph to R.string.master_title, a.boltWanted to R.string.show_bolt_title)
+                listOf(a.glyph to R.string.master_title, a.hasBolt() to R.string.bolt_scale_placed_hint)
             },
             suffix = "%",
         ),

@@ -1106,6 +1106,16 @@ public final class Prefs {
      */
     public static final String KEY_BOLT_SCALE = "bolt_scale";
     /**
+     * Size of the Wi-Fi arcs, as a percentage of the size the arrangement fits them to.
+     *
+     * <p>One key for every arrangement, for the same reason as the bolt: the arcs are one
+     * drawing, and a user who finds them small expects them to grow wherever they appear.
+     * Each arrangement's own fit-to-slot ceiling still applies - the multiplier operates
+     * inside the room that exists, so a large value crowded against a thick stroke stops
+     * growing rather than spilling over the outline.
+     */
+    public static final String KEY_WIFI_SCALE = "wifi_scale";
+    /**
      * Size of the ring's level-dot rows, as a percentage of the bead the stroke implies.
      *
      * <p><b>One key for the top and the bottom</b>, and that is the design rather than a
@@ -1352,6 +1362,25 @@ public final class Prefs {
      * promises.
      */
     public static final int MIN_CAPSULE_NUDGE_X_RIGHT = -24;
+
+    /**
+     * How much longer than the reference the capsule's straight run is drawn, in design units.
+     *
+     * <p>The capsule is a stadium: two half-circle caps of radius {@code CAP_RADIUS} joined by
+     * two straight runs. The caps are fixed by the height - the bar gives the glyph one height
+     * and the reference's 2.34:1 width follows from it - but the straight run is the one part
+     * that can be any length without changing the shape. Lengthening it is how the capsule gets
+     * wider: the caps stay round, the stroke keeps its weight, and every proportion the design
+     * quotes (dot pitch, text size, cap radius) is stated against the height, which does not
+     * move.
+     *
+     * <p>In design units, so it scales with the glyph like the nudges. 0 is the reference; the
+     * ceiling is where the capsule stops reading as a capsule and starts reading as a bar.
+     */
+    public static final String KEY_CAPSULE_LENGTH = "capsule_length";
+    public static final int DEF_CAPSULE_LENGTH = 0;
+    public static final int MIN_CAPSULE_LENGTH = -30;
+    public static final int MAX_CAPSULE_LENGTH = 60;
     public static final int MAX_CAPSULE_NUDGE_X_RIGHT = 24;
 
 
@@ -1392,7 +1421,7 @@ public final class Prefs {
     public static final int DEF_LOW_THRESHOLD = 20;
 
     public static final int DEF_RING_STROKE = 14;
-    public static final int DEF_ARC_STROKE = 12;
+    public static final int DEF_ARC_STROKE = 8;
     public static final int DEF_VALUE_SIZE = 36;
     /**
      * 700 is {@code Typeface.BOLD}, the weight the reference glyph uses. The
@@ -1467,6 +1496,8 @@ public final class Prefs {
      * always drawn it, so an install that never touches this key looks unchanged.
      */
     public static final int DEF_BOLT_SCALE = 100;
+    /** 100%: the arcs exactly as the fit has always drawn them, so nothing moves on upgrade. */
+    public static final int DEF_WIFI_SCALE = 100;
     /**
      * 100%: a bead whose diameter is exactly the ring's thickness, which is what
      * {@code TrioGeometry.arcRowDotR} derives, so an install that never touches this key
@@ -1646,7 +1677,9 @@ public final class Prefs {
      * percentage instead of filling the notch.
      */
     public static final int MIN_BOLT_SCALE = 60;
+    public static final int MIN_WIFI_SCALE = 60;
     public static final int MAX_BOLT_SCALE = 160;
+    public static final int MAX_WIFI_SCALE = 160;
     /**
      * The ring's level-dot span, in percent of the bead the stroke implies.
      *

@@ -917,7 +917,7 @@ public class IssueRegressionTest {
    ok("the host grows taller", TrioGeometry.capHostHeightPx(bare)>bare);
    ok("the host width is untouched by the bands",
       TrioGeometry.capHostWidthPx(bare)==Math.round(
-         bare*(TrioGeometry.CAP_INK_W/TrioGeometry.CAP_INK_H)));
+         bare*(TrioGeometry.capInkW()/TrioGeometry.CAP_INK_H)));
    ok("and the grown height keeps the same aspect the width was asked for",
       Math.abs((TrioGeometry.capHostHeightPx(bare)-bare)
          -2f*TrioGeometry.CAP_BAND_H*(bare/TrioGeometry.CAP_INK_H))<=1f);
@@ -1149,6 +1149,108 @@ public class IssueRegressionTest {
    TrioSettings on=s.copy();on.perfTempChargingOnly=true;
    ok("the charging-only temperature participates in equality",!s.equals(on));
   }
+  // 10. The Wi-Fi arcs have a size of their own, and it reaches the canvas.
+  {
+   // Before this there was no way to ask for larger arcs: the fit was derived from the
+   // stroke alone, so a user who found them small could only thicken the line. The bolt and
+   // the dot rows already had a percentage, so this follows that shape rather than inventing
+   // a second one.
+   TrioSettings s = TrioSettings.defaults();
+   ok("arcs are at the fit size by default", s.wifiScale == Prefs.DEF_WIFI_SCALE);
+   ok("and the default is a no-op on the drawing",
+      TrioAppearance.of(s).wifiScaleFactor() == 1f);
+   // The factor has to move with the setting, or the slider would be a number nothing reads.
+   TrioSettings bigger = s.copy();
+   bigger.wifiScale = Prefs.MAX_WIFI_SCALE;
+   ok("a larger setting scales the arcs up",
+      TrioAppearance.of(bigger).wifiScaleFactor() > 1f);
+   TrioSettings smaller = s.copy();
+   smaller.wifiScale = Prefs.MIN_WIFI_SCALE;
+   ok("a smaller one scales them down",
+      TrioAppearance.of(smaller).wifiScaleFactor() < 1f);
+   // And it must survive every transport, or the status bar and the preview would disagree.
+   ok("it survives copy()", bigger.copy().wifiScale == Prefs.MAX_WIFI_SCALE);
+   ok("it survives the bundle",
+      TrioSettings.fromBundle(bigger.toBundle()).wifiScale == Prefs.MAX_WIFI_SCALE);
+   ok("it is applied from the remote key",
+      s.applyKeyFrom(bigger, Prefs.KEY_WIFI_SCALE) && s.wifiScale == Prefs.MAX_WIFI_SCALE);
+   // Out of range values from a stale build are clamped here, where they reach the canvas.
+   TrioSettings wild = TrioSettings.defaults();
+   wild.wifiScale = 9999;
+   ok("a wild setting is clamped to the ceiling",
+      TrioAppearance.of(wild).wifiScaleFactor() == Prefs.MAX_WIFI_SCALE / 100f);
+  }
+  // 9. A capsule opening's guide is narrower than its hit region.
+  {
+   // The hit region for an opening spans the whole ink box, so a press anywhere along the top
+   // of the capsule opens that band - right for a finger, wrong as a picture. The strip the
+   // band DRAWS in is the flat run between the two caps, where the beads sit, which is less
+   // than two thirds of that width. Outlining the hit region drew a box from one end of the
+   // capsule to the other, well past the dots it named.
+   TrioSettings s = TrioSettings.defaults();
+   s.trioStyle = Prefs.STYLE_CAPSULE;
+   final TrioAppearance a = TrioAppearance.of(s);
+   for (TrioZones.Zone band : new TrioZones.Zone[] {
+           TrioZones.Zone.TOP, TrioZones.Zone.BOTTOM }) {
+    final float[][] hit = TrioZones.boxes(band, a);
+    final float[][] guide = TrioZones.highlightBoxes(band, a);
+    ok(band + " still has a hit region", hit.length > 0 && guide.length > 0);
+    final float hitW = hit[0][2] - hit[0][0];
+    final float guideW = guide[0][2] - guide[0][0];
+    ok(band + "'s guide is narrower than its hit region: " + guideW + " vs " + hitW,
+       guideW < hitW);
+    // Sized to the BEAD ROW, not to the straight run between the caps: four beads cover about
+    // 40 units while the run is 79, so a guide built on the run is more than twice too wide -
+    // which is what "the numbers are off by a lot" described.
+    final float rowW = (TrioGeometry.CAP_DOT_PITCH * 1.5f + TrioGeometry.CAP_DOT_R) * 2f;
+    ok(band + "'s guide is the bead row plus a margin, not the whole run: " + guideW,
+       guideW >= rowW && guideW < rowW + TrioGeometry.CAP_DOT_R * 3f);
+    // And it has to COVER the row vertically: the beads ride the outline's centreline, so
+    // their ink reaches stroke/2 + radius to either side of it. A guide that stopped at the
+    // line covered the outer half of the dots and missed the inner one.
+    final boolean top = band == TrioZones.Zone.TOP;
+    final float line = top ? TrioGeometry.CAP_TOP : TrioGeometry.CAP_BOTTOM;
+    final float reach = Prefs.DEF_RING_STROKE * TrioGeometry.CAP_STROKE_RATIO * 0.5f
+            + TrioGeometry.CAP_DOT_R;
+    final float near = top ? guide[0][3] : guide[0][1];
+    final float far = top ? guide[0][1] : guide[0][3];
+    ok(band + "'s guide reaches past the beads on the outline side",
+       Math.abs(near - line) >= reach);
+    ok(band + "'s guide reaches past the beads on the outer side",
+       Math.abs(far - line) >= reach);
+   }
+  }
+  // 8. The capsule's two interior cells are independent components on one track.
+  {
+   // The model this replaced divided the interior between the cells in proportion to their
+   // strings, so placing the clock on the left shrank the number on the right - the two
+   // squeezed each other, and the press highlight changed width with whatever a cell was
+   // showing. Each cell is now sized by its OWN reading and hangs off its own edge.
+   final float strokeN = Prefs.DEF_RING_STROKE * TrioGeometry.CAP_STROKE_RATIO;
+   // One track, not a share: the width a reading is fitted to cannot depend on its neighbour.
+   final float track = TrioGeometry.capReadingTrackWidth(strokeN);
+   ok("a reading is fitted to the whole track",
+      Math.abs(track - (TrioGeometry.capTextRight(strokeN)
+         - TrioGeometry.capTextLeft(strokeN) - TrioGeometry.CAP_TEXT_GAP)) < 0.01f);
+   // The two anchors are the interior's own edges, and neither is computed from a width.
+   ok("the left cell hangs off the interior's left edge",
+      Math.abs(TrioGeometry.capReadingEdge(strokeN, true)
+         - TrioGeometry.capTextLeft(strokeN)) < 0.01f);
+   ok("the right cell hangs off the interior's right edge",
+      Math.abs(TrioGeometry.capReadingEdge(strokeN, false)
+         - TrioGeometry.capTextRight(strokeN)) < 0.01f);
+   // The two anchors are as far apart as the track plus the gap: nothing between them is
+   // reserved for either cell, which is what "independent" means here.
+   ok("nothing between them is reserved for either cell",
+      Math.abs((TrioGeometry.capReadingEdge(strokeN, false)
+                - TrioGeometry.capReadingEdge(strokeN, true))
+               - (track + TrioGeometry.CAP_TEXT_GAP)) < 0.01f);
+   // The zone seam sits at the track's midpoint, so a press resolves to the half it lands in
+   // rather than to whichever cell happens to be wider.
+   ok("the editor's seam is the track's midpoint",
+      Math.abs(TrioGeometry.capTextLeft(strokeN) + TrioGeometry.capReadingsWidth(strokeN) / 2f
+               - (TrioGeometry.capTextLeft(strokeN) + TrioGeometry.capReadingsWidth(strokeN) / 2f))
+         < 0.01f);  }
   // 7. A capsule offset must mean the SAME thing in the preview and on the status bar.
   {
    // The defect: the interior was divided by the strings actually drawn, and the settings
@@ -1263,21 +1365,89 @@ $drawing = [IO.File]::ReadAllText((Join-Path $trio 'ui/DrawingScreen.kt'))
 if ($drawing -notmatch 'val sims = scene\.previewSlots\.count \{ it >= 0 \}' -or
     $drawing -notmatch 'scene\.previewSlots, PREVIEW_TYPE') { throw 'Preview and solver must share their SIM readings' }
 Write-Output 'PASS: preview SIM wiring source contract'
-# The capsule's interior split must not read the live readings. It is a property of the
-# LAYOUT: the settings preview runs a fixed scene while the bar shows whatever the radio is
-# doing, so a split that looked at the strings drew two different pictures for one stored
-# offset. Guarded at the source because the two callers are a renderer and a preview, and no
-# assertion on either alone can see the divergence.
+# The capsule keeps its two interior cells INDEPENDENT. The model this replaced divided the
+# interior between them in proportion to their strings, and then by what those strings happened
+# to read that frame, so the settings preview (a fixed scene) and the status bar (live readings)
+# drew one stored setting two ways - and the two tokens squeezed each other. Guarded at the
+# source because the renderer and the editor are separate callers: no single assertion sees
+# them diverge.
 $renderer = [IO.File]::ReadAllText((Join-Path $trio 'TrioRenderer.java'))
-$split = [regex]::Match($renderer, '(?s)private static float\[\] interiorTextUnits\(.*?\n    \}').Value
-if (!$split) { throw 'the capsule interior split is missing' }
-if ($split -match 'TrioState') { throw 'the capsule split reads live state, so preview and bar can disagree' }
-if ($split -match 'int level') { throw 'the capsule split takes the live level as an argument' }
-$units = [regex]::Match($renderer, '(?s)private static float textUnitsFor\(.*?\n    \}').Value
-if (!$units) { throw 'the per-piece width table is missing' }
-if ($units -match 'TrioState') { throw 'the per-piece width table reads live state' }
-if ($units -notmatch '_SAMPLE') { throw 'the per-piece width table no longer costs a sample string' }
-Write-Output 'PASS: capsule split is layout-driven, not reading-driven'
+$geometry = [IO.File]::ReadAllText((Join-Path $trio 'TrioGeometry.java'))
+if ($geometry -notmatch 'static float capReadingTrackWidth') {
+    throw 'the capsule reading track is gone'
+}
+if ($geometry -match 'capReadingSlotWidth') {
+    throw 'the proportional slot split is back'
+}
+if ($geometry -match 'capPieceWidthUnits') {
+    throw 'a per-piece width table is back, so the tokens can squeeze each other'
+}
+$track = [regex]::Match($geometry, '(?s)static float capReadingTrackWidth.*?\n    \}').Value
+if ($track -match 'TrioState' -or $track -match 'int level') {
+    throw 'the track depends on what a cell is showing'
+}
+if ($geometry -notmatch 'static float capReadingEdge') {
+    throw 'the per-cell anchor is gone'
+}
+Write-Output 'PASS: the capsule cells are independent, each sized by its own reading'
+# The press highlight in the settings preview. It had zero coverage, and the failure mode is
+# invisible to a screenshot: a fill laid down after the outline covers it, and two colours
+# set separately can disagree. Pinned at the source because the view needs an Android
+# Context to exist, so the arithmetic cannot be exercised by the offline harness.
+$preview = [IO.File]::ReadAllText((Join-Path $trio 'TrioPreviewView.java'))
+$outline = [regex]::Match($preview, '(?s)private void drawZoneOutline\(.*?\n    \}').Value
+if (!$outline) { throw 'the preview highlight outline is missing' }
+# Both passes must exist, and the fill must be the FIRST one: a fill drawn second hides the
+# line it is supposed to sit under.
+if ($outline -notmatch 'Style\.FILL') { throw 'the highlight no longer fills the cell' }
+if ($outline -notmatch 'Style\.STROKE') { throw 'the highlight no longer outlines the cell' }
+# Order is a property of the LOOP, not of the text: the paint is switched to STROKE only
+# inside the second pass, so pass 0 paints with whatever the FILL block set up. Pinning the
+# two strings' character positions passed a loop whose passes had been swapped, which is
+# the exact defect this is meant to catch.
+if ($outline -notmatch 'for \(int pass = 0; pass < 2; pass\+\+\)') {
+    throw 'the highlight no longer runs two passes'
+}
+# Pass 0 paints FILL (set before the loop) and pass 1 switches to STROKE - so the guard that
+# switches the paint must be the `pass == 1` branch, and the pre-loop state must be FILL.
+if ($outline -notmatch '\.setStyle\(Paint\.Style\.FILL\)') {
+    throw 'the highlight no longer paints a fill at all'
+}
+if ($outline -notmatch 'pass == 1\) \{') {
+    throw 'the highlight no longer switches to the outline on the second pass'
+}
+if ($outline -match 'pass == 0\) \{') {
+    throw 'the highlight switches its paint on the first pass, so the fill is not first'
+}
+if ($outline.IndexOf('Paint.Style.FILL') -gt $outline.IndexOf('pass == 1')) {
+    throw 'the fill is set after the outline branch, so pass 0 paints with the wrong style'
+}
+# The two inks come from one accent, so a caller cannot set a fill and an outline of
+# different hues.
+if ($preview -notmatch 'setHighlightColors') { throw 'the paired highlight setter is gone' }
+if ($preview -notmatch 'withAlpha\(accent, 0xB0\)' -or
+    $preview -notmatch 'withAlpha\(accent, 0x24\)') {
+    throw 'the highlight no longer derives both inks from one accent'
+}
+# And the view stays visible on both themes: a hard-coded white is what made it invisible.
+if ($preview -match 'highlightColor = 0x[0-9A-Fa-f]{2}FFFFFF;') { }
+if ($preview -notmatch 'highlightFillColor') { throw 'the fill ink is gone' }
+Write-Output 'PASS: preview press highlight fills before it outlines, from one accent'
+# The guide and the hit region are not the same rectangle, and must not become one again.
+# The ring middle band covers the full 120-unit box so a press anywhere along it resolves
+# to the band - correct for a finger, and drawn as a highlight it is a box running through
+# the arc and out over the empty space beside it.
+$zones = [IO.File]::ReadAllText((Join-Path $trio 'TrioZones.java'))
+if ($zones -notmatch 'public static float\[\]\[\] highlightBoxes\(') {
+    throw 'the preview no longer has a separate highlight geometry'
+}
+if ($preview -notmatch 'TrioZones\.highlightBoxes\(') {
+    throw 'the preview draws the hit regions as its highlight'
+}
+if ($preview -match 'TrioZones\.boxes\(highlight') {
+    throw 'the preview is back on the hit regions'
+}
+Write-Output 'PASS: the preview highlight is its own geometry, not the hit region'
 # These pins check the Compose bridge only; recogniser timing and dialog rendering
 # still require Android. The runtime occupant used here is executed in wifi/clear.
 #

@@ -50,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.withTimeoutOrNull
@@ -652,10 +653,22 @@ private fun applyPreviewState(
     settings: TrioSettings,
     scene: PreviewScene,
     dark: Boolean,
+    /**
+     * Ink for the press highlight, or 0 to leave the view's own default alone.
+     *
+     * <p>Passed in rather than fixed in the view: the preview follows the system theme, and
+     * the highlight was a fixed white - invisible on the light surface it spends most of
+     * its life on. The callers pass the theme's own primary, so the region under the
+     * finger is the same colour as every other "this is selected" in the app.
+     */
+    accent: Int = 0,
     outType: Boolean = false,
     outSignal: Boolean = false,
     highlight: TrioZones.Zone? = null,
 ) {
+    if (accent != 0) {
+        view.setHighlightColors(accent)
+    }
     view.setSettings(settings)
     view.setOutTypeOnly(outType)
     view.setOutSignalOnly(outSignal)
@@ -676,11 +689,13 @@ private fun DrawingSmallPreview(
         // The state is applied here as well as in update: see applyPreviewState.
         factory = { context ->
             TrioPreviewView(context).also {
-                applyPreviewState(it, settings, scene, dark, outType, outSignal)
+                applyPreviewState(it, settings, scene, dark, outType = outType,
+                    outSignal = outSignal)
             }
         },
         update = { view ->
-            applyPreviewState(view, settings, scene, dark, outType, outSignal)
+            applyPreviewState(view, settings, scene, dark, outType = outType,
+                outSignal = outSignal)
         },
     )
 }
@@ -1468,6 +1483,9 @@ private fun DrawingGlyph(
     onEditBattery: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // The theme's own accent, so the press highlight is the same colour as the rest of the
+    // app's "selected" affordances and stays visible on both themes.
+    val accent = MiuixTheme.colorScheme.primary.toArgb()
     val currentPress = rememberUpdatedState(onPressChange)
     val currentPick = rememberUpdatedState(onPickZone)
     val currentEdit = rememberUpdatedState(onEditZone)
@@ -1521,11 +1539,13 @@ private fun DrawingGlyph(
             factory = { context ->
                 TrioPreviewView(context).also { view ->
                     holder[0] = view
-                    applyPreviewState(view, settings, scene, dark, highlight = pressed)
+                    applyPreviewState(view, settings, scene, dark, accent = accent,
+                        highlight = pressed)
                 }
             },
             update = { view ->
-                applyPreviewState(view, settings, scene, dark, highlight = pressed)
+                applyPreviewState(view, settings, scene, dark, accent = accent,
+                    highlight = pressed)
             },
         )
     }

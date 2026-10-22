@@ -56,6 +56,8 @@ public final class TrioAppearance {
     public final int capsuleLeftDy;
     public final int capsuleRightDx;
     public final int capsuleRightDy;
+    /** Extra straight-run length; see {@link Prefs#KEY_CAPSULE_LENGTH}. */
+    public final int capsuleLength;
     /**
      * True when {@link #style} is the ring.
      *
@@ -220,6 +222,8 @@ public final class TrioAppearance {
      * conversion keeps them from rounding differently.
      */
     public final int boltScale;
+    /** Wi-Fi arcs' size, in percent; see {@link Prefs#KEY_WIFI_SCALE}. */
+    public final int wifiScale;
     /**
      * Size of the ring's level-dot rows, as a percentage of the bead the stroke implies.
      *
@@ -249,6 +253,7 @@ public final class TrioAppearance {
         capsuleLeftDy = c.capsuleLeftDy;
         capsuleRightDx = c.capsuleRightDx;
         capsuleRightDy = c.capsuleRightDy;
+        capsuleLength = c.capsuleLength;
         ring = c.trioStyle == Prefs.STYLE_RING;
         slotted = !rect;
         ringZones = TrioSettings.copyZones(c.ringZones);
@@ -263,7 +268,10 @@ public final class TrioAppearance {
         showSim2 = c.showSim2;
         dataSimOnly = c.dataSimOnly;
         value = c.showValue;
-        boltWanted = c.showBolt;
+        // The bolt is a PLACED piece like every other, not a switch of its own: a charger
+        // must show what it is doing, and what it shows is decided by where the bolt sits in
+        // the layout. A separate row could contradict the list it was meant to describe.
+        boltWanted = true;
         centreValue = c.valueCentred && ring;
         typeMode = c.mobileTypeMode;
         typeInRing = c.mobileTypeMode == Prefs.MOBILE_TYPE_IN_RING;
@@ -299,6 +307,7 @@ public final class TrioAppearance {
         outSignalMargin = c.outSignalMargin;
         typeSuffixScale = c.typeSuffixScale;
         boltScale = c.boltScale;
+        wifiScale = c.wifiScale;
         dotScale = c.dotScale;
         outOrder = c.outOrder == null
                 ? Prefs.OUT_DEFAULT_ORDER.clone() : c.outOrder.clone();
@@ -331,8 +340,51 @@ public final class TrioAppearance {
      * <p>Not gated on {@link #glyph}, because the preview keeps drawing the chosen
      * arrangement while the master switch is off.
      */
+    /**
+     * Whether the bolt is PLACED anywhere, ignoring whether a charger is attached.
+     *
+     * <p>The question the settings rows need: "would a charger show a bolt", asked of the
+     * arrangement rather than of this frame. Distinct from {@link #drawsBolt()}, which folds
+     * in the current charge state and would grey a row out the moment the cable came out.
+     */
+    public boolean hasBolt() {
+        return hasRingPart(Prefs.PART_BOLT) || hasCapsulePart(Prefs.PART_BOLT);
+    }
+
     public boolean drawsBolt() {
-        return boltWanted && (ring ? hasRingPart(Prefs.PART_BOLT) : value);
+        // Placement alone, in both arrangements. The capsule used to tie the bolt to the
+        // percentage switch, which was the only way to ask for "charging replaces the number";
+        // now the user says it by placing the bolt, and the empty-layout fallback below still
+        // reproduces the old look for an install that has never placed anything.
+        return hasRingPart(Prefs.PART_BOLT)
+                || (capsule && hasCapsulePart(Prefs.PART_BOLT))
+                || (capsule && !anyPlacedInCapsule() && value);
+    }
+    
+    /** Whether the capsule's body holds this piece anywhere, left column included. */
+    private boolean hasCapsulePart(int part) {
+        return capsuleParts().contains(part);
+    }
+    
+    /** Every piece the capsule's four cells name, in the order they were placed. */
+    private java.util.Set<Integer> capsuleParts() {
+        final java.util.Set<Integer> out = new java.util.HashSet<>();
+        for (int[] chain : ringZones) {
+            for (int id : chain) {
+                out.add(id);
+            }
+        }
+        return out;
+    }
+    
+    /** True when no capsule cell holds anything, i.e. the shipped look is in force. */
+    private boolean anyPlacedInCapsule() {
+        for (int[] chain : ringZones) {
+            if (chain.length > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -520,6 +572,17 @@ public final class TrioAppearance {
      */
     public float boltScaleFactor() {
         return Prefs.clamp(boltScale, Prefs.MIN_BOLT_SCALE, Prefs.MAX_BOLT_SCALE) / 100f;
+    }
+
+    /**
+     * The Wi-Fi arcs' size multiplier, 1.0 for the reference size.
+     *
+     * <p>Clamped here for the same reason as the bolt: this is the one place a value from a
+     * broadcast or a stale build reaches the canvas, and an out-of-range arc would cross the
+     * notch its own clearance exists to keep it out of.
+     */
+    public float wifiScaleFactor() {
+        return Prefs.clamp(wifiScale, Prefs.MIN_WIFI_SCALE, Prefs.MAX_WIFI_SCALE) / 100f;
     }
 
     /**

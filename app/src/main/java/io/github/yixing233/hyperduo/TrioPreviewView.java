@@ -85,6 +85,16 @@ public final class TrioPreviewView extends View {
      */
     private TrioZones.Zone highlight;
 
+    /**
+     * Ink for the {@link #highlight} FILL, ARGB.
+     *
+     * <p>A wash rather than a tinted glyph: the point is to say "this cell is what the
+     * press will act on" without restating the cell's own colours. The theme decides the
+     * hue - see the caller - because a fixed white is invisible on a light preview and the
+     * preview follows the system theme.
+     */
+    private int highlightFillColor = 0x1AFFFFFF;
+
     /** Ink for the {@link #highlight} outline, ARGB. */
     private int highlightColor = 0x66FFFFFF;
 
@@ -235,6 +245,25 @@ public final class TrioPreviewView extends View {
     }
 
     /**
+     * Both inks of the highlight, from one colour.
+     *
+     * <p>One setter rather than two because the two are a pair: the fill is the outline's
+     * colour at a fraction of its alpha, and a caller that set them separately could leave
+     * a fill and an outline of different hues on screen. The fill stays much fainter than
+     * the line - it has to read as a highlight over ink it must not hide.
+     */
+    public void setHighlightColors(int accent) {
+        this.highlightColor = withAlpha(accent, 0xB0);
+        this.highlightFillColor = withAlpha(accent, 0x24);
+        invalidate();
+    }
+
+    /** The same ARGB with its alpha replaced. */
+    private static int withAlpha(int color, int alpha) {
+        return (color & 0x00FFFFFF) | (alpha << 24);
+    }
+
+    /**
      * Which third of the glyph a point in this view lands in, or {@code null} for
      * a miss and for the two out-of-ring cells.
      *
@@ -288,6 +317,10 @@ public final class TrioPreviewView extends View {
         if (settings == null) {
             return null;
         }
+        // The shape has to be in force before the transform is derived from it, or the hit
+        // boxes and the highlight guide land on the reference-length capsule while a longer
+        // one is drawn.
+        TrioGeometry.setCapsuleLength(settings.capsuleLength);
         return TrioZones.viewTransform(width, height, inset, TrioAppearance.of(settings));
     }
 
@@ -379,27 +412,44 @@ public final class TrioPreviewView extends View {
             return;
         }
         final float density = getResources().getDisplayMetrics().density;
-        guidePaint.setStyle(Paint.Style.STROKE);
-        guidePaint.setColor(highlightColor);
-        guidePaint.setStrokeWidth(Math.max(1f, HIGHLIGHT_STROKE_DP * density));
+        // A wash first, then the line: the fill is what makes a 20px-tall cell legible in a
+        // 1000px preview, and the outline is what makes its EDGE unmistakable. Neither alone
+        // did the job - a thin line vanished among the cell's own ink, and a fill with no
+        // edge read as a rendering artefact rather than as a selected region.
+        guidePaint.setStyle(Paint.Style.FILL);
+        guidePaint.setColor(highlightFillColor);
+        guidePaint.setStrokeWidth(0f);
 
-        for (float[] box : TrioZones.boxes(highlight, TrioAppearance.of(settings))) {
-            // Two opposite corners is enough: the transform is a uniform scale and
-            // a translation, so an axis-aligned box stays axis-aligned.
-            if (!TrioZones.toView(t, box[0], box[1], guidePoint)) {
-                continue;
+        // Two passes over the same boxes: every fill, then every outline. Interleaving them
+        // would let one box's fill wash over the previous box's line, which the rectangular
+        // arrangement can produce - its bottom zone is two dot columns plus the bar.
+        final java.util.List<float[]> boxes =
+                java.util.Arrays.asList(
+                        TrioZones.highlightBoxes(highlight, TrioAppearance.of(settings)));
+        final float r = HIGHLIGHT_CORNER_DP * density;
+        for (int pass = 0; pass < 2; pass++) {
+            if (pass == 1) {
+                guidePaint.setStyle(Paint.Style.STROKE);
+                guidePaint.setColor(highlightColor);
+                guidePaint.setStrokeWidth(Math.max(1f, HIGHLIGHT_STROKE_DP * density));
             }
-            guideRect.left = guidePoint[0];
-            guideRect.top = guidePoint[1];
-            if (!TrioZones.toView(t, box[2], box[3], guidePoint)) {
-                continue;
+            for (float[] box : boxes) {
+                // Two opposite corners is enough: the transform is a uniform scale and
+                // a translation, so an axis-aligned box stays axis-aligned.
+                if (!TrioZones.toView(t, box[0], box[1], guidePoint)) {
+                    continue;
+                }
+                guideRect.left = guidePoint[0];
+                guideRect.top = guidePoint[1];
+                if (!TrioZones.toView(t, box[2], box[3], guidePoint)) {
+                    continue;
+                }
+                guideRect.right = guidePoint[0];
+                guideRect.bottom = guidePoint[1];
+                // The design box is inset from the view by `inset`, and the outline is
+                // drawn in view coordinates, so the canvas is not translated here.
+                canvas.drawRoundRect(guideRect, r, r, guidePaint);
             }
-            guideRect.right = guidePoint[0];
-            guideRect.bottom = guidePoint[1];
-            // The design box is inset from the view by `inset`, and the outline is
-            // drawn in view coordinates, so the canvas is not translated here.
-            final float r = HIGHLIGHT_CORNER_DP * density;
-            canvas.drawRoundRect(guideRect, r, r, guidePaint);
         }
     }
 

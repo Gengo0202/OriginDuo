@@ -185,11 +185,10 @@ internal fun ContentControlRow(
         // third state to choose between, so the old row is gone.
         ContentControl.DataSim -> ContentToggle(a.dataSimOnly, R.string.data_sim_only_title,
             null, master) { value -> update { it.setDataSimOnly(value) } }
-        ContentControl.Bolt -> ContentToggle(a.boltWanted, R.string.show_bolt_title,
-            null,
-            master) {
-            value -> update { it.setShowBolt(value) }
-        }
+        // No bolt switch: a charger always reports itself, and where it does so is decided by
+        // placing the bolt in the layout like any other piece. A row here would be a second
+        // answer to the same question, able to contradict the list it describes.
+        ContentControl.Bolt -> Unit
         ContentControl.Type -> ContentChoice(a.typeMode, R.string.show_mobile_type_title,
             null,
             listOf(R.string.mobile_type_off, R.string.mobile_type_inside, R.string.mobile_type_outside),
@@ -309,13 +308,35 @@ private fun WifiPositionControl(
     update: ((SettingsRepository) -> Unit) -> Unit,
 ) {
     val id = TrioZones.encodePart(TrioZones.Part.WIFI)
-    val placedAt = ringSettings.ringZones.indexOfFirst { it.contains(id) } + 1
+    // The capsule has FOUR cells and the ring three, so the list of choices - and the
+    // mapping from a stored zone back to a row in it - is per-arrangement, exactly as
+    // RingPositionControl does it. This row used to take the array INDEX as the answer
+    // and pair it with a fixed three-band list, which in the capsule named the wrong
+    // cell: Zone order is TOP, CENTRE, BOTTOM, LEFT, so a piece in the left cell sits at
+    // index 3 - read as "fourth choice", which in a four-item list is the BOTTOM label.
+    // The list had no Left entry at all, so there was no way to name that cell either.
+    val capsule = ringSettings.trioStyle == Prefs.STYLE_CAPSULE
+    val slots = if (capsule) {
+        listOf(TrioZones.Zone.TOP, TrioZones.Zone.LEFT, TrioZones.Zone.CENTRE,
+            TrioZones.Zone.BOTTOM)
+    } else {
+        listOf(TrioZones.Zone.TOP, TrioZones.Zone.CENTRE, TrioZones.Zone.BOTTOM)
+    }
+    val placedAt = ringSettings.ringZones.indexOfFirst { it.contains(id) }
+    val slotIndex = if (placedAt < 0) 0 else slots.indexOf(TrioZones.Zone.entries[placedAt]) + 1
     // Off wins over "placed somewhere": a switch that is off draws no arcs whatever the
     // layout says, so reporting a slot here would name a place that produces nothing.
-    val selected = if (!settings.showWifi) 0 else placedAt
+    val selected = if (!settings.showWifi) 0 else slotIndex
     ContentChoice(selected, R.string.ring_position_wifi, null,
-        listOf(R.string.ring_position_native, R.string.drawing_hint_top,
-            R.string.drawing_hint_centre, R.string.drawing_hint_bottom),
+        listOf(R.string.ring_position_native) + slots.map { zone ->
+            when (zone) {
+                TrioZones.Zone.TOP -> R.string.drawing_hint_top
+                TrioZones.Zone.LEFT -> R.string.drawing_hint_left
+                TrioZones.Zone.CENTRE -> if (capsule) R.string.drawing_hint_right
+                    else R.string.drawing_hint_centre
+                else -> R.string.drawing_hint_bottom
+            }
+        },
         listOf(settings.enabled to R.string.master_title)) { value ->
         update { it.setWifiPosition(value) }
     }

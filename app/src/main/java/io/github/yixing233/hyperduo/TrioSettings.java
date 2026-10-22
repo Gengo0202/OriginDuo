@@ -204,6 +204,8 @@ public final class TrioSettings {
      * the reference path implies, which is what every install had before this key existed.
      */
     public int boltScale;
+    /** Wi-Fi arcs' size, in percent; see {@link Prefs#KEY_WIFI_SCALE}. */
+    public int wifiScale;
     /**
      * Size of the ring's level-dot rows, as a percentage of the bead the stroke implies.
      *
@@ -280,6 +282,8 @@ public final class TrioSettings {
     public int capsuleLeftDy;
     public int capsuleRightDx;
     public int capsuleRightDy;
+    /** Extra straight-run length; see {@link Prefs#KEY_CAPSULE_LENGTH}. */
+    public int capsuleLength;
 
     /** Only used by the settings app: the hooked side reads this via {@code TrioConfig}. */
     public boolean debugLog;
@@ -312,6 +316,7 @@ public final class TrioSettings {
         s.capsuleLeftDy = Prefs.DEF_CAPSULE_NUDGE;
         s.capsuleRightDx = Prefs.DEF_CAPSULE_NUDGE;
         s.capsuleRightDy = Prefs.DEF_CAPSULE_NUDGE;
+        s.capsuleLength = Prefs.DEF_CAPSULE_LENGTH;
 
         s.roleColors = Prefs.DEF_ROLE_COLORS;
         s.criticalOnDark = Prefs.DEF_COLOR_CRITICAL_ON_DARK;
@@ -336,6 +341,7 @@ public final class TrioSettings {
         s.outSignalMargin = Prefs.DEF_OUT_SIGNAL_MARGIN;
         s.typeSuffixScale = Prefs.DEF_TYPE_SUFFIX_SCALE;
         s.boltScale = Prefs.DEF_BOLT_SCALE;
+        s.wifiScale = Prefs.DEF_WIFI_SCALE;
         s.dotScale = Prefs.DEF_DOT_SCALE;
         s.outOrder = Prefs.OUT_DEFAULT_ORDER.clone();
         s.typeWeight = Prefs.DEF_TYPE_WEIGHT;
@@ -452,6 +458,9 @@ public final class TrioSettings {
                 Prefs.MAX_CAPSULE_NUDGE_X_RIGHT);
         s.capsuleRightDy = Prefs.clamp(p.getInt(Prefs.KEY_CAPSULE_RIGHT_DY,
                 Prefs.DEF_CAPSULE_NUDGE), Prefs.MIN_CAPSULE_NUDGE, Prefs.MAX_CAPSULE_NUDGE);
+        s.capsuleLength = Prefs.clamp(p.getInt(Prefs.KEY_CAPSULE_LENGTH,
+                Prefs.DEF_CAPSULE_LENGTH), Prefs.MIN_CAPSULE_LENGTH,
+                Prefs.MAX_CAPSULE_LENGTH);
         s.roleColors = p.getBoolean(Prefs.KEY_ROLE_COLORS, Prefs.DEF_ROLE_COLORS);
         s.criticalOnDark = p.getInt(Prefs.KEY_COLOR_CRITICAL_ON_DARK, Prefs.DEF_COLOR_CRITICAL_ON_DARK);
         s.criticalOnLight = p.getInt(Prefs.KEY_COLOR_CRITICAL_ON_LIGHT, Prefs.DEF_COLOR_CRITICAL_ON_LIGHT);
@@ -509,6 +518,9 @@ public final class TrioSettings {
         s.boltScale = Prefs.clamp(
                 p.getInt(Prefs.KEY_BOLT_SCALE, Prefs.DEF_BOLT_SCALE),
                 Prefs.MIN_BOLT_SCALE, Prefs.MAX_BOLT_SCALE);
+        s.wifiScale = Prefs.clamp(
+                p.getInt(Prefs.KEY_WIFI_SCALE, Prefs.DEF_WIFI_SCALE),
+                Prefs.MIN_WIFI_SCALE, Prefs.MAX_WIFI_SCALE);
         s.dotScale = Prefs.clamp(
                 p.getInt(Prefs.KEY_DOT_SCALE, Prefs.DEF_DOT_SCALE),
                 Prefs.MIN_DOT_SCALE, Prefs.MAX_DOT_SCALE);
@@ -822,6 +834,7 @@ public final class TrioSettings {
         s.capsuleLeftDy = capsuleLeftDy;
         s.capsuleRightDx = capsuleRightDx;
         s.capsuleRightDy = capsuleRightDy;
+        s.capsuleLength = capsuleLength;
 
         s.roleColors = roleColors;
         s.criticalOnDark = criticalOnDark;
@@ -846,6 +859,7 @@ public final class TrioSettings {
         s.outSignalMargin = outSignalMargin;
         s.typeSuffixScale = typeSuffixScale;
         s.boltScale = boltScale;
+        s.wifiScale = wifiScale;
         s.dotScale = dotScale;
         s.outOrder = outOrder == null ? Prefs.OUT_DEFAULT_ORDER.clone() : outOrder.clone();
         s.typeWeight = typeWeight;
@@ -907,6 +921,7 @@ public final class TrioSettings {
             case Prefs.KEY_CAPSULE_LEFT_DY: capsuleLeftDy = src.capsuleLeftDy; return true;
             case Prefs.KEY_CAPSULE_RIGHT_DX: capsuleRightDx = src.capsuleRightDx; return true;
             case Prefs.KEY_CAPSULE_RIGHT_DY: capsuleRightDy = src.capsuleRightDy; return true;
+            case Prefs.KEY_CAPSULE_LENGTH: capsuleLength = src.capsuleLength; return true;
             case Prefs.KEY_ROLE_COLORS: roleColors = src.roleColors; return true;
             case Prefs.KEY_COLOR_CRITICAL_ON_DARK: criticalOnDark = src.criticalOnDark; return true;
             case Prefs.KEY_COLOR_CRITICAL_ON_LIGHT: criticalOnLight = src.criticalOnLight; return true;
@@ -929,6 +944,7 @@ public final class TrioSettings {
             case Prefs.KEY_OUT_SIGNAL_MARGIN: outSignalMargin = src.outSignalMargin; return true;
             case Prefs.KEY_TYPE_SUFFIX_SCALE: typeSuffixScale = src.typeSuffixScale; return true;
             case Prefs.KEY_BOLT_SCALE: boltScale = src.boltScale; return true;
+            case Prefs.KEY_WIFI_SCALE: wifiScale = src.wifiScale; return true;
             case Prefs.KEY_DOT_SCALE: dotScale = src.dotScale; return true;
             case Prefs.KEY_OUT_ORDER:
                 outOrder = src.outOrder == null
@@ -1008,6 +1024,9 @@ public final class TrioSettings {
                 Prefs.MAX_CAPSULE_NUDGE_X_RIGHT);
         s.capsuleRightDy = Prefs.clamp(bundle.getInt(Prefs.KEY_CAPSULE_RIGHT_DY,
                 Prefs.DEF_CAPSULE_NUDGE), Prefs.MIN_CAPSULE_NUDGE, Prefs.MAX_CAPSULE_NUDGE);
+        s.capsuleLength = Prefs.clamp(bundle.getInt(Prefs.KEY_CAPSULE_LENGTH,
+                Prefs.DEF_CAPSULE_LENGTH), Prefs.MIN_CAPSULE_LENGTH,
+                Prefs.MAX_CAPSULE_LENGTH);
         s.roleColors = bundle.getBoolean(Prefs.KEY_ROLE_COLORS, Prefs.DEF_ROLE_COLORS);
         s.criticalOnDark = bundle.getInt(Prefs.KEY_COLOR_CRITICAL_ON_DARK, Prefs.DEF_COLOR_CRITICAL_ON_DARK);
         s.criticalOnLight = bundle.getInt(Prefs.KEY_COLOR_CRITICAL_ON_LIGHT, Prefs.DEF_COLOR_CRITICAL_ON_LIGHT);
@@ -1064,6 +1083,9 @@ public final class TrioSettings {
         s.boltScale = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_BOLT_SCALE, Prefs.DEF_BOLT_SCALE),
                 Prefs.MIN_BOLT_SCALE, Prefs.MAX_BOLT_SCALE);
+        s.wifiScale = Prefs.clamp(
+                bundle.getInt(Prefs.KEY_WIFI_SCALE, Prefs.DEF_WIFI_SCALE),
+                Prefs.MIN_WIFI_SCALE, Prefs.MAX_WIFI_SCALE);
         s.dotScale = Prefs.clamp(
                 bundle.getInt(Prefs.KEY_DOT_SCALE, Prefs.DEF_DOT_SCALE),
                 Prefs.MIN_DOT_SCALE, Prefs.MAX_DOT_SCALE);
@@ -1139,6 +1161,7 @@ public final class TrioSettings {
         b.putInt(Prefs.KEY_CAPSULE_LEFT_DY, capsuleLeftDy);
         b.putInt(Prefs.KEY_CAPSULE_RIGHT_DX, capsuleRightDx);
         b.putInt(Prefs.KEY_CAPSULE_RIGHT_DY, capsuleRightDy);
+        b.putInt(Prefs.KEY_CAPSULE_LENGTH, capsuleLength);
 
         b.putBoolean(Prefs.KEY_ROLE_COLORS, roleColors);
         b.putInt(Prefs.KEY_COLOR_CRITICAL_ON_DARK, criticalOnDark);
@@ -1163,6 +1186,7 @@ public final class TrioSettings {
         b.putInt(Prefs.KEY_OUT_SIGNAL_MARGIN, outSignalMargin);
         b.putInt(Prefs.KEY_TYPE_SUFFIX_SCALE, typeSuffixScale);
         b.putInt(Prefs.KEY_BOLT_SCALE, boltScale);
+        b.putInt(Prefs.KEY_WIFI_SCALE, wifiScale);
         b.putInt(Prefs.KEY_DOT_SCALE, dotScale);
         b.putString(Prefs.KEY_OUT_ORDER, Prefs.encodeOutOrder(outOrder));
         b.putInt(Prefs.KEY_TYPE_WEIGHT, typeWeight);
@@ -1241,6 +1265,7 @@ public final class TrioSettings {
                 && capsuleLeftDy == s.capsuleLeftDy
                 && capsuleRightDx == s.capsuleRightDx
                 && capsuleRightDy == s.capsuleRightDy
+                && capsuleLength == s.capsuleLength
                 && roleColors == s.roleColors
                 && criticalOnDark == s.criticalOnDark
                 && criticalOnLight == s.criticalOnLight
@@ -1263,6 +1288,7 @@ public final class TrioSettings {
                 && outSignalMargin == s.outSignalMargin
                 && typeSuffixScale == s.typeSuffixScale
                 && boltScale == s.boltScale
+                && wifiScale == s.wifiScale
                 && dotScale == s.dotScale
                 && java.util.Arrays.equals(outOrder, s.outOrder)
                 && typeWeight == s.typeWeight

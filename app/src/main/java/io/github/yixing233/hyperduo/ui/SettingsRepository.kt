@@ -193,18 +193,37 @@ class SettingsRepository(context: Context) {
         }
     }
     /**
-     * Wi-Fi's switch and ring slot as one decision: {@code 0} turns the arcs off and takes
-     * them out of the layout, {@code 1..3} turn them on and put them in that third.
+     * Wi-Fi's switch and slot as one decision: {@code 0} turns the arcs off and takes them
+     * out of the layout, and a positive number puts them in that choice of the current
+     * arrangement's cells.
      *
      * <p>One call rather than two setters, because the pair has to move together: between a
      * "switch off" write and a "remove from layout" write the module would be asked to draw
      * arcs it has no slot for, or hold a slot it will not fill.
+     *
+     * <p>The choice is read through the arrangement's own cell list rather than used as a
+     * zone ordinal. The capsule has four cells in the order top, left, right, bottom while
+     * the zones are stored as top, centre, bottom, left, so "third choice" is the right-hand
+     * interior for the capsule and the bottom band for the ring - the two are not the same
+     * ordinal, and assuming they were is what wrote the capsule's third choice into the
+     * bottom band.
      */
     fun setWifiPosition(position: Int) {
         val current = TrioSettings.from(preferences(), density)
-        if (position in 1..3) {
+        val slots = if (current.trioStyle == Prefs.STYLE_CAPSULE) {
+            listOf(io.github.yixing233.hyperduo.TrioZones.Zone.TOP,
+                io.github.yixing233.hyperduo.TrioZones.Zone.LEFT,
+                io.github.yixing233.hyperduo.TrioZones.Zone.CENTRE,
+                io.github.yixing233.hyperduo.TrioZones.Zone.BOTTOM)
+        } else {
+            listOf(io.github.yixing233.hyperduo.TrioZones.Zone.TOP,
+                io.github.yixing233.hyperduo.TrioZones.Zone.CENTRE,
+                io.github.yixing233.hyperduo.TrioZones.Zone.BOTTOM)
+        }
+        if (position in 1..slots.size) {
             val next = io.github.yixing233.hyperduo.TrioZones.withPiece(
-                current, position - 1, io.github.yixing233.hyperduo.TrioZones.Part.WIFI)
+                current, slots[position - 1].ordinal,
+                io.github.yixing233.hyperduo.TrioZones.Part.WIFI)
             next.showWifi = true
             applyRingAssignment(next)
         } else {
@@ -246,6 +265,8 @@ class SettingsRepository(context: Context) {
 
     /** Size of the in-ring charging bolt, in percent - see [Prefs.KEY_BOLT_SCALE]. */
     fun setBoltScale(value: Int) = writeInt(Prefs.KEY_BOLT_SCALE, value)
+    /** Wi-Fi arcs' size, in percent; see [Prefs.KEY_WIFI_SCALE]. */
+    fun setWifiScale(value: Int) = writeInt(Prefs.KEY_WIFI_SCALE, value)
 
     /**
      * Size of the ring's level-dot rows, in percent - see [Prefs.KEY_DOT_SCALE].
@@ -323,6 +344,8 @@ class SettingsRepository(context: Context) {
     fun setCapsuleLeftDy(value: Int) = writeInt(Prefs.KEY_CAPSULE_LEFT_DY, value)
     fun setCapsuleRightDx(value: Int) = writeInt(Prefs.KEY_CAPSULE_RIGHT_DX, value)
     fun setCapsuleRightDy(value: Int) = writeInt(Prefs.KEY_CAPSULE_RIGHT_DY, value)
+    /** Extra straight-run length; see [Prefs.KEY_CAPSULE_LENGTH]. */
+    fun setCapsuleLength(value: Int) = writeInt(Prefs.KEY_CAPSULE_LENGTH, value)
 
     // ---------------------------------------------------------------- advanced
 
@@ -378,6 +401,7 @@ class SettingsRepository(context: Context) {
             prefs.putInt(Prefs.KEY_CAPSULE_LEFT_DY, snapshot.capsuleLeftDy)
             prefs.putInt(Prefs.KEY_CAPSULE_RIGHT_DX, snapshot.capsuleRightDx)
             prefs.putInt(Prefs.KEY_CAPSULE_RIGHT_DY, snapshot.capsuleRightDy)
+            prefs.putInt(Prefs.KEY_CAPSULE_LENGTH, snapshot.capsuleLength)
             prefs.putInt(Prefs.KEY_PERF_SCALE, snapshot.perfScale)
             prefs.putInt(Prefs.KEY_PERF_WEIGHT, snapshot.perfWeight)
             prefs.putInt(Prefs.KEY_GLYPH_SCALE, snapshot.glyphScale)
@@ -416,6 +440,7 @@ class SettingsRepository(context: Context) {
             // hooked process cannot re-derive: a value changed while the framework was
             // unbound would otherwise never reach SystemUI.
             prefs.putInt(Prefs.KEY_BOLT_SCALE, snapshot.boltScale)
+            prefs.putInt(Prefs.KEY_WIFI_SCALE, snapshot.wifiScale)
             prefs.putInt(Prefs.KEY_DOT_SCALE, snapshot.dotScale)
             prefs.putString(Prefs.KEY_OUT_ORDER, Prefs.encodeOutOrder(snapshot.outOrder))
 

@@ -974,6 +974,11 @@ final class TrioHooks {
                             // the drawing cannot be computed from different
                             // numbers, and no spec mode has to be interpreted.
                             final int height = view.getMeasuredHeight();
+                            // The length has to be in force BEFORE the width is asked for: the
+                            // host is sized from the shape, so a measurement taken against
+                            // last frame's length would reserve the old width and then draw
+                            // a longer capsule inside it, clipped at the ends.
+                            TrioGeometry.setCapsuleLength(a.capsuleLength);
                             final int width = TrioGeometry.capHostWidthPx(height);
                             // The two opening bands are added to the HEIGHT, after the width
                             // has been asked for the bare capsule. Width decides the drawing

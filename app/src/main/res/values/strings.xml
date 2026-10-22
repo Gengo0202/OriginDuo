@@ -128,6 +128,7 @@
     <string name="show_value_summary">环内显示电量百分比。</string>
 
     <string name="show_bolt_title">充电时显示闪电</string>
+    <string name="bolt_scale_placed_hint">组件排序里的充电闪电</string>
     <string name="bolt_scale_title">充电闪电大小</string>
     <string name="bolt_scale_summary">默认 100%，可调 60–160%。</string>
     <string name="show_bolt_summary">充电时环内改为闪电图标。</string>
@@ -183,6 +184,8 @@
     <string name="stroke_title_rect">电量条粗细</string>
     <string name="stroke_summary_rect">默认 14dp，可调 4–16dp。</string>
 
+    <string name="wifi_scale_title">Wi-Fi 弧尺寸</string>
+    <string name="wifi_scale_summary">默认 100%，可调 60–160%。在各自样式的适配空间内放大。</string>
     <string name="arc_stroke_title">弧线粗细</string>
     <string name="arc_stroke_summary">默认 12dp，可调 3–16dp。</string>
     <string name="arc_stroke_summary_rect">默认 12dp，可调 3–16dp。</string>
@@ -307,6 +310,8 @@
         
     
     <!-- Capsule interior cell nudges, in design units. -->
+    <string name="capsule_length_title">胶囊长度</string>
+    <string name="capsule_length_summary">默认 0，可调 -30 到 60。加长的是两端圆角之间的直线段，胶囊随之变宽，圆角与高度不变。</string>
     <string name="capsule_nudge_left_dx_title">左格水平位置</string>
     <string name="capsule_nudge_left_dx_summary">正值右移，负值左移。</string>
     <string name="capsule_nudge_left_dy_title">左格垂直位置</string>
