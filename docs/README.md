@@ -11,7 +11,8 @@
 | [SWITCHES-REVIEW.md](SWITCHES-REVIEW.md) | 开关与设置项的系统性复盘：每一项的门控是否与渲染一致、哪些是死代码、门禁逻辑的边界。 |
 | [CAPSULE-INTEGRATION.md](CAPSULE-INTEGRATION.md) | 胶囊样式的接入说明。 |
 | [ISSUE-CODE-REVIEW-2026-10-16.md](ISSUE-CODE-REVIEW-2026-10-16.md) | 针对一批 issue 的代码审查记录与修复方案。 |
-| [1003-todo.md](1003-todo.md) | 开发交接记录。大体积、按轮次推进，含未完成事项与历史决策。换环境继续开发时先读它。 |
+| [ISSUES-2026-10-22.md](ISSUES-2026-10-22.md) | **待办与问题清单。当前唯一在维护的一份**：已关闭项、P0/P1/P2 待办、本轮踩过的坑。要看「接下来做什么」就看这里。 |
+| [history/1003-todo.md](history/1003-todo.md) | **历史交接记录（已归档）**。v1.5 → v1.7.1 的逐轮工作日志，2400 行。待办部分已作废；仍有价值的是开头那张**经验索引**——发布流程坑、PowerShell/编码坑、工装与换环境的约束。 |
 
 ## 发版说明
 
