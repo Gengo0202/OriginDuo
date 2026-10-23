@@ -261,6 +261,55 @@ $t=[System.IO.File]::ReadAllText($p,[System.Text.Encoding]::UTF8)
 整个发布。脚本里的 `Invoke-Native` 临时把 `$ErrorActionPreference` 放宽到 `Continue`，只用 exit
 code 判成败 —— 调外部程序一律走它。
 
+
+### 发版前必查的三件事（2026-10-23，1.7.3 踩过）
+
+**1. 确认在 `main` 上。** 那次整个会话都在 `pr42-rebased`（一个等待评审的 PR 分支）上干活，
+所有 UI 改动都叠在 PR 的两个提交之上。直接在它上面发版，就等于把未评审的 PR 一起发了。
+
+```powershell
+git branch --show-current                  # 必须是 main
+git log --oneline origin/main..HEAD        # 有输出就先想清楚那些提交该不该发
+```
+
+**2. 跑一次 `assembleRelease`，不要只看 debug。** `release.ps1 -DryRun` 就是干这个的。
+那次 debug 一直能过、APK 也一直装得上，因为设备上装的是**分支**构建的包；
+切回 main 后 release 构建立刻报了 20 多个 `Unresolved reference` —— 字体功能的
+`fontPath` / `FontInstaller` / `font_*` 全在未合入的 PR 上。
+debug 通过**不是** main 可用的证据。
+
+**3. 脚本报「发布失败」不等于什么都没发生。** 模块仓那步因 SSL 中断，报错信息是
+「主仓已发布成功；直接重跑 release-module.ps1 … 补齐」—— 但实际状态是
+**Release 已建、APK 没传上去**。重跑会撞上
+`release … already exists. Re-run with -Force to overwrite`。
+
+排查顺序：
+
+```powershell
+# 先看两边 Release 的附件在不在，别只看脚本的退出码
+gh release view v1.7.4      --repo yixing233/HyperDuo --json assets
+gh release view 10704-1.7.4 --repo Xposed-Modules-Repo/io.github.yixing233.hyperduo --json assets
+
+# 附件为空就补传，要带 -Force
+.\scripts\release-module.ps1 -Version 1.7.4 -VersionCode 10704 `
+    -Apk .\dist\HyperDuo-1.7.4.apk `
+    -NotesFile .\docs\release-notes\release-notes-1.7.4.md -Force
+```
+
+**网络。** `gh` 和 `git push` 直连 `api.github.com` 通常可以，但模块仓那步偶尔报
+`The SSL connection could not be established`。给那条命令加系统代理即可：
+
+```powershell
+$env:HTTPS_PROXY='http://127.0.0.1:7890'; $env:HTTP_PROXY=$env:HTTPS_PROXY
+```
+
+`git push` 本身不走系统代理，需要时用 `git -c http.proxy=… push`。
+
+**分支卫生。** 合入 PR 后删掉它的本地分支（内容已在 main）。保留作者原始的提交
+（如 `pr42-review`）便于日后追原始 diff，但不要留 rebase 出来的中间分支 ——
+它们与 main 的 commit id 不同，`git branch --merged` 看不出已合并，
+容易让人以为还有东西没进。
+
 ### 安装与观测
 
 ```powershell
