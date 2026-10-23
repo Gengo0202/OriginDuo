@@ -468,6 +468,44 @@ public final class TrioAppearance {
     }
 
     /**
+     * Whether the network type steps aside because Wi-Fi is up - decided per ARRANGEMENT.
+     *
+     * <p>Three cases, and they are not the same question:
+     *
+     * <ol>
+     *   <li><b>The arcs are handed back to MIUI</b> (Wi-Fi is nowhere in this arrangement).
+     *       The system draws its own Wi-Fi icon beside the glyph, so the arcs are not competing
+     *       with the label for the same space, and the label stays. Suppressing it here would
+     *       hide a reading for a Wi-Fi icon the module is not even drawing.</li>
+     *   <li><b>The type is outside the glyph</b> (the ring's own out-of-ring strip, or the
+     *       capsule's - see {@link #typeOutOfRing}). It then sits in the same strip the
+     *       system's Wi-Fi icon lands in, which is the crowding the option exists to fix, so
+     *       it goes.</li>
+     *   <li><b>Both are inside.</b> The arcs take priority, so the label yields - but only if
+     *       something else can take its band. A band left empty reads as a broken layout, so
+     *       when the label is the only candidate left for its zone it stays and the arcs keep
+     *       the slot they would have shared.</li>
+     * </ol>
+     *
+     * <p>Case 3 is per BAND, which is why it is answered by the caller: only the zone loop
+     * knows what else is queued behind the label. This method answers the first two.
+     *
+     * @param wifiConnected the live connection state - never the signal level, which is a
+     *   strength: 0 is a weak link and -1 also means "no reading"
+     */
+    public boolean hidesTypeForWifi(boolean wifiConnected) {
+        if (!typeHideOnWifi || !wifiConnected) {
+            return false;
+        }
+        // Case 1: Wi-Fi is not ours in this arrangement, so there is nothing to make room for.
+        if (!ownsWifi()) {
+            return false;
+        }
+        // Case 2: outside the glyph, where the system icon already sits.
+        return typeOutOfRing;
+    }
+
+    /**
      * Whether a row of level dots is drawn per SIM - SIM 1 on top, SIM 2 below -
      * rather than the usual single row for the current data SIM.
      *
@@ -657,7 +695,19 @@ public final class TrioAppearance {
 
     /** The ring arrangement's slot assignment for one frame. */
     public Ring ring(int level, boolean charging, int wifiLevel, String mobileType, int sims) {
-        return new Ring(this, level, charging, wifiLevel, mobileType, sims);
+        return ring(level, charging, wifiLevel, mobileType, sims, wifiLevel >= 0);
+    }
+
+    /**
+     * The same, told outright whether Wi-Fi is connected.
+     *
+     * <p>The five-argument form infers it from the level, which is all a fixed preview scene can
+     * say. The bar knows better: a live link at level 0 is connected, and -1 also covers "no
+     * reading yet". See {@link #hidesTypeForWifi}.
+     */
+    public Ring ring(int level, boolean charging, int wifiLevel, String mobileType, int sims,
+                     boolean wifiConnected) {
+        return new Ring(this, level, charging, wifiLevel, mobileType, sims, wifiConnected);
     }
 
     /** The rectangular arrangement's slot assignment for one frame. */
@@ -668,7 +718,13 @@ public final class TrioAppearance {
     /** The capsule arrangement's slot assignment for one frame. */
     public Capsule capsule(int level, boolean charging, int wifiLevel, String mobileType,
                            int sims) {
-        return new Capsule(this, level, charging, wifiLevel, mobileType, sims);
+        return capsule(level, charging, wifiLevel, mobileType, sims, wifiLevel >= 0);
+    }
+
+    /** The same, told outright whether Wi-Fi is connected; see {@link #hidesTypeForWifi}. */
+    public Capsule capsule(int level, boolean charging, int wifiLevel, String mobileType,
+                           int sims, boolean wifiConnected) {
+        return new Capsule(this, level, charging, wifiLevel, mobileType, sims, wifiConnected);
     }
 
     /**
@@ -793,12 +849,17 @@ public final class TrioAppearance {
          * had ever opened the editor.
          */
         private Ring(TrioAppearance a, int level, boolean charging, int wifiLevel,
-                     String mobileType, int sims) {
+                     String mobileType, int sims, boolean wifiConnected) {
             // ZONE_COUNT, not 3: the layout stores five sections now (three ring zones plus
             // the capsule's two), and this array is indexed by Zone.ordinal. The ring only
             // draws the first three; the rest resolve to PART_NONE because a ring install
             // has nothing in them, and a ring never asks for them anyway.
             parts = new int[Prefs.ZONE_COUNT];
+            // The label yields to the arcs only when the arcs are OURS in this arrangement,
+            // the label is inside the glyph, and Wi-Fi is actually connected. See
+            // hidesTypeForWifi for why each of those matters; the per-band part - keeping a
+            // band filled - is decided inside firstDrawableInk.
+            final boolean yieldType = a.hidesTypeForWifi(wifiConnected);
             for (int z = 0; z < Prefs.ZONE_COUNT; z++) {
                 // The zone draws the FIRST candidate that has something to show this frame.
                 //
@@ -814,7 +875,7 @@ public final class TrioAppearance {
                 // can be reached from a broadcast that never went through a decode, so the
                 // refusal is enforced here rather than trusted to have arrived.
                 parts[z] = firstDrawableInk(a, a.ringZones[z], z,
-                        level, charging, wifiLevel, mobileType);
+                        level, charging, wifiLevel, mobileType, yieldType);
             }
             // A charger puts the number in the middle, whatever the layout arranged there.
             //
@@ -1049,18 +1110,54 @@ public final class TrioAppearance {
     private static int firstDrawableInk(TrioAppearance a, int[] order, int band,
                                         int level, boolean charging, int wifiLevel,
                                         String mobileType) {
+        return firstDrawableInk(a, order, band, level, charging, wifiLevel, mobileType, false);
+    }
+
+    /**
+     * The same, told whether the arcs are up and should displace the type label.
+     *
+     * <p>When {@code yieldType} is set and the type is the candidate reached, it is skipped -
+     * but only if another entry behind it can draw. The band is the user's arrangement made
+     * visible; leaving it blank because the piece that would have filled it stepped aside is
+     * worse than the crowding the step-aside was for. With nothing behind it the label stays,
+     * which is the "keep the band filled" case of the feature.
+     */
+    private static int firstDrawableInk(TrioAppearance a, int[] order, int band,
+                                        int level, boolean charging, int wifiLevel,
+                                        String mobileType, boolean yieldType) {
         if (order == null) {
             return Prefs.PART_NONE;
         }
         for (int i = 0; i < order.length; i++) {
-            if (!Prefs.zoneAccepts(band, order[i])) {
+            final int id = order[i];
+            if (!Prefs.zoneAccepts(band, id)) {
                 continue;
             }
-            if (hasInk(a, order[i], level, charging, wifiLevel, mobileType)) {
-                return order[i];
+            if (!hasInk(a, id, level, charging, wifiLevel, mobileType)) {
+                continue;
             }
+            if (yieldType && id == Prefs.PART_TYPE
+                    && hasDrawableBehind(a, order, i + 1, band, level, charging, wifiLevel,
+                            mobileType)) {
+                continue;
+            }
+            return id;
         }
         return Prefs.PART_NONE;
+    }
+
+    /** Whether any entry from {@code from} on can occupy {@code band} this frame. */
+    private static boolean hasDrawableBehind(TrioAppearance a, int[] order, int from, int band,
+                                             int level, boolean charging, int wifiLevel,
+                                             String mobileType) {
+        for (int i = from; i < order.length; i++) {
+            final int id = order[i];
+            if (Prefs.zoneAccepts(band, id)
+                    && hasInk(a, id, level, charging, wifiLevel, mobileType)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1130,19 +1227,23 @@ public final class TrioAppearance {
         public final int[] parts;
 
         private Capsule(TrioAppearance a, int level, boolean charging, int wifiLevel,
-                        String mobileType, int sims) {
+                        String mobileType, int sims, boolean wifiConnected) {
             parts = new int[Prefs.ZONE_COUNT];
             dotBands = new boolean[Prefs.ZONE_COUNT];
 
             // Every band is a real cell now: the two openings hold either a reading or a dot
             // row, and only the interior is a reading's alone.
+            // See hidesTypeForWifi: the label yields only when the arcs are ours here, the
+            // label is inside the glyph, and Wi-Fi is really connected. Whether the band then
+            // stays filled is decided per zone inside firstDrawableInk.
+            final boolean yieldType = a.hidesTypeForWifi(wifiConnected);
             for (TrioZones.Zone band : TrioZones.Zone.values()) {
                 // The capsule reads FOUR cells: the three bands plus the left column, which
             // is the layout's LEFT section. It used to be a key of its own, which is
             // why this loop ran over the three bands only and the drawing dispatched the
             // left column separately.
-            parts[band.ordinal()] = firstInk(a, a.ringZones[band.ordinal()],
-                        level, charging, wifiLevel, mobileType);
+            parts[band.ordinal()] = firstDrawableInk(a, a.ringZones[band.ordinal()],
+                        band.ordinal(), level, charging, wifiLevel, mobileType, yieldType);
             }
             for (TrioZones.Zone band : TrioZones.Zone.values()) {
                 dotBands[band.ordinal()] = isDotRow(parts[band.ordinal()]);

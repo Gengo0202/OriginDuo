@@ -1763,6 +1763,31 @@ final class TrioGeometry {
         return edge + half;
     }
 
+    /**
+     * Where an ICON sits in the capsule's RIGHT cell, given the piece it is.
+     *
+     * <p>The mirror of {@link #capLeftIconCx}, and needed for the same reason: the right cell
+     * hangs from the interior's right edge, which is where a right-aligned READING ends - but
+     * an icon is drawn about its CENTRE. Handing an icon that edge puts half of it outside the
+     * outline, over the stroke and past the host's own bounds, so a bolt sitting where a number
+     * would sit looks a long way right of the cell it belongs to.
+     *
+     * <p>Half a step back from the edge, sized per piece from the same references the drawing
+     * uses - exactly as the left cell does at its own edge.
+     */
+    static float capRightIconCx(float stroke, int part) {
+        final float edge = capTextRight(stroke);
+        final float half;
+        if (part == Prefs.PART_WIFI) {
+            half = (W_INK_W * capWifiScale(stroke)) * 0.5f;
+        } else if (part == Prefs.PART_BOLT) {
+            half = (BOLT_INK_W * capBoltScale(stroke)) * 0.5f;
+        } else {
+            half = 0f;
+        }
+        return edge - half;
+    }
+
 
 
     /** Centre of the left-hand slot: the time's own place. */

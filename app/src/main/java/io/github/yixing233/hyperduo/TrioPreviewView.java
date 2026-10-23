@@ -382,9 +382,14 @@ public final class TrioPreviewView extends View {
             drawOutSignal(canvas, innerW, innerH);
         } else {
             // false: the glyph must not punch a hole through the preview background.
+            // A scene's Wi-Fi is "connected" when it carries a live level at all. The preview
+            // has no WifiPresence to ask - it is a fixed scene, drawn in another process - so
+            // the level IS the scene's statement about connectivity, which is exactly the
+            // conflation the renderer had to stop making on the bar. Kept here because in a
+            // scene it is not a conflation: nothing else knows.
             TrioRenderer.drawInto(canvas, innerW, innerH, level, charging, quickCharging,
                     powerSave, low, wifiLevel, mobileLevel, slotLevels, mobileType, foreground,
-                    settings, false);
+                    settings, false, wifiLevel >= 0);
         }
         canvas.restoreToCount(save);
 

@@ -171,7 +171,7 @@ final class TrioRenderer {
         }
         drawInto(canvas, w, h, s.level, s.charging, s.quickCharging, s.powerSave, s.low,
                 s.wifiPresent ? s.wifiLevel : -1, s.mobileLevel, s.slotLevels, s.mobileType,
-                s.foreground(), cfg, true);
+                s.foreground(), cfg, true, s.wifiPresent);
     }
 
     /**
@@ -199,6 +199,28 @@ final class TrioRenderer {
                          boolean quickCharging, boolean powerSave, boolean low,
                          int wifiLevel, int mobileLevel, int[] slotLevels, String mobileType,
                          int fg, TrioSettings cfg, boolean clearWhenDone) {
+        // Connected, not merely readable: a live signal of 0 is a weak connection, and -1
+        // is "no reading" rather than "no Wi-Fi". Neither answers the question the
+        // network-type suppression asks. Inferred here so no caller has to know.
+        drawInto(canvas, w, h, level, charging, quickCharging, powerSave, low,
+                wifiLevel, mobileLevel, slotLevels, mobileType, fg, cfg, clearWhenDone,
+                wifiLevel >= 0);
+    }
+
+    /**
+     * The same, told outright whether Wi-Fi is CONNECTED.
+     *
+     * <p>{@code wifiConnected} is separate from {@code wifiLevel} on purpose. The level is
+     * a signal strength: 0 means a live but weak link, and -1 means this frame has no
+     * reading at all - which is also what an unconnected device reports. Deciding a
+     * connection from it conflated three states, and the settings preview (a fixed scene,
+     * which always carries a level) then read as "Wi-Fi is up" in every scene but one.
+     */
+    static void drawInto(Canvas canvas, int w, int h, int level, boolean charging,
+                         boolean quickCharging, boolean powerSave, boolean low,
+                         int wifiLevel, int mobileLevel, int[] slotLevels, String mobileType,
+                         int fg, TrioSettings cfg, boolean clearWhenDone,
+                         boolean wifiConnected) {
         if (w <= 0 || h <= 0 || cfg == null) {
             return;
         }
@@ -207,17 +229,20 @@ final class TrioRenderer {
         // switches themselves, which is what used to let the two arrangements
         // drift apart - and let the documentation drift from both.
         final TrioAppearance appearance = TrioAppearance.of(cfg);
-        // The network type steps aside while Wi-Fi is up. Decided HERE rather than in
-        // TrioAppearance because that class is a pure snapshot of the settings - whether Wi-Fi
-        // is connected this instant is runtime state, and folding it in there would make the
-        // preview (a fixed scene) and the bar (live) draw one stored setting two ways. The
-        // renderer already reads TrioState for the same reason.
+        // The network type is NOT suppressed here any more.
         //
-        // Suppressing the STRING rather than a per-arrangement flag is what keeps this in one
-        // place: every arrangement already treats "no type" as "draw none of it", so the ring,
-        // the rectangle and the capsule all obey without knowing this setting exists.
-        final String shownType = (appearance.typeHideOnWifi && wifiLevel >= 1)
-                ? null : mobileType;
+        // It used to be: the whole label was replaced with null at this entry point, which made
+        // every arrangement obey at once. That was right while the question was "is Wi-Fi on",
+        // and wrong once the answer depends on WHERE the pieces were placed - handing off the
+        // arcs, an out-of-ring label, a band that would be left empty. Those are decisions over
+        // the layout, and the layout is resolved in TrioAppearance. Suppressing the string here
+        // would pre-empt them: the band would be filled from the priority list with the label,
+        // and the label would then draw as nothing, leaving exactly the blank zone the
+        // per-band rule exists to prevent.
+        //
+        // See TrioAppearance.hidesTypeForWifi for the arrangement-level half and
+        // firstDrawableInk for the per-band half.
+        final String shownType = mobileType;
         // The capsule's length belongs to the frame: every horizontal quantity below reads it
         // through TrioGeometry, and setting it here - once, before anything is drawn - is what
         // keeps the outline, the fill, the cells and the hit boxes on one shape.
@@ -261,13 +286,13 @@ final class TrioRenderer {
 
         if (capsule) {
             drawCapsuleLayout(canvas, level, charging, quickCharging, wifiLevel, mobileLevel, shownType,
-                    slots, sims, role, fg, appearance);
+                    slots, sims, role, fg, appearance, wifiConnected);
         } else if (rect) {
             drawRectLayout(canvas, level, charging, quickCharging, wifiLevel, mobileLevel,
                     slots, sims, shownType, role, fg, appearance);
         } else {
             drawRingLayout(canvas, level, charging, quickCharging, wifiLevel, mobileLevel,
-                    slots, sims, shownType, role, fg, appearance);
+                    slots, sims, shownType, role, fg, appearance, wifiConnected);
         }
 
         canvas.restoreToCount(save);
@@ -285,8 +310,9 @@ final class TrioRenderer {
     private static void drawRingLayout(Canvas canvas, int level, boolean charging,
                                        boolean quickCharging, int wifiLevel, int mobileLevel,
                                        int[] slotLevels, int sims, String mobileType, int role,
-                                       int fg, TrioAppearance a) {
-        final TrioAppearance.Ring r = a.ring(level, charging, wifiLevel, mobileType, sims);
+                                       int fg, TrioAppearance a, boolean wifiConnected) {
+        final TrioAppearance.Ring r = a.ring(level, charging, wifiLevel, mobileType, sims,
+                wifiConnected);
         drawFreeRing(canvas, level, quickCharging, wifiLevel, mobileLevel,
                 slotLevels, mobileType, role, fg, a, r);
     }
@@ -560,10 +586,10 @@ final class TrioRenderer {
     private static void drawCapsuleLayout(Canvas canvas, int level, boolean charging,
                                           boolean quickCharging, int wifiLevel, int mobileLevel, String mobileType,
                                           int[] slotLevels, int sims, int role, int fg,
-                                          TrioAppearance a) {
+                                          TrioAppearance a, boolean wifiConnected) {
         final float stroke = a.ringStroke * TrioGeometry.CAP_STROKE_RATIO;
         final TrioAppearance.Capsule cap =
-                a.capsule(level, charging, wifiLevel, mobileType, sims);
+                a.capsule(level, charging, wifiLevel, mobileType, sims, wifiConnected);
 
         // The track first, in full, then the charged part over it. `level < 0` is
         // "no reading yet" and fills nothing: painting a whole outline would claim
@@ -710,7 +736,12 @@ final class TrioRenderer {
         if (opening) {
             cx = TrioGeometry.CAP_INK_X + TrioGeometry.capInkW() * 0.5f;
         } else {
-            cx = TrioGeometry.capReadingEdge(stroke, false) + a.capsuleRightDx;
+            // TEXT ends at this edge (right-aligned); an ICON is centred on it and would hang
+            // half of itself outside the outline. Same split as the left cell, mirrored - see
+            // TrioGeometry.capRightIconCx.
+            cx = (part == Prefs.PART_BOLT || part == Prefs.PART_WIFI)
+                    ? TrioGeometry.capRightIconCx(stroke, part) + a.capsuleRightDx
+                    : TrioGeometry.capReadingEdge(stroke, false) + a.capsuleRightDx;
         }
         final float cy;
         switch (band) {
