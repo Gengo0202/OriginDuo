@@ -541,21 +541,20 @@ fun SettingsScreen(repository: SettingsRepository) {
                                     PartsPage(
                                         settings = settingsState.value,
                                         onEdit = { partEditing.value = it },
-                                        // The font rows live behind PR #42, which is not on main yet.
+                                        installingFont = installingFont,
+                                        onChooseFont = { fontPicker.launch(arrayOf("*/*")) },
+                                        onClearFont = { fontPath ->
+                                            // Cleared from the settings first, so the status bar is
+                                            // already back on the system face by the time the file
+                                            // goes; a delete that failed would otherwise leave a
+                                            // setting pointing at a file that is gone.
+                                            update { it.setFontPath("") }
+                                            scope.launch { FontInstaller.remove(fontPath) }
+                                        },
                                     )
                                 }
                                 SettingsTab.About -> aboutTab(
                                     settingsState.value, serviceState.value, updater, showMessage,
-                                    installingFont = installingFont,
-                                    onChooseFont = { fontPicker.launch(arrayOf("*/*")) },
-                                    onClearFont = { fontPath ->
-                                        // Cleared from the settings first, so the status bar is
-                                        // already back on the system face by the time the file
-                                        // goes; a delete that failed would otherwise leave a
-                                        // setting pointing at a file that is gone.
-                                        update { it.setFontPath("") }
-                                        scope.launch { FontInstaller.remove(fontPath) }
-                                    },
                                 ) { block -> update(block) }
                             }
                         }
@@ -1387,9 +1386,6 @@ private fun LazyListScope.aboutTab(
     service: XposedService?,
     updater: UpdateController,
     showMessage: (String) -> Unit,
-    installingFont: Boolean,
-    onChooseFont: () -> Unit,
-    onClearFont: (String) -> Unit,
     update: ((SettingsRepository) -> Unit) -> Unit,
 ) {
     item { ActivatedRow(settings = settings, service = service) }
@@ -1403,45 +1399,6 @@ private fun LazyListScope.aboutTab(
                 title = stringResource(R.string.debug_title),
                 summary = stringResource(R.string.debug_summary),
                 insideMargin = SettingsItemMargin,
-            )
-        }
-    }
-    item { SectionTitle(stringResource(R.string.group_font)) }
-    item {
-        Card {
-            val chosen = settings.fontPath
-            ArrowPreference(
-                title = stringResource(R.string.font_title),
-                // Shows which file is in use rather than a bare "chosen" state: the name
-                // is how a user tells two fonts apart when comparing them, and the path
-                // itself is far too long to show here.
-                summary = when {
-                    installingFont -> stringResource(R.string.font_installing)
-                    chosen.isEmpty() -> stringResource(R.string.font_summary_system)
-                    else -> File(chosen).name
-                },
-                insideMargin = SettingsItemMargin,
-                // Disabled while a copy is in flight: a second pick would race the first
-                // one's file out from under it.
-                enabled = !installingFont,
-                onClick = onChooseFont,
-            )
-            // Always present, greyed out when there is nothing to clear - the same shape
-            // every other row here has. It used to appear only once a font was chosen,
-            // which read as "this feature does not exist" to anyone who had not picked
-            // one yet: the row that would have told them how to get back was exactly the
-            // row that was missing.
-            val nothingToClear = chosen.isEmpty()
-            ArrowPreference(
-                title = stringResource(R.string.font_clear_title),
-                summary = if (nothingToClear) {
-                    stringResource(R.string.font_clear_summary_idle)
-                } else {
-                    stringResource(R.string.font_clear_summary)
-                },
-                insideMargin = SettingsItemMargin,
-                enabled = !nothingToClear && !installingFont,
-                onClick = { onClearFont(chosen) },
             )
         }
     }
