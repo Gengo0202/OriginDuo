@@ -495,16 +495,7 @@ fun SettingsScreen(repository: SettingsRepository) {
                                     PartsPage(
                                         settings = settingsState.value,
                                         onEdit = { partEditing.value = it },
-                                        installingFont = installingFont,
-                                        onChooseFont = { fontPicker.launch(arrayOf("*/*")) },
-                                        onClearFont = { fontPath ->
-                                            // Cleared from the settings first, so the status bar is
-                                            // already back on the system face by the time the file
-                                            // goes; a delete that failed would otherwise leave a
-                                            // setting pointing at a file that is gone.
-                                            update { it.setFontPath("") }
-                                            scope.launch { FontInstaller.remove(fontPath) }
-                                        },
+                                        // The font rows live behind PR #42, which is not on main yet.
                                     )
                                 }
                                 SettingsTab.About -> aboutTab(

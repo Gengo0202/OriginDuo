@@ -624,9 +624,6 @@ private fun DrawingSection(
 internal fun PartsPage(
     settings: TrioSettings,
     onEdit: (TrioSettingsPart) -> Unit,
-    installingFont: Boolean,
-    onChooseFont: () -> Unit,
-    onClearFont: (String) -> Unit,
 ) {
     val a = TrioAppearance.of(settings)
     Column(
@@ -637,49 +634,6 @@ internal fun PartsPage(
             PartRow(part, settings, onClick = { onEdit(part) })
         }
 
-        // The face the glyph's text is drawn in. Here rather than on the About page: it is a
-        // property of the ink, and the About page answers questions about the BUILD (version,
-        // framework, scope) rather than about how the glyph looks.
-        // Same rhythm as every other section title on this page - see DrawingSection: the
-        // title carries its own 18dp horizontal inset and a 4dp top gap. Without the inset it
-        // sits flush against the screen edge while the cards below start 18dp in.
-        SmallTitle(
-            text = stringResource(R.string.group_font),
-            modifier = Modifier.padding(top = 4.dp),
-            insideMargin = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
-        )
-        Card {
-            val chosen = settings.fontPath
-            ArrowPreference(
-                title = stringResource(R.string.font_title),
-                // The file name, not a bare "chosen": it is how a user tells two fonts
-                // apart when comparing them, and the full path is far too long to show.
-                summary = when {
-                    installingFont -> stringResource(R.string.font_installing)
-                    chosen.isEmpty() -> stringResource(R.string.font_summary_system)
-                    else -> File(chosen).name
-                },
-                insideMargin = SettingsItemMargin,
-                // Disabled while a copy is in flight: a second pick would race the first
-                // one's file out from under it.
-                enabled = !installingFont,
-                onClick = onChooseFont,
-            )
-            // Always present, greyed out when there is nothing to clear - the same shape
-            // every other row has.
-            val nothingToClear = chosen.isEmpty()
-            ArrowPreference(
-                title = stringResource(R.string.font_clear_title),
-                summary = if (nothingToClear) {
-                    stringResource(R.string.font_clear_summary_idle)
-                } else {
-                    stringResource(R.string.font_clear_summary)
-                },
-                insideMargin = SettingsItemMargin,
-                enabled = !nothingToClear && !installingFont,
-                onClick = { onClearFont(chosen) },
-            )
-        }
     }
 }
 
