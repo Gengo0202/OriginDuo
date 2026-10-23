@@ -601,8 +601,49 @@ internal fun geometrySliders(): List<SliderSpec> {
 internal fun slidersForPart(part: TrioZones.Part): List<SliderSpec> =
     geometrySliders().filter { it.part == part }
 
+/**
+ * The capsule container's own parameters: its length and the two interior cells' offsets.
+ *
+ * <p>Here rather than in a sheet because these size the CONTAINER, not a component. They
+ * used to sit under "Appearance" in the component list, two taps away from the layout that
+ * arranges the capsule, which made changing the shape a trip between two sections.
+ *
+ * <p>The page that draws the layout calls this under its own list, and only while the
+ * capsule is the arrangement in force: for a ring these keys mean nothing.
+ */
+@Composable
+internal fun CapsuleContainerRows(
+    settings: TrioSettings,
+    update: ((SettingsRepository) -> Unit) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val specs = geometrySliders().filter {
+        it.part == null && it.editorOwner == TrioSettingsPart.Appearance
+    }
+    if (specs.isEmpty()) {
+        return
+    }
+    val a = TrioAppearance.of(settings)
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        specs.forEach { spec ->
+            val hint = gateHintFor(spec, a)
+            if (hint == null) {
+                SliderRow(spec, settings, update)
+            } else {
+                TooltipBox(text = hint, enabled = true) {
+                    SliderRow(spec, settings, update)
+                }
+            }
+        }
+    }
+}
+
 internal fun slidersForEditor(part: TrioSettingsPart): List<SliderSpec> = when (part) {
-    TrioSettingsPart.Appearance, TrioSettingsPart.Battery, TrioSettingsPart.Readouts ->
+    // "Appearance" holds no size rows any more: the capsule's length and the two cells'
+    // offsets size the CONTAINER, and are drawn under the layout that arranges it. What is
+    // left in that sheet is the role colours, which are not a size at all.
+    TrioSettingsPart.Appearance -> emptyList()
+    TrioSettingsPart.Battery, TrioSettingsPart.Readouts ->
         geometrySliders().filter { it.part == null && it.editorOwner == part }
     // Each card gets its own rows. For the signal card those are the out-of-ring readings'
     // two sizes plus the in-ring dot size: the dots themselves have one shared geometry

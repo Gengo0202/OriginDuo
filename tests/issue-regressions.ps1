@@ -1517,6 +1517,28 @@ if ($appea -match 'TrioState\.' -or $appea -match 'WifiPresence\.') {
 }
 if ($appea -notmatch 'typeHideOnWifi') { throw 'the Wi-Fi suppression flag is gone' }
 Write-Output 'PASS: the network-type suppression is a flag, not a runtime read'
+# The suppression keys on the CONNECTION, never on the signal strength. wifiLevel is a level:
+# 0 is a live but weak link, -1 is "no reading". Testing it hid the label on a weak signal and
+# left it visible while connected, and it made the preview (whose scenes carry a level in
+# order to draw the arcs) read as connected in every scene but one.
+$rend = [IO.File]::ReadAllText((Join-Path $trio 'TrioRenderer.java'))
+if ($rend -match 'typeHideOnWifi && wifiLevel') {
+    throw 'the suppression tests the signal level again, so a weak link brings the label back'
+}
+if ($appea -notmatch 'typeHideOnWifi \|\| !wifiConnected') {
+    throw 'the arrangement rule no longer gates on the switch and the connection'
+}
+if ($rend -notmatch 'wifiConnected\)') { throw 'drawInto lost the connection parameter' }
+Write-Output 'PASS: the suppression keys on connectivity, not on signal strength'
+# The suppression is decided per ARRANGEMENT and per BAND now, not by blanking the string at
+# the draw entry. Blanking it there pre-empted the layout questions: which zone the label was
+# in, what else was queued there, whether the arcs were even ours.
+if ($rend -match 'typeHideOnWifi && wifiConnected') {
+    throw 'the draw entry blanks the label again, so the per-band rule cannot run'
+}
+if ($appea -notmatch 'public boolean hidesTypeForWifi') { throw 'the arrangement rule is gone' }
+if ($appea -notmatch 'hasDrawableBehind') { throw 'the keep-the-band-filled rule is gone' }
+Write-Output 'PASS: the suppression is decided per arrangement and per band'
 # These pins check the Compose bridge only; recogniser timing and dialog rendering
 # still require Android. The runtime occupant used here is executed in wifi/clear.
 #

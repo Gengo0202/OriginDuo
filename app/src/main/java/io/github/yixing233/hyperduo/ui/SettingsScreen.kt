@@ -144,8 +144,10 @@ import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Info
+import com.composables.icons.lucide.House
 import com.composables.icons.lucide.SlidersHorizontal
 import com.composables.icons.lucide.RotateCcw
+import com.composables.icons.lucide.Battery
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.SnackbarDuration
 import top.yukonga.miuix.kmp.basic.SnackbarHost
@@ -234,6 +236,10 @@ private enum class SettingsTab(val labelRes: Int, val route: Route) {
     // table, the colour rows from the same `RoleColor` entries, and the switches from the
     // same `contentControlsFor()`. Two places to change one value is how they drift.
     Drawing(R.string.tab_home, Route.Drawing),
+    // The components as a page of their own. They used to be a 3-wide grid of buttons inside
+    // the drawing page, each opening a sheet - which meant "what can I size" was answered by
+    // a block of nine identical tiles rather than by a list of the things being sized.
+    Parts(R.string.tab_parts, Route.Parts),
     About(R.string.about_title, Route.About),
 }
 
@@ -257,6 +263,9 @@ private sealed interface Route : NavKey {
 
     @Serializable
     data object About : Route
+
+    @Serializable
+    data object Parts : Route
 }
 
 @Composable
@@ -271,6 +280,9 @@ fun SettingsScreen(repository: SettingsRepository) {
     val serviceState = remember { mutableStateOf(HyperDuoApp.xposedService) }
     var service by serviceState
     var editing by remember { mutableStateOf<RoleColor?>(null) }
+    // Which component's sheet is open. Owned here rather than inside the page so the sheet
+    // is not torn down and rebuilt as the lazy items around it recompose.
+    val partEditing = remember { mutableStateOf<TrioSettingsPart?>(null) }
     var resettingColors by remember { mutableStateOf(false) }
     var restarting by remember { mutableStateOf(false) }
 
@@ -475,6 +487,26 @@ fun SettingsScreen(repository: SettingsRepository) {
                                     // rather than of the live one.
                                     snapshotForStyle = { style -> repository.readForStyle(style) },
                                 )
+                                // Not an item: this destination is a page in its own right and
+                                // brings its own list. Wrapping it in one lazy item is exactly
+                                // what removed the rubber band - the host had nothing left to
+                                // scroll once that single tall item was on screen.
+                                SettingsTab.Parts -> item {
+                                    PartsPage(
+                                        settings = settingsState.value,
+                                        onEdit = { partEditing.value = it },
+                                        installingFont = installingFont,
+                                        onChooseFont = { fontPicker.launch(arrayOf("*/*")) },
+                                        onClearFont = { fontPath ->
+                                            // Cleared from the settings first, so the status bar is
+                                            // already back on the system face by the time the file
+                                            // goes; a delete that failed would otherwise leave a
+                                            // setting pointing at a file that is gone.
+                                            update { it.setFontPath("") }
+                                            scope.launch { FontInstaller.remove(fontPath) }
+                                        },
+                                    )
+                                }
                                 SettingsTab.About -> aboutTab(
                                     settingsState.value, serviceState.value, updater, showMessage,
                                 ) { block -> update(block) }
@@ -487,6 +519,27 @@ fun SettingsScreen(repository: SettingsRepository) {
             // Must stay inside the Scaffold: MiuixPopupHost reads LocalRootDialogStates,
             // which Scaffold provides. Composed outside this lambda the dialog would
             // register itself on a list nothing ever renders, and silently never appear.
+            // The component sheet, opened from the components page. Rendered here so it sits
+            // above the page rather than inside its scroll.
+            val editingPart = partEditing.value
+            if (editingPart != null) {
+                PartSettingsSheet(
+                    show = true,
+                    part = editingPart,
+                    settings = settingsState.value,
+                    update = { block -> update(block) },
+                    onEditColor = { role ->
+                        partEditing.value = null
+                        editing = role
+                    },
+                    onResetColors = {
+                        partEditing.value = null
+                        resettingColors = true
+                    },
+                    onDismiss = { partEditing.value = null },
+                    onDismissFinished = {},
+                )
+            }
             val current = editing
             if (current != null) {
                 ColorDialog(
@@ -798,7 +851,12 @@ private fun DockedNavigationBar(
 
 /** The icon for one page. Shared by all three bars so they cannot disagree. */
 private fun iconFor(tab: SettingsTab): ImageVector = when (tab) {
-    SettingsTab.Drawing -> Lucide.SlidersHorizontal
+    // A house for the home page, and the sliders for the components page. The sliders used to
+    // mark the home page, which was wrong the moment that page stopped being the only one:
+    // its first section is a preview, and the sliders read as "controls" generally rather
+    // than as "the components themselves", which is what the second page is.
+    SettingsTab.Drawing -> Lucide.House
+    SettingsTab.Parts -> Lucide.SlidersHorizontal
     SettingsTab.About -> Lucide.Info
 }
 
@@ -905,6 +963,12 @@ private fun NavigationPill(
     onSelect: (Int) -> Unit,
 ) {
     val count = SettingsTab.entries.size
+    // The capsule was measured at 62% for the two-page bar. A third page at the same total
+    // width leaves every slot a third narrower, and the longer label starts to overrun its
+    // own cell. Rather than holding the width or scaling it by the count (which would put a
+    // three-page bar at 93% and read as a different shape), each page past the second buys a
+    // fixed 7% - enough for the label to breathe, still visibly a capsule floating on the page.
+    val fitted = widthFraction + (count - 2).coerceAtLeast(0) * 0.07f
     val interaction = rememberNavigationDragState(openIndex, count, onSelect)
     val density = LocalDensity.current
     val direction = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
@@ -970,7 +1034,7 @@ private fun NavigationPill(
 
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         BoxWithConstraints(
-            Modifier.fillMaxWidth(widthFraction)
+            Modifier.fillMaxWidth(fitted)
                 .navigationBarsPadding()
                 .padding(bottom = 8.dp)
                 .height(height),

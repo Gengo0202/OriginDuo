@@ -14,6 +14,7 @@
     <string name="group_out_signal">Out-of-ring signal</string>
     <string name="group_track">Track</string>
 
+    <string name="tab_parts">Components</string>
     <string name="tab_home">Home</string>
 
     <string name="drawing_priority_empty_summary">Nothing placed here yet. Use "Add component" below.</string>
@@ -295,6 +296,8 @@
         
     
     <!-- Capsule interior cell nudges, in design units. -->
+    <string name="capsule_container_title">Capsule shape</string>
+    <string name="capsule_container_summary">Length, and where each cell sits.</string>
     <string name="capsule_length_title">Capsule length</string>
     <string name="capsule_length_summary">Default 0, range -30 to 60. Lengthens the straight run between the two caps, so the capsule widens; the caps and the height stay as they are.</string>
     <string name="capsule_nudge_left_dx_title">Left cell horizontal</string>

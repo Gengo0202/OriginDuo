@@ -11,6 +11,7 @@
     <string name="group_out_signal">环外信号</string>
     <string name="group_track">底纹</string>
 
+    <string name="tab_parts">组件</string>
     <string name="tab_home">首页</string>
     <string name="drawing_master_title">总开关</string>
     <string name="drawing_quick_edit_title">快捷编辑</string>
@@ -294,6 +295,8 @@
         
     
     <!-- Capsule interior cell nudges, in design units. -->
+    <string name="capsule_container_title">胶囊结构</string>
+    <string name="capsule_container_summary">长度与左右两格的位置。</string>
     <string name="capsule_length_title">胶囊长度</string>
     <string name="capsule_length_summary">默认 0，可调 -30 到 60。加长的是两端圆角之间的直线段，胶囊随之变宽，圆角与高度不变。</string>
     <string name="capsule_nudge_left_dx_title">左格水平位置</string>

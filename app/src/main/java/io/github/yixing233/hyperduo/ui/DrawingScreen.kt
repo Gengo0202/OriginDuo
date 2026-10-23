@@ -23,6 +23,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -92,12 +95,16 @@ import com.composables.icons.lucide.X
 import top.yukonga.miuix.kmp.basic.IconButton
 import androidx.compose.ui.graphics.vector.ImageVector
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import java.io.File
 
 /**
  * The drawing page: the glyph rendered large, with its three parts tappable.
@@ -267,6 +274,8 @@ private fun DrawingEditorCard(
     // The zone whose picker is open, if any. One at a time: the picker is a dialog,
     // and two stacked pickers would be a state with no sensible dismissal order.
     var picking by remember { mutableStateOf<TrioZones.Zone?>(null) }
+    // The capsule container's own sheet: its five sliders live there, one row away.
+    var containerSheet by remember { mutableStateOf(false) }
     // The third under the finger, so the guide can outline what a press would open.
     var pressed by remember { mutableStateOf<TrioZones.Zone?>(null) }
     var scene by rememberSaveable { mutableStateOf(PreviewScene.Normal) }
@@ -377,12 +386,35 @@ private fun DrawingEditorCard(
                 modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
             )
 
+            // The capsule container's shape, under Quick Edit because that is where the style
+            // tiles are: picking the capsule and then sizing it are the same decision, and the
+            // component-order section is about where pieces GO, not what holds them. Behind a
+            // row rather than inline - five sliders would double this section - and in the same
+            // sheet a component uses, since it answers the same kind of question.
+
+
             if (!appearance.glyph) {
                 Text(
                     text = stringResource(R.string.drawing_master_off),
                     style = MiuixTheme.textStyles.footnote2,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(top = 10.dp),
+                )
+            }
+        }
+
+        // The capsule container, in the same shape as the About page's update row: a card of
+        // its own holding one ArrowPreference, whose insideMargin is the row's inset. It is
+        // NOT inside a DrawingSection, because that card already insets its content by the
+        // same 18dp - nesting the two added up and made the row read narrower than any other
+        // row on the screen.
+        if (appearance.capsule) {
+            Card {
+                ArrowPreference(
+                    title = stringResource(R.string.capsule_container_title),
+                    summary = stringResource(R.string.capsule_container_summary),
+                    insideMargin = DrawingItemMargin,
+                    onClick = { containerSheet = true },
                 )
             }
         }
@@ -465,6 +497,8 @@ private fun DrawingEditorCard(
             ) {
                 Text(stringResource(R.string.drawing_priority_add))
             }
+
+
         }
 
         DrawingSection(R.string.drawing_outside_title) {
@@ -474,11 +508,24 @@ private fun DrawingEditorCard(
             )
         }
 
-        DrawingSection(R.string.drawing_parts_title) {
-            DrawingPartLibrary(appearance, onEdit = { editing = it })
-        }
     }
 
+
+    // The container sheet. Same surface as a component's, because it answers the same kind
+    // of question - and it needs the same inset handling, or the last slider sits under the
+    // gesture bar.
+    if (containerSheet) {
+        val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        OverlayBottomSheet(
+            show = true,
+            title = stringResource(R.string.capsule_container_title),
+            onDismissRequest = { containerSheet = false },
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = bottomInset)) {
+                CapsuleContainerRows(settings, update, Modifier.padding(horizontal = 4.dp))
+            }
+        }
+    }
 
     val pickZone = picking
     if (pickZone != null) {
@@ -568,33 +615,112 @@ private fun DrawingSection(
 }
 
 /**
- * All components remain reachable when hidden, outside the glyph, or overridden.
+ * The components page: one row per component.
  *
- * <p>The two per-card rows are deliberately NOT separate tiles: they are rows inside
- * the signal card, because the ink is one thing (a row of level dots) and only the
- * reading it shows differs. Separate tiles for them meant two entries that opened
- * one shared set of settings.
+ * <p>Emitted into the host list as a single item, like the drawing page, so the list that
+ * scrolls it is the same one that scrolls every other page.
  */
 @Composable
-private fun DrawingPartLibrary(a: TrioAppearance, onEdit: (TrioSettingsPart) -> Unit) {
-    val parts = listOf(TrioSettingsPart.Appearance, TrioSettingsPart.Battery, TrioSettingsPart.Wifi,
-        TrioSettingsPart.Mobile,
-        TrioSettingsPart.Value, TrioSettingsPart.Bolt, TrioSettingsPart.Type, TrioSettingsPart.Readouts) +
-        if (a.capsule || a.ring) listOf(TrioSettingsPart.Clock) else emptyList()
-    parts.chunked(3).forEach { row ->
-        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            row.forEach { part ->
-                Box(Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
-                    .background(MiuixTheme.colorScheme.surfaceContainerHigh)
-                    .clickable(role = Role.Button) { onEdit(part) }
-                    .padding(horizontal = 6.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
-                    Text(stringResource(if (part == TrioSettingsPart.Battery && a.ring)
-                        R.string.drawing_part_ring else drawingPartLabel(part)), style = MiuixTheme.textStyles.footnote1,
-                        textAlign = TextAlign.Center)
-                }
-            }
-            repeat(3 - row.size) { Box(Modifier.weight(1f)) }
+internal fun PartsPage(
+    settings: TrioSettings,
+    onEdit: (TrioSettingsPart) -> Unit,
+    installingFont: Boolean,
+    onChooseFont: () -> Unit,
+    onClearFont: (String) -> Unit,
+) {
+    val a = TrioAppearance.of(settings)
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        partsForPage(settings).forEach { part ->
+            PartRow(part, settings, onClick = { onEdit(part) })
         }
+
+        // The face the glyph's text is drawn in. Here rather than on the About page: it is a
+        // property of the ink, and the About page answers questions about the BUILD (version,
+        // framework, scope) rather than about how the glyph looks.
+        // Same rhythm as every other section title on this page - see DrawingSection: the
+        // title carries its own 18dp horizontal inset and a 4dp top gap. Without the inset it
+        // sits flush against the screen edge while the cards below start 18dp in.
+        SmallTitle(
+            text = stringResource(R.string.group_font),
+            modifier = Modifier.padding(top = 4.dp),
+            insideMargin = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
+        )
+        Card {
+            val chosen = settings.fontPath
+            ArrowPreference(
+                title = stringResource(R.string.font_title),
+                // The file name, not a bare "chosen": it is how a user tells two fonts
+                // apart when comparing them, and the full path is far too long to show.
+                summary = when {
+                    installingFont -> stringResource(R.string.font_installing)
+                    chosen.isEmpty() -> stringResource(R.string.font_summary_system)
+                    else -> File(chosen).name
+                },
+                insideMargin = SettingsItemMargin,
+                // Disabled while a copy is in flight: a second pick would race the first
+                // one's file out from under it.
+                enabled = !installingFont,
+                onClick = onChooseFont,
+            )
+            // Always present, greyed out when there is nothing to clear - the same shape
+            // every other row has.
+            val nothingToClear = chosen.isEmpty()
+            ArrowPreference(
+                title = stringResource(R.string.font_clear_title),
+                summary = if (nothingToClear) {
+                    stringResource(R.string.font_clear_summary_idle)
+                } else {
+                    stringResource(R.string.font_clear_summary)
+                },
+                insideMargin = SettingsItemMargin,
+                enabled = !nothingToClear && !installingFont,
+                onClick = { onClearFont(chosen) },
+            )
+        }
+    }
+}
+
+/** The components this arrangement can hold, in the order the page lists them. */
+/**
+ * The components this arrangement can hold, in page order.
+ *
+ * <p>Takes the SETTINGS, not an appearance: it has to be callable from a LazyListScope, which
+ * is not a composable scope, and the only thing it needs is which arrangement is in force.
+ */
+internal fun partsForPage(settings: TrioSettings): List<TrioSettingsPart> {
+    // Only the clock depends on the arrangement: the ring and the capsule both draw one, the
+    // rectangle has no slot for it. Read from the raw style rather than from TrioAppearance -
+    // that class is resolved by a composable, and this runs inside a LazyListScope.
+    val style = Prefs.normalizeTrioStyle(settings.trioStyle)
+    val slotted = style == Prefs.STYLE_RING || style == Prefs.STYLE_CAPSULE
+    return listOf(TrioSettingsPart.Appearance, TrioSettingsPart.Battery, TrioSettingsPart.Wifi,
+        TrioSettingsPart.Mobile, TrioSettingsPart.Value, TrioSettingsPart.Bolt,
+        TrioSettingsPart.Type, TrioSettingsPart.Readouts) +
+        if (slotted) listOf(TrioSettingsPart.Clock) else emptyList()
+}
+
+@Composable
+private fun PartRow(
+    part: TrioSettingsPart,
+    settings: TrioSettings,
+    onClick: () -> Unit,
+) {
+    val a = TrioAppearance.of(settings)
+    // The row is its NAME and nothing else. A summary was tried - the first size row, then a
+    // placeholder for the cards that only hold colours - and both were noise: the number is
+    // one tap away in the sheet the row opens, and "this one has no size" is a sentence about
+    // the absence of a feature, which is not what a list of components is for.
+    Card {
+        ArrowPreference(
+            title = stringResource(if (part == TrioSettingsPart.Battery && a.ring)
+                R.string.drawing_part_ring else drawingPartLabel(part)),
+            summary = null,
+            insideMargin = SettingsItemMargin,
+            onClick = onClick,
+        )
     }
 }
 
@@ -1069,7 +1195,17 @@ private fun ZonePickerDialog(
     // nothing elsewhere or is the thing the user opened the sheet to do.
     var confirmingMove by remember { mutableStateOf<ZoneMove?>(null) }
 
-    OverlayDialog(
+    // A bottom sheet, the same container the component settings open in. Picking what goes
+    // in a zone and sizing it are two answers about one component, and they used to arrive
+    // in two different shapes - a centred dialog for the first, a sheet for the second - which
+    // made the long-press shortcut on a picker row feel like it left the screen it was on.
+    // The title carries the zone and what is in it now, as before.
+    // The gesture bar overlays the bottom of the window, so the last row has to clear it.
+    // The component sheet measures the same inset the same way; forgetting it here put the
+    // list flush against the screen edge, under the home indicator.
+    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+    OverlayBottomSheet(
         show = true,
         title = stringResource(
             R.string.drawing_pick_title,
@@ -1078,10 +1214,12 @@ private fun ZonePickerDialog(
         ),
         onDismissRequest = onDismiss,
     ) {
-        Column(modifier = Modifier.fillMaxWidth()
-            .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.68f).dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(bottom = bottomInset)) {
+            // Same bounce as the component sheet: a bare verticalScroll has none, so the list
+            // stopped dead at its ends instead of springing back.
             Column(modifier = Modifier.weight(1f, fill = false)
-                .verticalScroll(rememberScrollState()).padding(horizontal = 4.dp)) {
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 4.dp)) {
                 // Emptying first: it is a normal request, and putting it last would push
                 // it off the bottom of a long list.
                 PickerRow(
@@ -1127,15 +1265,15 @@ private fun ZonePickerDialog(
                             stringResource(zoneLabelRes(zone, appearance)),
                         )
                     }
-                    val summary = reason ?: when {
-                        current == part -> stringResource(R.string.drawing_pick_showing_now)
-                        inZone -> stringResource(R.string.drawing_pick_promote_summary)
-                        elsewhere != null -> stringResource(
-                            R.string.drawing_pick_move_summary,
-                            stringResource(zoneLabelRes(elsewhere, appearance)),
-                        )
-                        else -> stringResource(partSummaryRes(part))
-                    }
+                    // Only STATE, never what the component does. It used to fall through to
+                    // the component description, so one column carried four different kinds
+                    // of sentence - "showing now", "promote to first", "moving from below",
+                    // and a paragraph about what Wi-Fi arcs are - and the reader had to work
+                    // out which kind each line was before it meant anything.
+                    // Only a REFUSAL gets a sentence. The rest of the states are already said
+                    // twice - a word beside the title, a mark at the end - and adding a line
+                    // under them made the list read as four kinds of message stacked.
+                    val summary = reason
                     PickerRow(
                         title = stringResource(occupantLabelRes(part)),
                         summary = summary,
@@ -1161,18 +1299,10 @@ private fun ZonePickerDialog(
                 }
 
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(text = stringResource(R.string.drawing_close))
-                }
-            }
+            // No close button. This is a bottom sheet: it dismisses by swipe and by tapping
+            // the scrim, and a full-width primary-coloured "Close" under a list of choices
+            // reads as the thing to do rather than as the way out. The component sheet has
+            // never had one either, and the two are the same kind of surface now.
         }
     }
 
@@ -1218,7 +1348,7 @@ private class ZoneMove(val part: TrioZones.Part, val from: TrioZones.Zone)
 @Composable
 private fun PickerRow(
     title: String,
-    summary: String,
+    summary: String?,
     selected: Boolean,
     inZone: Boolean = false,
     elsewhere: Boolean = false,
@@ -1285,11 +1415,20 @@ private fun PickerRow(
                     )
                 }
             }
-            Text(
-                text = summary,
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            )
+            // No second line. The state is already written beside the title as a word and
+            // marked at the end of the row; a subtitle repeating it made one fact appear
+            // three times, and when it repeated a REFUSAL it said the same sentence twice
+            // in two different places.
+            //
+            // What is left is the one case a tag cannot carry: a frame that cannot hold the
+            // piece at all, where the reason is not a state but an obstacle.
+            if (summary != null) {
+                Text(
+                    text = summary,
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
         }
         when {
             // Three marks, not three tints: the end of the row has to say which kind of
