@@ -44,7 +44,47 @@ final class BatteryPresence {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static Runnable pendingRefresh;
 
+    /**
+     * The battery level in percent, or {@code -1} before the first reading.
+     *
+     * <p>Published for the OriginOS path, where the glyph host view exposes no
+     * battery fields to read reflectively and this broadcast sampler is the
+     * source of truth for the ring's fill level.
+     */
+    private static volatile int sLevel = -1;
+
+    /**
+     * Whether an external source is attached and pushing (or holding) charge.
+     *
+     * <p>Drives the glyph's charging bolt on OriginOS: the bolt belongs on
+     * screen for as long as the charger does, which is the reading the
+     * platform's own icon gives too.
+     */
+    private static volatile boolean sCharging;
+
+    /**
+     * Whether the attached source is a fast one, judged by the power actually
+     * flowing into the battery (vivo's flash chargers push well past 10 W;
+     * ordinary USB stays below it). Only affects the bolt's colour.
+     */
+    private static volatile boolean sQuick;
+
     private BatteryPresence() {}
+
+    /** The battery level in percent, or {@code -1} when never read. */
+    static int level() {
+        return sLevel;
+    }
+
+    /** Whether a charger is attached; see {@link #sCharging}. */
+    static boolean charging() {
+        return sCharging;
+    }
+
+    /** Whether the charger attached is a fast one; see {@link #sQuick}. */
+    static boolean quickCharging() {
+        return sQuick;
+    }
 
     static synchronized void start(final Context context) {
         if (!watchdogStarted) {
@@ -116,6 +156,7 @@ final class BatteryPresence {
             final int plugged = battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0);
             final int status = battery.getIntExtra(BatteryManager.EXTRA_STATUS,
                     BatteryManager.BATTERY_STATUS_UNKNOWN);
+            final int levelPct = battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
             final int temperature = battery.getIntExtra(BatteryManager.EXTRA_TEMPERATURE,
                     Integer.MIN_VALUE);
             final int voltage = battery.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0);
@@ -127,12 +168,16 @@ final class BatteryPresence {
             final boolean attached = plugged != 0
                     || status == BatteryManager.BATTERY_STATUS_CHARGING
                     || status == BatteryManager.BATTERY_STATUS_FULL;
+            final boolean charging = attached
+                    && (status == BatteryManager.BATTERY_STATUS_CHARGING
+                        || status == BatteryManager.BATTERY_STATUS_FULL);
             final int whole = (temperature == Integer.MIN_VALUE)
                     ? TrioState.TEMP_UNKNOWN
                     : Math.round(temperature / 10f);
             final int current = currentNow(context);
             final float watts = wattsOf(current, voltage);
-            publish(attached, watts, whole);
+            publish(attached, watts, whole, levelPct, charging,
+                    charging && watts != TrioState.POWER_UNKNOWN && watts >= 10f);
         } catch (RuntimeException ignored) {
             // Permissions/ROM differences must not crash SystemUI.
         }
@@ -188,13 +233,19 @@ final class BatteryPresence {
         return Math.abs(currentMicroAmps) * (voltageMilliVolts / 1000f) / 1000000f;
     }
 
-    private static void publish(boolean attached, float watts, int temperature) {
+    private static void publish(boolean attached, float watts, int temperature,
+                                int levelPct, boolean charging, boolean quick) {
         final boolean beforeAttached = TrioState.sChargingAttached;
         final float beforeWatts = TrioState.sChargePowerW;
         final int beforeTemperature = TrioState.sBatteryTempC;
+        final int beforeLevel = sLevel;
+        final boolean beforeCharging = sCharging;
         TrioState.sChargingAttached = attached;
         TrioState.sChargePowerW = watts;
         TrioState.sBatteryTempC = temperature;
+        sLevel = levelPct;
+        sCharging = charging;
+        sQuick = quick;
         // Float.compare rather than != because the watts may be POWER_UNKNOWN,
         // and NaN != NaN is true: a plain comparison would call every frame a
         // change on a device that cannot report power, and repaint the status
@@ -202,7 +253,9 @@ final class BatteryPresence {
         // against itself as equal, which is what "did the reading move" means.
         if (beforeAttached != attached
                 || Float.compare(beforeWatts, TrioState.sChargePowerW) != 0
-                || beforeTemperature != TrioState.sBatteryTempC) {
+                || beforeTemperature != TrioState.sBatteryTempC
+                || beforeLevel != sLevel
+                || beforeCharging != sCharging) {
             TrioHooks.invalidateHosts();
         }
     }

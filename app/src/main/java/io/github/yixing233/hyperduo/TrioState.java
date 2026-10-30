@@ -13,6 +13,7 @@ package io.github.yixing233.hyperduo;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.os.Build;
 import android.os.SystemClock;
 import android.telephony.SignalStrength;
 import android.telephony.SubscriptionInfo;
@@ -205,7 +206,24 @@ final class TrioState {
     private static Field fLight;
     private static Field fDark;
     private static Field fIntensity;
+    /**
+     * {@code VivoBatteryIconBaseView.mBatteryChargeMode} - vivo's own charge
+     * mode enum ({@code BatteryUtil.ChargeMode}: flash / engine / direct
+     * charging are the fast ones). The authoritative quick-charge answer on
+     * OriginOS, confirmed in the device's SystemUI dex.
+     */
+    private static Field fChargeMode;
     private static boolean fieldsReady;
+    /**
+     * Whether the host class really carries the battery fields. OriginOS's
+     * {@code VivoBatteryIconBaseView} spells them differently from MIUI
+     * ({@code mBatteryLevel} / {@code mIsPowerSave} / {@code mIconTint}), so
+     * the lookup falls through to those names and the answer is decided once
+     * with the lookup itself rather than per frame.
+     */
+    private static boolean hostFieldsUsable;
+    /** True when the fields that were found are vivo's own spelling. */
+    private static boolean vivoFields;
 
     final View host;
 
@@ -257,17 +275,37 @@ final class TrioState {
             return;
         }
         fLevel = Refl.field(c, "mLevel");
+        final boolean miuiLevel = fLevel != null;
+        if (fLevel == null) {
+            // OriginOS: VivoBatteryIconBaseView.mBatteryLevel (public int).
+            fLevel = Refl.field(c, "mBatteryLevel");
+        }
         fCharging = Refl.field(c, "mCharging");
         fQuick = Refl.field(c, "mQuickCharging");
         fLow = Refl.field(c, "mLow");
         fPowerSave = Refl.field(c, "mPowerSave");
+        if (fPowerSave == null) {
+            // OriginOS: mIsPowerSave (public boolean).
+            fPowerSave = Refl.field(c, "mIsPowerSave");
+        }
         fPerformance = Refl.field(c, "mPerformanceMode");
         fUseTint = Refl.field(c, "mUseTint");
         fTint = Refl.field(c, "mTintColor");
+        if (fTint == null) {
+            // OriginOS: mIconTint (public int) - the colour vivo paints this
+            // very icon in, which is exactly what the glyph wants.
+            fTint = Refl.field(c, "mIconTint");
+        }
         fLight = Refl.field(c, "mLightColor");
         fDark = Refl.field(c, "mDarkColor");
         fIntensity = Refl.field(c, "mDarkIntensity");
-        fieldsReady = fLevel != null;
+        fChargeMode = Refl.field(c, "mBatteryChargeMode");
+        // A missing field is a property of the class, not something to re-look-up
+        // on every frame: the drawing hosts of one ROM are always the same
+        // class, so both the positive and the negative results are cached.
+        fieldsReady = true;
+        hostFieldsUsable = fLevel != null;
+        vivoFields = !miuiLevel && hostFieldsUsable;
     }
 
     /** Re-reads every status value from the host. Cheap enough to call in onDraw. */
@@ -284,6 +322,36 @@ final class TrioState {
         lightColor = Refl.getInt(fLight, host, lightColor);
         darkColor = Refl.getInt(fDark, host, darkColor);
         darkIntensity = Refl.getFloat(fIntensity, host, darkIntensity);
+        if (!hostFieldsUsable) {
+            // A host with no readable battery fields at all: the sticky-broadcast
+            // sampler is the truth instead. "Low" is the level the ROM's own
+            // low-battery warning uses, and the power saver is asked of the
+            // framework directly.
+            level = BatteryPresence.level();
+            charging = BatteryPresence.charging();
+            quickCharging = BatteryPresence.quickCharging();
+            low = level >= 0 && level <= 15;
+            powerSave = powerSaveOf(sContext);
+        } else {
+            if (fQuick == null) {
+                // OriginOS: the charge mode enum is the quick-charge answer.
+                // Flash / engine / direct charging are the fast paths; the
+                // battery's own current is the fallback when even the enum
+                // cannot be read.
+                final Object mode = Refl.get(fChargeMode, host);
+                if (mode instanceof Enum) {
+                    final String name = ((Enum<?>) mode).name();
+                    quickCharging = name.contains("FLASH")
+                            || name.contains("ENGINE")
+                            || name.contains("DIRECT");
+                } else {
+                    quickCharging = BatteryPresence.quickCharging();
+                }
+            }
+            if (fLow == null) {
+                low = level >= 0 && level <= 15;
+            }
+        }
 
         resolvePending(resourcesOf(host));
 
@@ -300,6 +368,12 @@ final class TrioState {
         }
 
         wifiLevel = sWifiLevel;
+        if (wifiLevel > 3) {
+            // AOSP grades its Wi-Fi icons 0..4; the glyph's arcs stop at three.
+            // The top notch folds into a full set of arcs rather than drawing a
+            // fourth one that has no geometry.
+            wifiLevel = 3;
+        }
         mobileLevel = sMobileLevel;
         wifiPresent = sWifiPresent;
         islandHideBattery = sIslandHideBattery;
@@ -403,15 +477,16 @@ final class TrioState {
         }
         final int[] levels = { -1, -1 };
         int dataSlot = -1;
+        TelephonyManager tel = null;
+        int dataSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
         try {
             final SubscriptionManager subs =
                     (SubscriptionManager) context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
-            final TelephonyManager tel =
-                    (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+            tel = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
             if (subs == null || tel == null) {
                 return;
             }
-            final int dataSubId = SubscriptionManager.getDefaultDataSubscriptionId();
+            dataSubId = SubscriptionManager.getDefaultDataSubscriptionId();
             final List<SubscriptionInfo> infos = subs.getActiveSubscriptionInfoList();
             if (infos != null) {
                 for (int i = 0; i < infos.size(); i++) {
@@ -437,6 +512,87 @@ final class TrioState {
         // pairs SIM 1's level with SIM 2's from a different poll.
         sSlotLevels = levels;
         sDataSlot = dataSlot;
+        if (TrioHooks.sVivo) {
+            // OriginOS: no drawable pipeline reports the network type either;
+            // the data SIM's own answer is mapped to the label the stock bar
+            // would paint. (vivo's "5GA" marking for 5G-Advanced networks has
+            // no public API and is left for a later revision.)
+            sampleMobileType(tel, dataSubId);
+        }
+    }
+
+    /**
+     * Reads the network type of the data SIM and publishes it as the mobile
+     * type label. OriginOS only; MIUI's label comes from its own drawable.
+     */
+    private static void sampleMobileType(TelephonyManager tel, int dataSubId) {
+        if (tel == null
+                || dataSubId == Integer.MIN_VALUE
+                || dataSubId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+            return;
+        }
+        try {
+            final TelephonyManager per = tel.createForSubscriptionId(dataSubId);
+            if (per == null) {
+                return;
+            }
+            final int type;
+            if (Build.VERSION.SDK_INT >= 30) {
+                type = per.getDataNetworkType();
+            } else {
+                type = per.getNetworkType();
+            }
+            if (setMobileType(networkTypeLabel(type))) {
+                TrioHooks.invalidateHosts();
+            }
+        } catch (Throwable ignored) {
+            // keep the last label; the radio may simply not be ready
+        }
+    }
+
+    /** The label the stock bar paints for one telephony network type. */
+    private static String networkTypeLabel(int type) {
+        switch (type) {
+            case TelephonyManager.NETWORK_TYPE_NR:
+                return "5G";
+            case TelephonyManager.NETWORK_TYPE_LTE:
+                return "4G";
+            case TelephonyManager.NETWORK_TYPE_HSDPA:
+            case TelephonyManager.NETWORK_TYPE_HSUPA:
+            case TelephonyManager.NETWORK_TYPE_HSPA:
+            case TelephonyManager.NETWORK_TYPE_HSPAP:
+            case TelephonyManager.NETWORK_TYPE_UMTS:
+            case TelephonyManager.NETWORK_TYPE_EVDO_0:
+            case TelephonyManager.NETWORK_TYPE_EVDO_A:
+            case TelephonyManager.NETWORK_TYPE_EVDO_B:
+            case TelephonyManager.NETWORK_TYPE_EHRPD:
+                return "3G";
+            case TelephonyManager.NETWORK_TYPE_EDGE:
+            case TelephonyManager.NETWORK_TYPE_GPRS:
+            case TelephonyManager.NETWORK_TYPE_CDMA:
+            case TelephonyManager.NETWORK_TYPE_1xRTT:
+            case TelephonyManager.NETWORK_TYPE_IDEN:
+                return "2G";
+            default:
+                // IWLAN and everything unrecognised: no label rather than a
+                // wrong one - the glyph leaves the type slot to whatever else
+                // can fill it.
+                return "";
+        }
+    }
+
+    /** The framework's power-save answer, or the last value when it will not say. */
+    private static boolean powerSaveOf(Context context) {
+        if (context == null) {
+            return false;
+        }
+        try {
+            final android.os.PowerManager pm =
+                    (android.os.PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            return pm != null && pm.isPowerSaveMode();
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     /**
@@ -516,6 +672,13 @@ final class TrioState {
         int c = TrioHooks.rowInk(TrioHooks.rowOf(host));
         if (c == 0) {
             c = useTint ? tintColor : (darkIntensity > 0f ? darkColor : lightColor);
+        }
+        if (c == 0 && vivoFields) {
+            // OriginOS: mIconTint is the colour vivo is painting this very
+            // icon in - no useTint switch, no light/dark pair, just the one
+            // field. It sits behind the row ink (poll / dark event) on
+            // purpose: those see a change the moment it lands.
+            c = tintColor;
         }
         if (c == 0) {
             c = nightMode() ? 0xFFFFFFFF : DEFAULT_FOREGROUND;

@@ -24,5 +24,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "HyperDuo"
+rootProject.name = "OriginDuo"
 include(":app")

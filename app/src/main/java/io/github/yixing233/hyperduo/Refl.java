@@ -164,4 +164,26 @@ final class Refl {
             return null;
         }
     }
+
+    /**
+     * Invokes a public static method by class name, or returns null.
+     *
+     * <p>Used for hidden-API reads (SystemProperties) from code that must
+     * compile against the public SDK.
+     */
+    static Object callStaticByName(String className, String name,
+                                   Object... args) {
+        try {
+            final Class<?> c = Class.forName(className);
+            final Class<?>[] sig = new Class<?>[args.length];
+            for (int i = 0; i < args.length; i++) {
+                sig[i] = args[i].getClass();
+            }
+            final Method m = c.getMethod(name, sig);
+            m.setAccessible(true);
+            return m.invoke(null, args);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
 }

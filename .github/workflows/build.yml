@@ -88,14 +88,14 @@ jobs:
       - name: Build release APK
         run: |
           gradle --no-daemon assembleRelease \
-            -PhyperduoVersionName="${{ steps.stamp.outputs.name }}" \
-            -PhyperduoVersionCode="${{ steps.stamp.outputs.code }}"
+            -PoriginduoVersionName="${{ steps.stamp.outputs.name }}" \
+            -PoriginduoVersionCode="${{ steps.stamp.outputs.code }}"
 
       - name: Collect
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk \
-             "dist/HyperDuo-${{ steps.stamp.outputs.name }}.apk"
+             "dist/OriginDuo-${{ steps.stamp.outputs.name }}.apk"
 
       # The runner can reach GitHub's blob storage; the phone this build gets
       # installed on cannot (artifact, release assets and logs all time out from
@@ -116,7 +116,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: HyperDuo-${{ steps.stamp.outputs.name }}
+          name: OriginDuo-${{ steps.stamp.outputs.name }}
           path: dist/*.apk
           if-no-files-found: error
 

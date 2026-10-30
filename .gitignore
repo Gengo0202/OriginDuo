@@ -43,3 +43,7 @@ local.properties
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Signing secrets - never commit
+/keystore.properties
+/vivoduobar.jks

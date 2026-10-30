@@ -379,7 +379,19 @@ final class TrioRenderer {
             // calls super.onDraw and returns, so the framework's battery drawable
             // would show through underneath the glyph. Clear unconditionally: our
             // glyph is the sole content of this view either way.
-            canvas.drawColor(0, PorterDuff.Mode.CLEAR);
+            //
+            // OriginOS must never take this branch: a transparent drawColor -
+            // CLEAR and SRC alike - poisons vivo's blur composition and the
+            // whole pull-down shade renders transparent (bisected on an X100s
+            // Pro). The vivo hook skips the native onDraw instead, so the
+            // canvas arrives clean and nothing has to be erased here. The
+            // mode-7 comparison below exists to re-verify that diagnosis.
+            if (!TrioHooks.sVivo) {
+                canvas.drawColor(0, PorterDuff.Mode.CLEAR);
+            } else if (TrioHooks.testMode() == 7) {
+                // Diagnostic comparison: the breaking erase.
+                canvas.drawColor(0, PorterDuff.Mode.CLEAR);
+            }
         }
 
         final int role = roleColor(appearance, level, charging, powerSave, low, fg);

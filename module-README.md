@@ -1,10 +1,10 @@
-# HyperDuo
+# OriginDuo
 
 把状态栏里的 **Wi-Fi、移动信号、电量** 合并成一个仿 iPhone「Duo」风格的三合一图标。
 
-<img src="https://cdn.jsdelivr.net/gh/yixing233/HyperDuo@main/docs/images/statusbar.png" width="900" alt="HyperDuo 在真实状态栏里的效果">
+<img src="docs/docs/images/statusbar.png" width="900" alt="HyperDuo 在真实状态栏里的效果">
 
-HyperDuo 是一个 LSPosed 模块，只作用于系统界面（`com.android.systemui`）。开启后，原本分开的
+OriginDuo（vivo OriginOS 适配版，fork 自 HyperDuo）是一个 LSPosed 模块，只作用于系统界面（`com.android.systemui`）。开启后，原本分开的
 Wi-Fi 图标、信号格与电池图标被替换成一个整体字形：外圈是**电池环**（缺口在下方，按电量点亮），
 环里是 **Wi-Fi 弧线**（弧数跟随真实信号强度），底部是**移动信号点**，环内是**电量数字**（充电
 时变成闪电，快充为琥珀色）。
@@ -15,25 +15,24 @@ Wi-Fi 图标、信号格与电池图标被替换成一个整体字形：外圈�
 
 ## 效果预览
 
-<img src="https://cdn.jsdelivr.net/gh/yixing233/HyperDuo@main/docs/images/states.png" width="820" alt="六种典型状态：充电、快充、正常、无 Wi-Fi、省电、危险">
+<img src="docs/docs/images/states.png" width="820" alt="六种典型状态：充电、快充、正常、无 Wi-Fi、省电、危险">
 
 从左到右：充电、快充、正常、无 Wi-Fi（显示网络类型）、省电、危险。这套预览也内置在设置界面顶部，
 会跟着你的设置实时变化。
 
 ## 要求
 
-- **系统**：HyperOS / MIUI
+- **系统**：vivo / iQOO OriginOS
 - **Android**：10 及以上（API 29+）
 - **框架**：支持 libxposed **API 102** 的 LSPosed，例如 LSPosed 2.2.0-it（7890）
 - **作用域**：系统界面（`com.android.systemui`）
 
-目前只在 **小米 14 · HyperOS 4 · Android 17（API 37）** 上做过完整验证。其他 HyperOS / MIUI 机型
-理论可用；状态栏内部实现不同时，对应功能会自动跳过并写下日志，不会崩溃。
+已在 **vivo X100s Pro · OriginOS 6 · Android 16** 上针对状态栏视图结构适配；其他 vivo / iQOO 机型理论可用，内部实现不同时对应功能自动跳过并写下日志，不会崩溃。
 
 ## 安装
 
-1. 从 [Releases](https://github.com/yixing233/HyperDuo/releases) 下载最新的 `HyperDuo-*.apk` 并安装。
-   > **包名已更换**：从 1.4 起是 `io.github.yixing233.hyperduo`（1.3 及更早是 `com.hyperduo.trio`）。
+1. 从 [Releases](https://github.com/Gengo0202/OriginDuo/releases) 下载最新的 `OriginDuo-*.apk` 并安装。
+   > **包名已更换**：从 1.4 起是 `io.github.gengo0202.originduo`（1.3 及更早是 `com.hyperduo.trio`）。
    > 包名变了就是另一个应用，**无法覆盖升级**：请先卸载旧版（设置会一起清掉），再安装新版。
 2. 打开 **LSPosed 管理器** → 模块 → 启用 **HyperDuo**。
 3. 在模块的作用域里勾选 **系统界面**。
@@ -96,7 +95,7 @@ Wi-Fi 图标、信号格与电池图标被替换成一个整体字形：外圈�
 **颜色跟着状态走。** 低电量、充电、危险电量可以分别为深色底和浅色底各设一套颜色，优先级是
 **危险电量 → 低电量 / 省电 → 充电 → 前景色**；底纹与未激活的信号点跟随状态栏本身的前景色。
 
-全部设置项与默认值见[主仓库说明](https://github.com/yixing233/HyperDuo#设置说明)。
+全部设置项与默认值见[主仓库说明](https://github.com/Gengo0202/OriginDuo#设置说明)。
 
 ## 常见问题
 
@@ -112,7 +111,7 @@ Wi-Fi 图标、信号格与电池图标被替换成一个整体字形：外圈�
 
 **升级后设置全没了、LSPosed 里还多出一个同名模块？**
 
-包名换了（`com.hyperduo.trio` → `io.github.yixing233.hyperduo`），Android 会当成两个不同的应用：
+包名换了（`com.hyperduo.trio` → `io.github.gengo0202.originduo`），Android 会当成两个不同的应用：
 旧版不会自动升级、旧设置不会迁移、LSPosed 里两条并列。卸载旧的那条，只留新版即可。
 
 **打开「双卡信号」后还是只画一排点？**
@@ -132,9 +131,9 @@ Wi-Fi 图标、信号格与电池图标被替换成一个整体字形：外圈�
 
 ## 支持
 
-- 源码与说明：https://github.com/yixing233/HyperDuo
-- 问题反馈：https://github.com/yixing233/HyperDuo/issues
-- 最新版本：https://github.com/yixing233/HyperDuo/releases/latest
+- 源码与说明：https://github.com/Gengo0202/OriginDuo
+- 问题反馈：https://github.com/Gengo0202/OriginDuo/issues
+- 最新版本：https://github.com/Gengo0202/OriginDuo/releases/latest
 
 ## 致谢
 
@@ -142,5 +141,5 @@ Wi-Fi 图标、信号格与电池图标被替换成一个整体字形：外圈�
 
 ## 许可证
 
-[GNU General Public License v3.0](https://github.com/yixing233/HyperDuo/blob/main/LICENSE)
+[GNU General Public License v3.0](https://github.com/Gengo0202/OriginDuo/blob/main/LICENSE)
 （GPL-3.0）：可自由使用、修改与再分发；分发修改后的版本时须以同一协议公开源码。不提供担保。

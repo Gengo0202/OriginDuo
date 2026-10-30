@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -8,43 +10,66 @@ plugins {
 // version in the APK, the version in the About card and the version the updater
 // compares against are all the same value. A local build falls back to the
 // checked-in defaults below.
-val tagVersionName = (findProperty("hyperduoVersionName") as String?)?.takeIf { it.isNotBlank() }
-val tagVersionCode = (findProperty("hyperduoVersionCode") as String?)?.toIntOrNull()
+//
+// OriginDuo versioning: 1.x.x feature releases, x.0.x fix releases, x.x.1 test
+// builds, at most three digits, starting from 1.0.1 (same scheme as VivoDuoBar).
+val tagVersionName = (findProperty("originduoVersionName") as String?)?.takeIf { it.isNotBlank() }
+val tagVersionCode = (findProperty("originduoVersionCode") as String?)?.toIntOrNull()
+
+// Signing: reuse the VivoDuoBar release key so both vivo adaptations come from
+// the same author identity. Not checked in - see keystore.properties (gitignored).
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
 
 android {
     // io.github.* because LSPosed's module repo verifies a reverse-domain id
-    // against a DNS TXT record for the root domain: hyperduo.com is registered
-    // by someone else, so anything under it would fail the check. The
-    // io.github.<user> form needs no domain and no TXT record.
+    // against a DNS TXT record for the root domain: anything under a domain
+    // registered by someone else would fail the check. The io.github.<user>
+    // form needs no domain and no TXT record.
+    //
+    // The Java package / namespace stays io.github.yixing233.hyperduo (the fork
+    // upstream) so the xposed entry class in META-INF does not move; only the
+    // installed app id changes, which is what makes this a separate module that
+    // can be installed next to the original HyperDuo.
     namespace = "io.github.yixing233.hyperduo"
     compileSdk = 37
 
     defaultConfig {
         // Changing this makes the module a different app to Android: an existing
-        // com.hyperduo.trio install cannot be updated in place, and its settings
-        // and LSPosed scope entry do not carry over. Uninstall the old one first.
-        applicationId = "io.github.yixing233.hyperduo"
+        // io.github.yixing233.hyperduo install cannot be updated in place, and its
+        // settings and LSPosed scope entry do not carry over.
+        applicationId = "io.github.gengo0202.originduo"
         minSdk = 29
         targetSdk = 36
-        versionCode = tagVersionCode ?: 2
-        versionName = tagVersionName ?: "1.1"
+        versionCode = tagVersionCode ?: 3
+        versionName = tagVersionName ?: "1.0.3"
+        // Diagnostic build flag: true only when the build is invoked with
+        // -PoriginduoDiag=true. See buildFeatures.buildConfig above.
+        buildConfigField(
+            "boolean", "DIAG",
+            if ((findProperty("originduoDiag") as String?)?.toBoolean() == true) "true" else "false"
+        )
     }
 
     signingConfigs {
-        // Same keystore the hand-rolled pipeline used, so that in-place updates
-        // over the already-installed module keep working.
-        create("hyperduo") {
-            storeFile = rootProject.file(".tools/debug.keystore")
-            storePassword = "android"
-            keyAlias = "hyperduo"
-            keyPassword = "android"
+        create("originduo") {
+            if (keystorePropertiesFile.exists()) {
+                storeFile = file(keystoreProperties.getProperty("storeFile", "../vivoduobar.jks"))
+                storePassword = keystoreProperties.getProperty("storePassword", "")
+                keyAlias = keystoreProperties.getProperty("keyAlias", "")
+                keyPassword = keystoreProperties.getProperty("keyPassword", "")
+            }
         }
     }
 
     buildTypes {
         debug {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("hyperduo")
+            signingConfig = signingConfigs.getByName("originduo")
         }
         release {
             isMinifyEnabled = true
@@ -53,7 +78,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = signingConfigs.getByName("hyperduo")
+            signingConfig = signingConfigs.getByName("originduo")
         }
     }
 
@@ -68,6 +93,11 @@ android {
 
     buildFeatures {
         compose = true
+        // The diagnostic kill-switch (persist.sys.originduo_test) is compiled in
+        // only for the diag build: -PoriginduoDiag=true. The public build has
+        // DIAG=false, which R8 folds away together with all the reflection
+        // behind it.
+        buildConfig = true
     }
 
     // Keep META-INF/xposed/{java_init.list,scope.list,module.prop} in the APK.

@@ -23,7 +23,7 @@ import io.github.libxposed.api.XposedModuleInterface;
  */
 public final class HyperDuoModule extends XposedModule {
 
-    private static final String TAG = "HyperDuo";
+    private static final String TAG = "OriginDuo";
     private static final int LOG_INFO = 4;
     private static final int LOG_WARN = 5;
 

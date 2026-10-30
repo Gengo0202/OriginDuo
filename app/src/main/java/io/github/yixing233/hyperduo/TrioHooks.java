@@ -88,7 +88,7 @@ import io.github.libxposed.api.XposedModule;
  */
 final class TrioHooks {
 
-    private static final String TAG = "HyperDuo";
+    private static final String TAG = "OriginDuo";
     private static final Map<View, Boolean> KEYGUARD_ROWS = new WeakHashMap<>();
     private static final Map<Object, List<String>> KEYGUARD_ADDED = new WeakHashMap<>();
     static final int LOG_INFO = 4;
@@ -108,11 +108,139 @@ final class TrioHooks {
     }
 
     /**
-     * {@code MiuiStatusBatteryContainer} 鈥?matched by name while walking the view
+     * {@code MiuiStatusBatteryContainer} — matched by name while walking the view
      * tree, because resolving it through the host's class loader never worked.
      */
     private static final String BATTERY_CONTAINER_CLASS =
             "com.android.systemui.statusbar.views.MiuiStatusBatteryContainer";
+
+    // ------------------------------------------------------------- vivo / OriginOS
+
+    /**
+     * True while running inside a vivo OriginOS SystemUI. Detected once at
+     * install time from the presence of vivo's own battery meter class; every
+     * MIUI-specific hook group branches on this and installs its OriginOS
+     * counterpart instead.
+     *
+     * <p>The OriginOS status bar was mapped on a vivo X100s Pro (V2324HA,
+     * OriginOS 6 / Android 16, SystemUI 16.0.7.222) from a live view-tree dump:
+     *
+     * <pre>
+     * StatusBarWindowView 1260x126
+     *  PhoneStatusBarView (com.android.systemui.statusbar.phone) id=status_bar
+     *   LinearLayout id=status_bar_contents
+     *    ...start side: Clock (com.android.systemui.statusbar.policy.Clock) id=clock
+     *    AlphaOptimizedLinearLayout id=status_bar_end_side_content
+     *     RelativeLayout
+     *      LinearLayout id=system_icons
+     *       StatusIconContainer (com.android.systemui.statusbar.phone) id=statusIcons
+     *        ModernStatusBarMobileView id=mobile_combo
+     *          ImageView id=mobile_type, VivoMobileSignal id=mobile_signal
+     *        ModernStatusBarWifiView id=wifi_combo
+     *          AlphaOptimizedImageView id=wifi_signal
+     *       VivoBatteryMeterView (com.vivo.systemui.battery) id=battery 74x102
+     *        VivoHorBatteryIconView 74x42   &lt;- the glyph host
+     * </pre>
+     *
+     * <p>Key differences from MIUI that the adaptation answers:
+     * <ul>
+     *   <li>the battery icon is {@code VivoHorBatteryIconView}, a plain view that
+     *       draws the horizontal battery itself — there is no
+     *       {@code mTintBgDrawable} slot to take over, so the glyph is painted
+     *       directly after the native {@code onDraw} every frame;</li>
+     *   <li>the icon container is AOSP's {@code StatusIconContainer}, whose
+     *       ignore list is spelled {@code mIgnoredSlots} (MIUI renamed it to
+     *       {@code ignoredSlots});</li>
+     *   <li>there is no {@code transformResId} icon pipeline to learn signal
+     *       levels from — Wi-Fi comes from {@link WifiPresence}'s RSSI sampling
+     *       and mobile from the telephony poll in {@link TrioState};</li>
+     *   <li>nothing in the tint path is hookable (no {@code onDarkChanged} /
+     *       {@code setIconColor} dispatch ever fires), so the foreground colour
+     *       is polled from the status bar clock's text colour — see
+     *       {@link TintPoll};</li>
+     *   <li>the charging super island ("hood"/superX) and the MIUI battery
+     *       style system have no equivalent hooks here; the bolt is simply part
+     *       of the icon canvas the glyph replaces.</li>
+     * </ul>
+     */
+    static volatile boolean sVivo;
+
+    /**
+     * Diagnostic kill-switch for the OriginOS adaptation, read live from the
+     * {@code persist.sys.originduo_test} system property so individual
+     * subsystems can be disabled on a running device (root shell:
+     * {@code su -c setprop persist.sys.originduo_test N}).
+     *
+     * <p>Used to bisect a shade-rendering regression without building a
+     * separate APK per hypothesis:
+     * <ul>
+     *   <li>1 - stop painting the glyph (folding, tinting and everything else
+     *       keep running);</li>
+     *   <li>2 - stop folding the native icons (drawing keeps running);</li>
+     *   <li>3 - stop the tint poller;</li>
+     *   <li>4 - reduce the onDarkChanged hook to a pure pass-through.</li>
+     * </ul>
+     */
+    /** The resolved SystemProperties.get method, or null when unavailable. */
+    private static volatile Method sTestPropGet;
+
+    static int testMode() {
+        // Compiled into the diag build only (-PoriginduoDiag=true). The public
+        // build folds this to a constant 0 and R8 strips the reflection below,
+        // so the shipped APK has no remote kill-switch at all.
+        if (!BuildConfig.DIAG) {
+            return 0;
+        }
+        Method get = sTestPropGet;
+        if (get == null) {
+            try {
+                final Class<?> c = Class.forName("android.os.SystemProperties");
+                get = c.getMethod("get", String.class, String.class);
+                get.setAccessible(true);
+                sTestPropGet = get;
+            } catch (Throwable t) {
+                return 0;
+            }
+        }
+        try {
+            final Object v = get.invoke(null, "persist.sys.originduo_test", "0");
+            return v instanceof String
+                    ? Integer.parseInt(((String) v).trim()) : 0;
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    /** vivo's battery meter container that holds the icon view. */
+    private static final String VIVO_METER_VIEW =
+            "com.vivo.systemui.battery.VivoBatteryMeterView";
+
+    /** AOSP icon container, used by OriginOS. */
+    private static final String AOSP_ICON_CONTAINER =
+            "com.android.systemui.statusbar.phone.StatusIconContainer";
+
+    /** AOSP status bar view, the root of the status bar row on OriginOS. */
+    private static final String AOSP_PHONE_BAR =
+            "com.android.systemui.statusbar.phone.PhoneStatusBarView";
+
+    /** AOSP status bar clock. */
+    private static final String AOSP_STATUS_CLOCK =
+            "com.android.systemui.statusbar.policy.Clock";
+
+    /**
+     * The vivo keyguard row's own status bar view. Hooked so the lock screen's
+     * copy of the icon row folds like the status bar's does.
+     */
+    private static final String VIVO_KEYGUARD_BAR =
+            "com.vivo.systemui.statusbar.phone.VivoKeyguardStatusBarView";
+
+    /**
+     * The visibility the status bar clock had when it was first captured, so
+     * handing it back after a capsule leaves the time slot restores what
+     * OriginOS wanted — not a hard-coded VISIBLE that would resurrect a clock
+     * the user (or the ROM) had switched off.
+     */
+    private static volatile boolean sClockWasVisible = true;
 
     /** Module handle for logging from helpers that have no callback argument. */
     private static volatile XposedModule sModule;
@@ -164,6 +292,10 @@ final class TrioHooks {
     private static List<String> foldedSlots() {
         final TrioAppearance a = TrioConfig.appearance();
         if (!a.glyph) {
+            return Collections.emptyList();
+        }
+        if (testMode() == 2) {
+            // Diagnostic: folding disabled, drawing keeps running.
             return Collections.emptyList();
         }
         final List<String> slots = new ArrayList<>(MANAGED_SLOTS.size());
@@ -367,6 +499,13 @@ final class TrioHooks {
 
     static void install(XposedModule module, ClassLoader cl) {
         sModule = module;
+        // OriginOS detection: vivo's own battery meter class exists only inside
+        // a vivo SystemUI. Decided before any group runs so every group can
+        // branch on it.
+        sVivo = Refl.cls(VIVO_METER_VIEW, cl) != null;
+        if (sVivo) {
+            log(module, "OriginOS detected (vivo battery views present)");
+        }
         // Read the user's settings before anything is hooked: the very first hook
         // callback already needs to know whether the module is switched on.
         TrioConfig.install(module);
@@ -391,7 +530,8 @@ final class TrioHooks {
         hooked += group(module, cl, 12);
         hooked += group(module, cl, 13);
         hooked += group(module, cl, 14);
-        log(module, "HyperDuo installed, hooks=" + hooked
+        log(module, (sVivo ? "OriginDuo" : "HyperDuo") + " installed, hooks=" + hooked
+                + " vivo=" + sVivo
                 + " enabled=" + TrioConfig.get().enabled);
     }
 
@@ -831,8 +971,61 @@ final class TrioHooks {
      * control-center container instead of the status bar's. Only
      * {@code status_bar.xml}'s root is a {@code MiuiPhoneStatusBarView}, and it
      * holds the authoritative {@code mStatusBarStatusIcons}.
+     *
+     * <p>OriginOS: {@code PhoneStatusBarView} does not reliably declare
+     * {@code onFinishInflate}, so the capture rides on AOSP
+     * {@code StatusIconContainer.onViewAdded(View)} instead — declared on the
+     * container class itself, so the hook is not world-wide. When a child lands
+     * in a container whose ancestor chain holds a {@code PhoneStatusBarView},
+     * that container is the status bar's own, and the bar root, its clock and
+     * the tint poller are captured from it. The keyguard's and the shade's
+     * containers never see a {@code PhoneStatusBarView} ancestor, so they keep
+     * out of the shared state.
      */
     private static int hookStatusBarViewCapture(XposedModule module, ClassLoader cl) {
+        if (sVivo) {
+            final Class<?> container = Refl.cls(AOSP_ICON_CONTAINER, cl);
+            if (container == null) {
+                log(module, "StatusIconContainer missing (vivo capture)");
+                return 0;
+            }
+            sIconContainerClass = container;
+            sIgnoredSlotsField = ignoredSlotsFieldOf(container);
+            final Method onViewAdded = Refl.method(container, "onViewAdded", View.class);
+            return hook(module, onViewAdded, "hyperduo-container", new XposedInterface.Hooker() {
+                @Override
+                public Object intercept(XposedInterface.Chain chain) throws Throwable {
+                    final Object result = chain.proceed();
+                    final Object self = chain.getThisObject();
+                    if (!(self instanceof View)) {
+                        return result;
+                    }
+                    final View candidate = (View) self;
+                    final View bar = ancestorNamed(candidate, "PhoneStatusBarView");
+                    if (bar == null) {
+                        return result;
+                    }
+                    if (sStatusIconContainer != candidate) {
+                        sStatusIconContainer = candidate;
+                        syncSlots(candidate);
+                    }
+                    if (sStatusBarView != bar) {
+                        sStatusBarView = bar;
+                        // The earliest trustworthy SystemUI context on this path.
+                        TrioConfig.installReceiver(bar.getContext());
+                        TrioState.attachContext(bar.getContext());
+                    }
+                    bar.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            captureVivoClock(bar);
+                            TintPoll.start(bar.getContext());
+                        }
+                    });
+                    return result;
+                }
+            });
+        }
         final Class<?> bar = Refl.cls(
                 "com.android.systemui.statusbar.phone.MiuiPhoneStatusBarView", cl);
         if (bar == null) {
@@ -865,13 +1058,252 @@ final class TrioHooks {
                 });
     }
 
+    /**
+     * The ignore-slot field of an icon container, under either spelling:
+     * AOSP declares {@code mIgnoredSlots}, MIUI renamed it to
+     * {@code ignoredSlots}. Both are private {@code List&lt;String&gt;}s read
+     * and written through {@link Refl}.
+     */
+    private static Field ignoredSlotsFieldOf(Class<?> container) {
+        Field f = Refl.field(container, "mIgnoredSlots");
+        if (f == null) {
+            f = Refl.field(container, "ignoredSlots");
+        }
+        return f;
+    }
+
+    /** The first ancestor whose class simple name equals {@code name}, or null. */
+    private static View ancestorNamed(View v, String name) {
+        for (ViewParent p = v.getParent(); p != null;
+             p = (p instanceof View) ? ((View) p).getParent() : null) {
+            if (p instanceof View && name.equals(p.getClass().getSimpleName())) {
+                return (View) p;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Finds the status bar's own clock under {@code bar} and records it.
+     *
+     * <p>The clock is the tint truth on OriginOS (see {@link TintPoll}) and the
+     * view the capsule arrangement hides while it draws the time itself. Its
+     * visibility at capture time is remembered so a later hand-back restores
+     * what the ROM wanted rather than a hard-coded VISIBLE.
+     */
+    private static void captureVivoClock(View bar) {
+        try {
+            final View clock = findClockByName(bar, "Clock");
+            if (clock != null && clock != sStatusClock) {
+                sStatusClock = clock;
+                sClockWasVisible = clock.getVisibility() == View.VISIBLE;
+                sClockHidden = false;
+                applyClockVisibility();
+            }
+        } catch (Throwable t) {
+            log(sModule, "clock capture failed: " + t);
+        }
+    }
+
+    /** First descendant whose class simple name equals {@code name}, or null. */
+    private static View findClockByName(View v, String name) {
+        if (name.equals(v.getClass().getSimpleName())) {
+            return v;
+        }
+        if (!(v instanceof ViewGroup)) {
+            return null;
+        }
+        final ViewGroup group = (ViewGroup) v;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            final View found = findClockByName(group.getChildAt(i), name);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
     private static int hookBatteryIconView(XposedModule module, ClassLoader cl) {
+        if (sVivo) {
+            // vivo draws its battery through one base class and three style
+            // views - horizontal (the default pill), circle and vertical. The
+            // glyph replaces whichever one the user's battery style picks, so
+            // the draw hook goes on all three; no drawable slot exists on any
+            // of them, so the glyph is painted straight onto the canvas after
+            // the native artwork every frame - the path MIUI uses only for
+            // its legacy builds, used exclusively here.
+            final String[] styles = {
+                    "com.vivo.systemui.battery.VivoHorBatteryIconView",
+                    "com.vivo.systemui.battery.VivoCirBatteryIconView",
+                    "com.vivo.systemui.battery.VivoVerBatteryIconView",
+            };
+            int hooked = 0;
+            for (int i = 0; i < styles.length; i++) {
+                final Class<?> icon = Refl.cls(styles[i], cl);
+                if (icon == null) {
+                    log(module, styles[i] + " missing");
+                    continue;
+                }
+                hooked += hookVivoBatteryDraw(module, icon);
+            }
+            return hooked;
+        }
         final Class<?> icon = Refl.cls(
                 "com.android.systemui.statusbar.views.MiuiBatteryMeterIconView", cl);
         if (icon == null) {
             log(module, "MiuiBatteryMeterIconView missing");
             return 0;
         }
+        return hookBatteryIconDraw(module, icon);
+    }
+
+    /**
+     * The OriginOS draw path: one host view, direct painting, no drawable
+     * slot. {@code onDraw} is declared by every vivo battery style view
+     * (confirmed in the device's SystemUI dex).
+     */
+    private static int hookVivoBatteryDraw(XposedModule module, Class<?> icon) {
+        return hook(module, Refl.method(icon, "onDraw", Canvas.class),
+                "hyperduo-draw", new XposedInterface.Hooker() {
+                    @Override
+                    public Object intercept(XposedInterface.Chain chain) throws Throwable {
+                        final Object self = chain.getThisObject();
+                        final Object canvasArg = chain.getArg(0);
+                        if (!(self instanceof View) || !(canvasArg instanceof Canvas)) {
+                            return chain.proceed();
+                        }
+                        // Just the master switch: whether to paint at all. The
+                        // renderer resolves every other setting itself.
+                        if (!TrioConfig.get().enabled) {
+                            return chain.proceed();
+                        }
+                        final View host = (View) self;
+                        // An unmeasured host has no canvas worth painting into
+                        // yet - let the native artwork stand for that frame
+                        // rather than leaving the slot blank.
+                        if (host.getWidth() <= 0 || host.getHeight() <= 0) {
+                            return chain.proceed();
+                        }
+                        // Idempotent, and the only chance to pick up a real
+                        // SystemUI context when this generation was loaded
+                        // after the view tree had already been inflated.
+                        TrioConfig.installReceiver(host.getContext());
+                        TrioState.attachContext(host.getContext());
+                        TrioState state = stateFor(host);
+                        if (state == null) {
+                            state = registerHost(host);
+                        }
+                        // OriginOS rebuilds its status bar strips now and then
+                        // and the old host stops being drawn; prune the dead
+                        // entries when the list is walked anyway.
+                        pruneHosts();
+                        state.refresh();
+                        final int ink = state.foreground();
+                        if (state.outRingInk != ink) {
+                            recolourOutRing(state, ink);
+                        }
+                        // THE OriginOS lesson: never erase this view's canvas.
+                        // Any transparent drawColor - CLEAR or SRC alike -
+                        // poisons vivo's blur composition and the whole
+                        // pull-down shade renders transparent (bisected on an
+                        // X100s Pro: disable the painting and the shade comes
+                        // back; disable only the erase and it stays back).
+                        // So the native onDraw is skipped outright while the
+                        // module is on: the glyph is the view's only content,
+                        // painted straight onto the fresh canvas the platform
+                        // hands over, and no erase is ever needed.
+                        drawVivoGlyph((Canvas) canvasArg, host, state);
+                        return null;
+                    }
+                });
+    }
+
+    /**
+     * How much bigger than vivo's own icon box the glyph is drawn on
+     * OriginOS.
+     *
+     * <p>vivo measures its horizontal battery at 74x42 px (21x12 dp) - a
+     * squat pill in a 36 dp tall bar. The ring at that size is a toy: the
+     * MIUI build of this module draws into a 20 dp tall battery. Scaling the
+     * box by this factor lands the glyph at the same 20 dp it has on MIUI,
+     * centred on the band vivo centres its own icons in.
+     */
+    private static final float VIVO_BOX_SCALE = 1.66f;
+
+    /**
+     * Paints the glyph into the host's canvas at the OriginOS box size,
+     * centred on the host.
+     *
+     * <p>The box is larger than the view (see {@link #VIVO_BOX_SCALE}), so the
+     * ancestors between here and the window root have their child clipping
+     * removed - without that, the platform would crop the glyph back to the
+     * 42 px band it was given. {@code setClipChildren} only invalidates when
+     * the flag really changes, so re-asserting it on every draw is free and
+     * survives vivo rebuilding its view hierarchy.
+     */
+    private static void drawVivoGlyph(Canvas canvas, View host, TrioState state) {
+        if (testMode() == 1) {
+            // Diagnostic: painting disabled, everything else keeps running.
+            return;
+        }
+        final int hostHeight = host.getHeight();
+        final int hostWidth = host.getWidth();
+        if (hostHeight <= 0 || hostWidth <= 0) {
+            return;
+        }
+        int size = Math.round(hostHeight * VIVO_BOX_SCALE);
+        // Never taller than the bar's window: the glyph must stay inside the
+        // status bar no matter how large vivo's own icon measured.
+        final View root = host.getRootView();
+        if (root != null && root.getHeight() > 0
+                && size > root.getHeight() - 16) {
+            size = root.getHeight() - 16;
+        }
+        if (size <= hostHeight) {
+            // No head-room to grow into (or the box is already generous):
+            // paint inside the view exactly as the MIUI path does.
+            TrioRenderer.draw(canvas, host, state);
+            return;
+        }
+        if (testMode() != 8) {
+            // 8 = diagnostic: keep the ancestors' clipping (the glyph is
+            // cropped back into the view, everything else unchanged).
+            unclipAncestors(host);
+        }
+        final float dx = (hostWidth - size) / 2f;
+        final float dy = (hostHeight - size) / 2f;
+        final int save = canvas.save();
+        canvas.translate(dx, dy);
+        TrioRenderer.drawState(canvas, size, size, state, TrioConfig.get());
+        canvas.restoreToCount(save);
+    }
+
+    /**
+     * Removes child clipping on every ancestor up to (and including) the
+     * window root, so the oversized glyph is not cropped back into the
+     * battery's own frame.
+     */
+    private static void unclipAncestors(View host) {
+        final View root = host.getRootView();
+        for (ViewParent p = host.getParent(); p instanceof View;
+             p = ((View) p).getParent()) {
+            final View ancestor = (View) p;
+            if (ancestor instanceof ViewGroup) {
+                final ViewGroup group = (ViewGroup) ancestor;
+                try {
+                    group.setClipChildren(false);
+                    group.setClipToPadding(false);
+                } catch (Throwable ignored) {
+                    // clipping stays on; the glyph is merely cropped
+                }
+            }
+            if (ancestor == root) {
+                break;
+            }
+        }
+    }
+
+    private static int hookBatteryIconDraw(XposedModule module, final Class<?> icon) {
         // Resolved through the class rather than through the instance, because
         // View.setMeasuredDimension is protected and only a subclass may call it
         // directly - this hook is an outside writer, so it goes through reflection.
@@ -914,6 +1346,10 @@ final class TrioHooks {
                             if (state == null) {
                                 state = registerHost(host);
                             }
+                            // OriginOS rebuilds its status bar strips now and then
+                            // and the old host stops being drawn; prune the dead
+                            // entries when the list is walked anyway.
+                            pruneHosts();
                             state.refresh();
                             // MIUI's dark-mode pass ends at this view's own
                             // invalidate() and nowhere else, so a tint change is
@@ -924,13 +1360,6 @@ final class TrioHooks {
                                 recolourOutRing(state, ink);
                             }
                             final Canvas canvas = (Canvas) canvasArg;
-                            // The glyph is painted by the icon view itself, from
-                            // the drawable this puts into MIUI's own tint slot -
-                            // see GlyphDrawable. Nothing is left of the window
-                            // that used to be opened here: the canvas, its
-                            // bounds and its clip are the platform's again, so
-                            // there is nothing to keep in step with the bar and
-                            // nothing for the platform to read as an overlay.
                             if (GlyphDrawable.install(host, state)) {
                                 // The frame that took the slot still has MIUI's
                                 // own battery on it - the drawable only starts
@@ -1038,6 +1467,13 @@ final class TrioHooks {
     }
 
     private static int hookBatteryMeterView(XposedModule module, ClassLoader cl) {
+        if (sVivo) {
+            // vivo's meter has no MIUI battery-style system: no style pin, no
+            // bolt/percentage views to hand back. The native bolt is part of the
+            // icon canvas the glyph replaces, and switching the module off
+            // simply lets vivo draw its own icon again.
+            return 0;
+        }
         final Class<?> meter = Refl.cls(
                 "com.android.systemui.statusbar.views.MiuiBatteryMeterView", cl);
         if (meter == null) {
@@ -1278,6 +1714,10 @@ final class TrioHooks {
      * {@code setIgnoredSlots(RIGHT_BLOCK_LIST)}, which clears before adding.
      */
     private static int hookStatusBarView(XposedModule module, ClassLoader cl) {
+        if (sVivo) {
+            // updateCutoutLocation is MIUI's own; the AOSP bar does not have it.
+            return 0;
+        }
         final Class<?> bar = Refl.cls(
                 "com.android.systemui.statusbar.phone.MiuiPhoneStatusBarView", cl);
         if (bar == null) {
@@ -1302,6 +1742,14 @@ final class TrioHooks {
      * applied right now.
      */
     private static int hookSignalIcons(XposedModule module, ClassLoader cl) {
+        if (sVivo) {
+            // No MIUI icon pipeline to learn from on OriginOS. Levels arrive
+            // instead from the ROM-independent samplers: Wi-Fi from
+            // WifiPresence's RSSI tracking, mobile from the telephony poll in
+            // TrioState.sampleSims - both publish into the same TrioState
+            // statics this hook would have fed.
+            return 0;
+        }
         final Class<?> helper = Refl.cls(
                 "com.android.systemui.statusbar.MiuiStatusBarIconViewHelper", cl);
         if (helper == null) {
@@ -1357,6 +1805,12 @@ final class TrioHooks {
      * string MIUI never paints.
      */
     private static int hookMobileType(XposedModule module, ClassLoader cl) {
+        if (sVivo) {
+            // vivo's network-type label is a plain ImageView inside the mobile
+            // combo, folded with its parent; the type string for the glyph comes
+            // from the telephony poll instead.
+            return 0;
+        }
         final Class<?> drawable = Refl.cls(
                 "com.miui.systemui.statusbar.views.MobileTypeDrawable", cl);
         if (drawable == null) {
@@ -1430,6 +1884,10 @@ final class TrioHooks {
      * unchanged, so a firmware rename or an unexpected caller costs nothing.
      */
     private static int hookMobileTypeVisibility(XposedModule module, ClassLoader cl) {
+        if (sVivo) {
+            // MobileSignalAnimatorContainer is MIUI's own; not present here.
+            return 0;
+        }
         final Class<?> container = Refl.cls(
                 "com.android.systemui.statusbar.views.MobileSignalAnimatorContainer", cl);
         if (container == null) {
@@ -1508,6 +1966,11 @@ final class TrioHooks {
      * by the flag the setter records.
      */
     private static int hookIslandHide(XposedModule module, ClassLoader cl) {
+        if (sVivo) {
+            // The charging super island ("hood"/superX) has no MIUI-style
+            // hide-battery call on OriginOS; nothing to intercept.
+            return 0;
+        }
         final Class<?> container = Refl.cls(
                 "com.android.systemui.statusbar.views.MiuiStatusBatteryContainer", cl);
         if (container == null) {
@@ -1699,6 +2162,68 @@ final class TrioHooks {
      * this method (a config change, a restored view tree).
      */
     private static int hookMeterTint(XposedModule module, ClassLoader cl) {
+        if (sVivo) {
+            // OriginOS: vivo's own battery icon base view declares
+            // onDarkChanged(ArrayList, float, int) - (areas, darkIntensity,
+            // tint) - and so does its meter container. Hooking the base class
+            // covers every battery icon style. Whether vivo actually drives
+            // it on every tint change is not guaranteed on this ROM (the
+            // clock-colour poll in TintPoll is the safety net), but when it
+            // does fire this is the ink the system itself is about to paint
+            // with - filed exactly where the MIUI dispatch would have put it.
+            final Class<?> base = Refl.cls(
+                    "com.vivo.systemui.battery.VivoBatteryIconBaseView", cl);
+            if (base == null) {
+                log(module, "VivoBatteryIconBaseView missing (tint)");
+                return 0;
+            }
+            return hook(module, Refl.method(base, "onDarkChanged",
+                            java.util.ArrayList.class, float.class, int.class),
+                    "hyperduo-meter-tint", new XposedInterface.Hooker() {
+                        @Override
+                        public Object intercept(XposedInterface.Chain chain) throws Throwable {
+                            final Object result = chain.proceed();
+                            final Object self = chain.getThisObject();
+                            if (!(self instanceof View)) {
+                                return result;
+                            }
+                            final View v = (View) self;
+                            final Object row = rowOf(v);
+                            if (!(row instanceof ViewGroup)) {
+                                return result;
+                            }
+                            if (testMode() == 4) {
+                                // Diagnostic: pure pass-through, no reads,
+                                // no bookkeeping, no invalidation.
+                                return result;
+                            }
+                            final Object areasArg = chain.getArg(0);
+                            final float intensity = (chain.getArg(1) instanceof Float)
+                                    ? ((Float) chain.getArg(1)).floatValue() : 0f;
+                            final int tint = (chain.getArg(2) instanceof Integer)
+                                    ? (Integer) chain.getArg(2) : 0;
+                            if (tint == 0) {
+                                return result;
+                            }
+                            final ViewGroup rowGroup = (ViewGroup) row;
+                            final View host = hostIn(rowGroup);
+                            final TrioTint.Inputs inputs = new TrioTint.Inputs(
+                                    areasArg, intensity, tint, 0xFFFFFFFF, 0xFF000000, true);
+                            final int ink = inputs.colour(host != null ? host : v);
+                            final int previous = rowInk(rowGroup);
+                            ROW_TINTS.put(rowGroup, inputs);
+                            ROW_INK.put(rowGroup, Integer.valueOf(ink));
+                            applyOutRingInk(rowGroup, ink);
+                            // Keep the poller from overriding this with a
+                            // clock reading taken a moment earlier.
+                            TintPoll.noteInk(ink);
+                            if (previous != ink && host != null) {
+                                host.invalidate();
+                            }
+                            return result;
+                        }
+                    });
+        }
         final Class<?> meter = Refl.cls(
                 "com.android.systemui.statusbar.views.MiuiBatteryMeterView", cl);
         if (meter == null) {
@@ -1800,6 +2325,49 @@ final class TrioHooks {
     /** The row (battery container) {@code host} belongs to, or null. */
     static View rowOf(View host) {
         return batteryContainerOf(host);
+    }
+
+    /**
+     * The captured status bar clock, or null. The tint poller reads its text
+     * colour as OriginOS's foreground truth.
+     */
+    static View statusClock() {
+        return sStatusClock;
+    }
+
+    /**
+     * Files one polled foreground colour against every row that holds a live
+     * glyph host, and repaints when it moved.
+     *
+     * <p>This is the OriginOS stand-in for the tint dispatch MIUI performs
+     * through {@code updateLightDarkTint}: same destination ({@link #ROW_INK}
+     * keyed per row, plus the out-of-ring views' ink), same effect (hosts
+     * invalidated on the edge), different source (see {@link TintPoll}).
+     */
+    static void noteVivoInk(int ink) {
+        if (ink == 0) {
+            return;
+        }
+        final List<TrioState> hosts;
+        synchronized (HOSTS) {
+            hosts = new ArrayList<TrioState>(HOSTS);
+        }
+        boolean applied = false;
+        for (int i = 0; i < hosts.size(); i++) {
+            final View host = hosts.get(i).host;
+            final View row = rowOf(host);
+            if (row == null) {
+                continue;
+            }
+            ROW_INK.put(row, Integer.valueOf(ink));
+            if (row instanceof ViewGroup) {
+                applyOutRingInk((ViewGroup) row, ink);
+            }
+            applied = true;
+        }
+        if (applied) {
+            invalidateHosts();
+        }
     }
 
     private static final Map<View, TrioTint.Inputs> ROW_TINTS =
@@ -1930,6 +2498,13 @@ final class TrioHooks {
      * not blank the time on the lock screen.
      */
     private static int hookStatusClock(XposedModule module, ClassLoader cl) {
+        if (sVivo) {
+            // The AOSP Clock has no multi-task visibility setter to hook; the
+            // clock is captured from the status bar view instead (see
+            // captureVivoClock) and its visibility re-asserted from the tint
+            // poller's tick.
+            return 0;
+        }
         final Class<?> clockClass = Refl.cls("com.android.systemui.statusbar.views.MiuiClock", cl);
         if (clockClass == null) {
             log(module, "MiuiClock missing");
@@ -2017,8 +2592,7 @@ final class TrioHooks {
      */
     static void applyClockVisibility() {
         final View clock = sStatusClock;
-        final Method setter = sClockSetter;
-        if (clock == null || setter == null) {
+        if (clock == null) {
             return;
         }
         // The bar keeps its own clock unless the capsule is REALLY drawing the time.
@@ -2031,6 +2605,25 @@ final class TrioHooks {
         // both owns the clock view and can read the live readings.
         final boolean hide = TrioConfig.appearance().hidesStatusClock();
         if (hide == sClockHidden) {
+            return;
+        }
+        if (sVivo) {
+            // OriginOS: the AOSP Clock has no multi-task visibility setter, so
+            // plain GONE it is. The visibility the clock had at capture time is
+            // what it goes back to - forcing VISIBLE would resurrect a clock
+            // the user (or the ROM) had switched off before the capsule took
+            // the time slot.
+            try {
+                clock.setVisibility(hide ? View.GONE
+                        : (sClockWasVisible ? View.VISIBLE : View.GONE));
+                sClockHidden = hide;
+            } catch (Throwable t) {
+                log(sModule, "clock visibility failed: " + t);
+            }
+            return;
+        }
+        final Method setter = sClockSetter;
+        if (setter == null) {
             return;
         }
         // GONE, not INVISIBLE. INVISIBLE hides the digits but leaves the view
@@ -2089,11 +2682,22 @@ final class TrioHooks {
      * attempts; all three end in the same idempotent call.
      */
     private static int hookKeyguardBar(XposedModule module, ClassLoader cl) {
-        final Class<?> bar = Refl.cls(
-                "com.android.systemui.statusbar.phone.MiuiKeyguardStatusBarView", cl);
-        if (bar == null) {
-            log(module, "MiuiKeyguardStatusBarView missing");
-            return 0;
+        final Class<?> bar;
+        if (sVivo) {
+            bar = Refl.cls(VIVO_KEYGUARD_BAR, cl);
+            if (bar == null) {
+                // Not fatal: the keyguard row's container still settles through
+                // the class-level icon-container hook, just one layout later.
+                log(module, "VivoKeyguardStatusBarView missing");
+                return 0;
+            }
+        } else {
+            bar = Refl.cls(
+                    "com.android.systemui.statusbar.phone.MiuiKeyguardStatusBarView", cl);
+            if (bar == null) {
+                log(module, "MiuiKeyguardStatusBarView missing");
+                return 0;
+            }
         }
         final XposedInterface.Hooker hooker = new XposedInterface.Hooker() {
             @Override
@@ -2117,7 +2721,9 @@ final class TrioHooks {
                         // (v=0, w=56) a moment later. The row's own ignore list is
                         // what MIUI consults when it lays them out, so the slots this
                         // module draws itself are named there.
-                        blockIcons(row);
+                        if (!sVivo) {
+                            blockIcons(row);
+                        }
                         foldContainers(row);
                     }
                 });
@@ -2204,7 +2810,12 @@ final class TrioHooks {
     private static void syncKeyguardRows() {
         synchronized (KEYGUARD_ROWS) {
             for (View row : new ArrayList<>(KEYGUARD_ROWS.keySet())) {
-                row.post(() -> { blockIcons(row); foldContainers(row); });
+                row.post(() -> {
+                    if (!sVivo) {
+                        blockIcons(row);
+                    }
+                    foldContainers(row);
+                });
             }
         }
     }
@@ -2277,7 +2888,10 @@ final class TrioHooks {
                     if (!foldedSlots().contains(slotOf(icon))) return;
                     if (icon.getVisibility() == View.VISIBLE) markCollapsed(icon);
                     try {
-                        if (icon.getWidth() != 0 || icon.getHeight() != 0) {
+                        if (!sVivo && (icon.getWidth() != 0 || icon.getHeight() != 0)) {
+                            // The zero-size layout is the MIUI ghost repair; on
+                            // OriginOS GONE alone removes the child from both
+                            // measure and layout.
                             icon.layout(0, 0, 0, 0);
                         }
                         icon.setVisibility(View.GONE);
@@ -2340,14 +2954,19 @@ final class TrioHooks {
      * draws the glyph, and stripping its signal icons would leave it empty.
      */
     private static int hookIconContainerLayout(XposedModule module, ClassLoader cl) {
-        final Class<?> container = Refl.cls(
-                "com.android.systemui.statusbar.views.MiuiStatusIconContainer", cl);
+        final Class<?> container;
+        if (sVivo) {
+            container = Refl.cls(AOSP_ICON_CONTAINER, cl);
+        } else {
+            container = Refl.cls(
+                    "com.android.systemui.statusbar.views.MiuiStatusIconContainer", cl);
+        }
         if (container == null) {
-            log(module, "MiuiStatusIconContainer missing");
+            log(module, "icon container class missing");
             return 0;
         }
         sIconContainerClass = container;
-        sIgnoredSlotsField = Refl.field(container, "ignoredSlots");
+        sIgnoredSlotsField = ignoredSlotsFieldOf(container);
         return hook(module, Refl.method(container, "onLayout",
                         boolean.class, int.class, int.class, int.class, int.class),
                 "hyperduo-icon-layout", new XposedInterface.Hooker() {
@@ -2355,7 +2974,12 @@ final class TrioHooks {
                     public Object intercept(XposedInterface.Chain chain) throws Throwable {
                         final Object result = chain.proceed();
                         final Object self = chain.getThisObject();
-                        if (self instanceof ViewGroup) {
+                        // Guarded by class, not by instanceof ViewGroup alone:
+                        // if onLayout had to be resolved up the hierarchy, the
+                        // hook would otherwise fire for every view in the tree.
+                        if (self instanceof ViewGroup
+                                && sIconContainerClass != null
+                                && sIconContainerClass.isInstance(self)) {
                             settle((ViewGroup) self);
                         }
                         return result;
@@ -2460,12 +3084,20 @@ final class TrioHooks {
             // "mobile" stays stranded at the container's left edge - which for the
             // status bar is the middle of the screen. layout() does not schedule
             // another pass, so this cannot loop.
-            try {
-                if (child.getWidth() != 0 || child.getHeight() != 0) {
-                    child.layout(0, 0, 0, 0);
+            //
+            // OriginOS keeps AOSP's container, where a GONE child is skipped by
+            // both measure and layout on its own - the zero-size layout is a
+            // MIUI-only repair and is deliberately not performed here: touching
+            // frames of views vivo laid out itself is exactly the kind of
+            // interference this ROM does not need.
+            if (!sVivo) {
+                try {
+                    if (child.getWidth() != 0 || child.getHeight() != 0) {
+                        child.layout(0, 0, 0, 0);
+                    }
+                } catch (Throwable ignored) {
+                    // never let one child abort the pass
                 }
-            } catch (Throwable ignored) {
-                // never let one child abort the pass
             }
             // Also take it out of drawing. This has to be re-applied on every
             // pass, not once: gating it on markCollapsed meant the GONE was
@@ -2688,7 +3320,8 @@ final class TrioHooks {
         }
         for (ViewParent p = container.getParent(); p != null;
              p = (p instanceof View) ? ((View) p).getParent() : null) {
-            if (p.getClass().getSimpleName().equals("MiuiPhoneStatusBarView")) {
+            final String name = p.getClass().getSimpleName();
+            if (name.equals("MiuiPhoneStatusBarView") || name.equals("PhoneStatusBarView")) {
                 return true;
             }
         }
@@ -2736,10 +3369,24 @@ final class TrioHooks {
 
     /**
      * Reads {@code ModernStatusBarView.getSlot()} (or the displayable one).
+     *
+     * <p>OriginOS fallback: when the child does not answer {@code getSlot()},
+     * the AOSP slot names are derived from the view class — the wifi and mobile
+     * combos are the only children of those classes the container ever holds.
      */
     private static String slotOf(View child) {
         final Object slot = Refl.callByName(child, "getSlot");
-        return (slot instanceof String) ? (String) slot : null;
+        if (slot instanceof String) {
+            return (String) slot;
+        }
+        final String name = child.getClass().getSimpleName();
+        if ("ModernStatusBarWifiView".equals(name)) {
+            return "wifi";
+        }
+        if ("ModernStatusBarMobileView".equals(name)) {
+            return "mobile";
+        }
+        return null;
     }
 
     /**
@@ -2763,6 +3410,22 @@ final class TrioHooks {
             }
         }
         if (!(container instanceof View)) {
+            return false;
+        }
+        if (sVivo) {
+            // OriginOS: the icon container and the battery meter are siblings
+            // inside the same system_icons row, so "the container that owns a
+            // live host" is read directly - any ancestor of the container that
+            // contains a registered host makes this container ours. The
+            // status bar's row qualifies (its meter draws the glyph); a shade
+            // or QS header container lives in another window and never does.
+            for (ViewParent p = ((View) container).getParent(); p instanceof View;
+                 p = ((View) p).getParent()) {
+                if (holdsLiveHost((View) p)) {
+                    own(container);
+                    return true;
+                }
+            }
             return false;
         }
         final View owner = batteryContainerOf((View) container);
@@ -2821,6 +3484,25 @@ final class TrioHooks {
      * The concrete class of the parent view is always available directly.
      */
     private static View batteryContainerOf(View v) {
+        if (sVivo) {
+            // OriginOS: the row that owns both the glyph host and the icon
+            // container is the LinearLayout that holds vivo's battery meter as
+            // a direct child. Walking up from either the host or the container
+            // reaches it in one or two steps, so both callers converge on the
+            // same row object - which is what keys the ink and mounts the
+            // out-of-ring views.
+            for (ViewParent p = v.getParent(); p instanceof View;
+                 p = ((View) p).getParent()) {
+                if (!(p instanceof ViewGroup)) {
+                    return null;
+                }
+                final ViewGroup group = (ViewGroup) p;
+                if (hasDirectChildNamed(group, "VivoBatteryMeterView")) {
+                    return group;
+                }
+            }
+            return null;
+        }
         Class<?> known = sBatteryContainerClass;
         for (ViewParent p = v.getParent(); p != null;
              p = (p instanceof View) ? ((View) p).getParent() : null) {
@@ -2847,6 +3529,28 @@ final class TrioHooks {
         synchronized (OWNED) {
             OWNED.put(container, Boolean.TRUE);
         }
+    }
+
+    /** True when {@code group} has a direct child of that class simple name. */
+    private static boolean hasDirectChildNamed(ViewGroup group, String simpleName) {
+        final int count;
+        try {
+            count = group.getChildCount();
+        } catch (Throwable t) {
+            return false;
+        }
+        for (int i = 0; i < count; i++) {
+            final View child;
+            try {
+                child = group.getChildAt(i);
+            } catch (Throwable t) {
+                continue;
+            }
+            if (child != null && simpleName.equals(child.getClass().getSimpleName())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -3011,6 +3715,26 @@ final class TrioHooks {
             }
         }
         return null;
+    }
+
+    /**
+     * Drops hosts that have left the window. OriginOS rebuilds its status bar
+     * strips occasionally, and vivo's icon view does not reliably declare
+     * {@code onDetachedFromWindow}, so the detach hook cannot always do the
+     * bookkeeping - this sweep, run from the draw path, can.
+     *
+     * <p>Cheap by construction: one attached-flag read per registered host, no
+     * allocation, and a host that is being drawn right now is always attached.
+     */
+    private static void pruneHosts() {
+        synchronized (HOSTS) {
+            for (int i = HOSTS.size() - 1; i >= 0; i--) {
+                final View host = HOSTS.get(i).host;
+                if (host == null || !host.isAttachedToWindow()) {
+                    HOSTS.remove(i);
+                }
+            }
+        }
     }
 
     /** The nearest {@code MiuiStatusIconContainer} ancestor of {@code host}, or null. */
@@ -3211,7 +3935,48 @@ final class TrioHooks {
         if (container == null) {
             return;
         }
+        if (sVivo) {
+            // OriginOS: the row's icon container is a sibling subtree, found by
+            // class rather than through a field vivo does not declare.
+            final View icons = findDescendantOfClass((View) container, sIconContainerClass);
+            if (icons instanceof ViewGroup) {
+                foldAndSettle(icons);
+            }
+            return;
+        }
         syncSlots(Refl.get(sStatusIconField, container));
+    }
+
+    /** First descendant of {@code v} that is an instance of {@code cls}, or null. */
+    private static View findDescendantOfClass(View v, Class<?> cls) {
+        if (cls == null || v == null) {
+            return null;
+        }
+        if (cls.isInstance(v)) {
+            return v;
+        }
+        if (!(v instanceof ViewGroup)) {
+            return null;
+        }
+        final ViewGroup group = (ViewGroup) v;
+        final int count;
+        try {
+            count = group.getChildCount();
+        } catch (Throwable t) {
+            return null;
+        }
+        for (int i = 0; i < count; i++) {
+            final View found;
+            try {
+                found = findDescendantOfClass(group.getChildAt(i), cls);
+            } catch (Throwable t) {
+                continue;
+            }
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     // ------------------------------------------------- out-of-ring type label
@@ -3504,10 +4269,45 @@ final class TrioHooks {
         // measuring against an unlimited spec. The container never measures this
         // child on its own - MiuiStatusBatteryContainer.onMeasure only touches
         // its three named fields - so whatever we measure stands.
-        container.addView(label, new ViewGroup.LayoutParams(
+        mountOutView(container, label);
+        return label;
+    }
+
+    /**
+     * Adds one of the module's own out-of-ring views to the row that holds the
+     * battery.
+     *
+     * <p>MIUI's battery container ignores children it does not know, so an
+     * append plus manual placement is all it takes there. OriginOS's row is a
+     * real {@code LinearLayout} that measures and lays out everything added to
+     * it, so the view is inserted in front of the battery meter with
+     * center-vertical gravity instead: the row itself then reserves the width
+     * (the "the reading takes up room" behaviour) and centres the view on the
+     * icon band - which coincides with the row's own centre, because vivo's
+     * meter centres its icon the same way.
+     */
+    private static void mountOutView(ViewGroup container, View view) {
+        if (sVivo && container instanceof android.widget.LinearLayout) {
+            final android.widget.LinearLayout.LayoutParams lp =
+                    new android.widget.LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.gravity = android.view.Gravity.CENTER_VERTICAL;
+            int at = -1;
+            for (int i = 0; i < container.getChildCount(); i++) {
+                final View child = container.getChildAt(i);
+                if (child != null
+                        && "VivoBatteryMeterView".equals(child.getClass().getSimpleName())) {
+                    at = i;
+                    break;
+                }
+            }
+            container.addView(view, at < 0 ? container.getChildCount() : at, lp);
+            return;
+        }
+        container.addView(view, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
-        return label;
     }
 
     private static void removeOutTypeLabel(View container) {
@@ -4201,9 +5001,7 @@ final class TrioHooks {
         // below. The container never measures this child on its own -
         // MiuiStatusBatteryContainer.onMeasure only touches its three named
         // fields - so whatever we measure stands.
-        container.addView(perf, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
+        mountOutView(container, perf);
         return perf;
     }
 
@@ -4361,6 +5159,11 @@ final class TrioHooks {
      * displace.
      */
     private static void placeOutTypeLabel(ViewGroup container, View view, View anchor, int gap) {
+        if (sVivo) {
+            // OriginOS: the row is a LinearLayout that places the view itself
+            // (see mountOutView); the manual MIUI geometry would only fight it.
+            return;
+        }
         layoutOutRingStrip(container, anchor);
     }
 
@@ -4926,9 +5729,7 @@ final class TrioHooks {
         // WRAP_CONTENT on both axes: the size is set explicitly by measuring
         // against exact specs further down. MiuiStatusBatteryContainer.onMeasure
         // only touches its three named fields, so whatever we measure stands.
-        container.addView(view, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
+        mountOutView(container, view);
         return view;
     }
 
@@ -5070,6 +5871,12 @@ final class TrioHooks {
      * decide the padding for all of them.
      */
     private static void reserveOutRingStrip(ViewGroup container) {
+        if (sVivo) {
+            // OriginOS: the row's LinearLayout already reserves each mounted
+            // view's width by measuring it (see mountOutView). Padding-based
+            // reservation on top of that would double the space.
+            return;
+        }
         final View icons = iconContainerIn(container);
         final OutRingLayout.Plan plan = outRingPlan(container, icons);
         // Before the first layout request the desired width, so the native row
@@ -5093,6 +5900,14 @@ final class TrioHooks {
      * classes.
      */
     private static View meterIn(View host, View container) {
+        if (sVivo) {
+            // OriginOS: anchor against the icon view itself. vivo's meter is
+            // 102px tall against a 42px visible icon band (the pill cut-out
+            // leaves head-room inside the meter), so anchoring the out-of-ring
+            // views against the meter would centre them ~12px off the band the
+            // glyph is drawn in. The host view is exactly that band.
+            return host;
+        }
         View child = host;
         for (ViewParent p = host.getParent(); p != null;
              p = (p instanceof View) ? ((View) p).getParent() : null) {
