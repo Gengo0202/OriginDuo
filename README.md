@@ -42,7 +42,6 @@
 ## 相对上游的适配改动（v1.0.2）
 
 - **绘制宿主**：vivo 的电池图标视图（横条/圆形/竖条三种样式均覆盖，类名已在真机 SystemUI dex 中核实）没有 MIUI 的 `mTintBgDrawable` 槽位——字形改为完全接管其 `onDraw`（跳过原生绘制，直接在系统给出的干净画布上作画）；
-- **vivo 渲染红线**：任何透明色 `drawColor`（`PorterDuff.Mode.CLEAR` 或 `SRC`）都会击穿 OriginOS 的模糊合成，导致整个下拉通知面板渲染成透明（可点不可见，真机二分定位）——因此 OriginOS 上永不擦除画布，靠跳过原生 onDraw 保证画布干净；
 - **字形尺寸**：vivo 电池框仅 12dp 高（42px），字形放大 1.66 倍绘制至与 MIUI 版相同的 20dp（居中于图标带并解除祖先裁剪；「整体尺寸」滑杆仍在放大后的框内生效）；
 - **原生图标折叠**：vivo 的图标容器是 AOSP 的 `StatusIconContainer`（忽略列表字段名为 `mIgnoredSlots`），
   折叠走 `addIgnoredSlots` + 布局期 `GONE` 双通道，槽位识别在 `getSlot()` 之外增加按视图类名兜底；
@@ -64,16 +63,12 @@
 - 「5GA」（5G-A）等 vivo 专属角标暂不区分，均显示为 5G；
 - 环外读数的间距微调滑杆不生效（由系统 LinearLayout 排布）。
 
-详细技术说明写在源码注释中（每处适配都标注了依据）。
-
 ## 构建
 
 ```
 JDK 21 + Android SDK (Platform 37) + Gradle 9.8
 gradle :app:assembleRelease -PoriginduoVersionName=1.0.3 -PoriginduoVersionCode=3 --no-daemon
 ```
-
-签名密钥不入库（`keystore.properties` + `vivoduobar.jks` 已 gitignore）。
 
 **诊断构建**（可选）：加 `-PoriginduoDiag=true` 会编入远程开关——root 执行
 `su -c setprop persist.sys.originduo_test N` 可在不重启的情况下分别禁用某个子系统
