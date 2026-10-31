@@ -68,7 +68,7 @@ gradle :app:assembleRelease -PoriginduoVersionName=1.0.3 -PoriginduoVersionCode=
 **诊断构建**（可选）：编译时添加加 `-PoriginduoDiag=true` 可编入 adb shell 控制开关——root 执行
 `su -c setprop persist.sys.originduo_test N` 可在不重启的情况下分别禁用某个子系统
 （1=停绘制 / 2=停折叠 / 3=停取色轮询 / 4=着色钩子纯直通 / 6=停擦除 / 7=CLEAR 对照 / 8=停解除裁剪），
-用于现场二分定位问题。**公开发布的普通版不含此机制，如有需要请自行构建测试**（R8 常量折叠后相关反射代码全部剥离）。
+用于现场二分定位问题。**公开发布的普通版不含也不应含有此机制，如有需要请自行构建测试**（R8 常量折叠后相关反射代码全部剥离）。
 
 ## 反馈问题
 
