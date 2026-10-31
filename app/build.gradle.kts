@@ -45,8 +45,8 @@ android {
         applicationId = "io.github.gengo0202.originduo"
         minSdk = 29
         targetSdk = 36
-        versionCode = tagVersionCode ?: 4
-        versionName = tagVersionName ?: "1.1.0"
+        versionCode = tagVersionCode ?: 5
+        versionName = tagVersionName ?: "1.1.4"
         // Diagnostic build flag: true only when the build is invoked with
         // -PoriginduoDiag=true. See buildFeatures.buildConfig above.
         buildConfigField(
