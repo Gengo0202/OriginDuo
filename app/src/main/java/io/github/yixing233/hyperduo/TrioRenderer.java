@@ -444,14 +444,33 @@ final class TrioRenderer {
     private static void drawFreeRing(Canvas c, int level, boolean quickCharging, int wifiLevel,
                                      int mobileLevel, int[] levels, String type, int role, int fg,
                                      TrioAppearance a, TrioAppearance.Ring r) {
-        drawBattery(c, level, role, fg, a, r.gapStart(), r.gapEnd(), r.sweep(), r.arcStart());
+        // The iOS-style snug mouth: when the top slot holds the percentage or
+        // the charging bolt, the opening hugs the ink actually drawn this
+        // frame instead of the fixed four-character width the open layout
+        // needs. Anything else keeps the fixed opening - the type, the arcs,
+        // the clock and the dot rows are all sized against it already.
+        final float snugDeg = snugTopGapDeg(level, r, a);
+        drawBattery(c, level, role, fg, a,
+                snugDeg > 0f ? TrioGeometry.gapStartForDeg(snugDeg) : r.gapStart(),
+                snugDeg > 0f ? TrioGeometry.gapEndForDeg(snugDeg) : r.gapEnd(),
+                r.sweep(), r.arcStart());
         for (int z = 0; z < 3; z++) {
             final int part = r.parts[z];
             if (part == Prefs.PART_NONE) continue;
+            // The snug mouth inlays its content on the ring's own crown: the
+            // piece straddles the circle's top line (crownCy, the apex dropped
+            // a touch for size) and its height is capped by the crown budget. Only
+            // the two hugged pieces take this path; everything else keeps the
+            // fixed-opening placement the editor's thirds were tuned against.
+            final boolean snug = z == 0 && snugDeg > 0f
+                    && (part == Prefs.PART_VALUE || part == Prefs.PART_BOLT);
+            final float upDy = snug
+                    ? TrioGeometry.crownCy() - TrioGeometry.ZONE_CY[0] : 0f;
             final float cx = TrioGeometry.B_CX;
             final float cy = TrioGeometry.ZONE_CY[z];
             final float width = 78f - a.ringStroke;
-            final float height = z == 0 ? TrioGeometry.DOT_BOX_TOP
+            final float height = snug ? TrioGeometry.crownInkH()
+                    : z == 0 ? TrioGeometry.DOT_BOX_TOP
                     : z == 1 ? TrioGeometry.DOT_BOX_CENTRE : TrioGeometry.DOT_BOX_BOTTOM;
             final int save = c.save();
             c.translate(cx, cy);
@@ -470,6 +489,11 @@ final class TrioRenderer {
                 // product is NOT re-clamped to the slot: a user asking for a bigger bolt
                 // wants it bigger, and the slot is a third of the ring rather than a hard
                 // edge. Only the ink centre stays pinned, so growing is symmetric.
+                if (snug) {
+                    // Inlaid in the mouth: the ink centre rides the opening's
+                    // chord instead of the zone's fixed centre line.
+                    c.translate(0f, upDy);
+                }
                 final float fit = Math.min(width / 15f, height / TrioGeometry.BOLT_INK_H);
                 final float scale = fit * a.boltScaleFactor();
                 c.scale(scale, scale);
@@ -518,7 +542,10 @@ final class TrioRenderer {
                     // units of actual ink - so dividing by them capped every line at
                     // about 58% of the room it really had, and the bottom third came
                     // out around a third of the size asked for.
-                    final float room = TrioGeometry.zoneTextRoomH(z);
+                    final float room = snug
+                            ? Math.min(TrioGeometry.crownTextRoomH(),
+                                    TrioGeometry.zoneTextRoomH(0))
+                            : TrioGeometry.zoneTextRoomH(z);
                     final int suffixScale = part == Prefs.PART_TYPE ? a.typeSuffixScale : 100;
                     // The height cap is a straight ratio at the requested size.
                     final float inkAtRequested = Math.max(1f, textInkHeight(text, requested));
@@ -549,9 +576,21 @@ final class TrioRenderer {
                     //
                     // The canvas is already translated to the zone's centre by the
                     // caller, so what the baseline helper wants is that local centre -
-                    // 0 - not an absolute design-space y.
-                    final float slotCentre = TrioGeometry.zoneTextCy(z, a.ringStroke)
-                            - TrioGeometry.ZONE_CY[z];
+                    // 0 - not an absolute design-space y. A snug piece replaces that
+                    // local centre with the ring's crown line, so the reading straddles
+                    // the circle's own top the way the capsule's readings ride its
+                    // path line - settled the further touch a reading wants (see
+                    // CROWN_TEXT_DROP; the bolt does not take it).
+                    //
+                    // The diag-only originduo_drop property adds a live settle
+                    // in tenths of a unit on top of the shipping drop - the
+                    // knob 4.9 itself was tuned with.
+                    final float textDrop = TrioGeometry.CROWN_TEXT_DROP
+                            + TrioHooks.diagTextDrop();
+                    final float slotCentre = snug
+                            ? upDy + textDrop
+                            : TrioGeometry.zoneTextCy(z, a.ringStroke)
+                                    - TrioGeometry.ZONE_CY[z];
                     final float baseline = inkCentredBaseline(text, fitted, slotCentre);
                     if (part == Prefs.PART_TYPE) drawType(c, text, 0f, baseline, fitted, fg, a);
                     else {
@@ -564,6 +603,59 @@ final class TrioRenderer {
             }
             c.restoreToCount(save);
         }
+    }
+
+    /**
+     * The 12 o'clock opening width that hugs the top slot's content, or 0 when
+     * the content keeps the fixed opening (including when the hug would ask
+     * for the full fixed width - a wide reading simply gets the wide mouth and
+     * the placement that goes with it).
+     *
+     * <p>Only the percentage and the charging bolt are hugged. Both are narrow
+     * ink, so their width is free to differ from the mouth by whole tens of
+     * units - which was the iOS-parity complaint: two digits of ink in a mouth
+     * cut for four characters, blank paper either side. Everything else that
+     * can hold the notch - the network type, the shrunk arcs, the clock, a dot
+     * row - is fitted against the fixed opening's width and fills it, so it
+     * keeps it.
+     *
+     * <p>The size side is not circular: a crown piece's height budget is the
+     * constant {@link TrioGeometry#crownInkH()}, not a function of the mouth,
+     * so its width is measured once and the gap follows directly.
+     */
+    private static float snugTopGapDeg(int level, TrioAppearance.Ring r, TrioAppearance a) {
+        final int part = r.parts[0];
+        if (part == Prefs.PART_BOLT) {
+            final float fit = Math.min((78f - a.ringStroke) / 15f,
+                    TrioGeometry.crownInkH() / TrioGeometry.BOLT_INK_H);
+            final float deg = TrioGeometry.snugGapDeg(
+                    15f * fit * a.boltScaleFactor(), a.ringStroke);
+            return deg >= TrioGeometry.GAP_WIDTH_DEG - 0.5f ? 0f : deg;
+        }
+        if (part == Prefs.PART_VALUE && level >= 0) {
+            final String text = String.valueOf(level);
+            applyWeight(a.valueWeight);
+            TEXT.setTextSize(fittedValueSize(text, a,
+                    Math.min(TrioGeometry.crownTextRoomH(), TrioGeometry.zoneTextRoomH(0))));
+            final float deg = TrioGeometry.snugGapDeg(TEXT.measureText(text), a.ringStroke);
+            return deg >= TrioGeometry.GAP_WIDTH_DEG - 0.5f ? 0f : deg;
+        }
+        return 0f;
+    }
+
+    /**
+     * The size the value text will be drawn at for a given height room.
+     *
+     * <p>The height cap alone: for a value of at most three digits the width
+     * cap cannot bind (the fixed opening's room is wider than the ink even at
+     * "100"), so this is the size the slot loop's fit settles on. Kept beside
+     * {@link #snugTopGapDeg} for the same reason that method states: the mouth
+     * is cut for the glyph that will actually be drawn.
+     */
+    private static float fittedValueSize(String text, TrioAppearance a, float room) {
+        final float requested = a.valueSize;
+        final float inkAtRequested = Math.max(1f, textInkHeight(text, requested));
+        return requested * room / inkAtRequested;
     }
 
     /**

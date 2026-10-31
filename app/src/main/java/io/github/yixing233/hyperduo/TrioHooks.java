@@ -211,6 +211,39 @@ final class TrioHooks {
         }
     }
 
+    /**
+     * A live fine-tuning knob for the snug reading's vertical settle, in
+     * <em>tenths</em> of a design unit, read from
+     * {@code persist.sys.originduo_drop} (diag build only).
+     *
+     * <p>Tuning a pixel-level offset by rebuilding is slow; this reads on
+     * every frame, so {@code setprop} shows the change instantly. 34 answers
+     * 3.4 units - about two pixels at the bar's scale.
+     */
+    static float diagTextDrop() {
+        if (!BuildConfig.DIAG) {
+            return 0f;
+        }
+        Method get = sTestPropGet;
+        if (get == null) {
+            try {
+                final Class<?> c = Class.forName("android.os.SystemProperties");
+                get = c.getMethod("get", String.class, String.class);
+                get.setAccessible(true);
+                sTestPropGet = get;
+            } catch (Throwable t) {
+                return 0f;
+            }
+        }
+        try {
+            final Object v = get.invoke(null, "persist.sys.originduo_drop", "0");
+            return v instanceof String
+                    ? Integer.parseInt(((String) v).trim()) / 10f : 0f;
+        } catch (Throwable t) {
+            return 0f;
+        }
+    }
+
     /** vivo's battery meter container that holds the icon view. */
     private static final String VIVO_METER_VIEW =
             "com.vivo.systemui.battery.VivoBatteryMeterView";

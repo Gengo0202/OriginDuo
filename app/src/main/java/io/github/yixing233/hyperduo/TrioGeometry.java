@@ -615,6 +615,151 @@ final class TrioGeometry {
         return zoneTextRoomW(z, ringStroke, 0f);
     }
 
+    // ------------------------------------------------------------- snug opening
+
+    /**
+     * Deliberate visible margin between the ink a snug opening holds and the
+     * arc's caps, per side, in design units.
+     *
+     * <p>The cap-and-fringe insets ({@code ringStroke + 4 * ZONE_TYPE_FRINGE})
+     * already stop the ink from touching the arc; this is the extra breathing
+     * room on top of them that makes the notch read as a frame around its
+     * content rather than as a pinch. Four units is about a third of a point
+     * at the default scale - visible, but tighter than any fixed opening.
+     */
+    static final float SNUG_GAP_PAD = 4f;
+
+    /**
+     * The smallest opening {@link #snugGapDeg} will answer, in degrees.
+     *
+     * <p>The measured answer for one digit is already around 37 degrees, so
+     * this floor is only reached by degenerate input (no ink at all); it
+     * exists so the notch can never close onto content that is nominally
+     * present but measures as nothing.
+     */
+    static final float SNUG_GAP_MIN_DEG = 24f;
+
+    /**
+     * The 12 o'clock opening that hugs one piece of ink, in degrees - the
+     * inverse of {@link #openingChord}.
+     *
+     * <p>The fixed {@link #GAP_WIDTH_DEG} mouth is sized for the open layout,
+     * where the top slot may hold the network type, the arcs, a clock or a
+     * dot row, so it is as wide as the widest of those. When the slot holds
+     * the percentage or the charging bolt instead, that width is all padding:
+     * two digits of ink in a four-character mouth. This answers the opening
+     * that fits the ink actually drawn this frame, with the same cap insets
+     * {@code openingChord} applies, so the content and the arc ends keep the
+     * geometry the fixed mouth taught them to expect.
+     *
+     * <p>Clamped both ways: never wider than the fixed mouth (a wide reading
+     * simply gets the wide opening it always had), never narrower than
+     * {@link #SNUG_GAP_MIN_DEG}.
+     */
+    static float snugGapDeg(float inkWidth, int ringStroke) {
+        final float needed = Math.max(0f, inkWidth) + 2f * SNUG_GAP_PAD
+                + ringStroke + 4f * ZONE_TYPE_FRINGE;
+        final double ratio = needed / (2.0 * B_R);
+        if (ratio >= 1.0) {
+            return GAP_WIDTH_DEG;
+        }
+        final float deg = (float) Math.toDegrees(2.0 * Math.asin(ratio));
+        return Math.min(GAP_WIDTH_DEG, Math.max(SNUG_GAP_MIN_DEG, deg));
+    }
+
+    /** The 12 o'clock opening's start, as path progress, for a width in degrees. */
+    static float gapStartForDeg(float deg) {
+        return 0.5f - deg / 2f / B_SWEEP;
+    }
+
+    /** The 12 o'clock opening's end, as path progress, for a width in degrees. */
+    static float gapEndForDeg(float deg) {
+        return 0.5f + deg / 2f / B_SWEEP;
+    }
+
+    /**
+     * The vertical centre for a snug mouth's content: the ring's own top
+     * line - the apex of the circle the arc is cut from - dropped slightly.
+     *
+     * <p>The user's anchor, and the right one. The opening's chord (through
+     * the two cap centres) drops below the apex as the mouth widens - at a
+     * 70-degree mouth it sits nine units under the crown, which read as
+     * "the number is very low"; at a bolt-sized mouth, four units under,
+     * "a little low". The eye does not follow the chord, it follows the
+     * circle the ring belongs to: a piece in the notch belongs ON that
+     * circle's crown, straddling it - the same rule the capsule's readings
+     * follow on its path line.
+     *
+     * <p>The {@link #CROWN_DROP} below the apex is the user's own trade:
+     * centring exactly on the crown capped the reading at half its former
+     * size (see {@link #CROWN_TOP}), too small to read, so the centre gives
+     * a little and the size comes back.
+     */
+    static float apexCy() {
+        return B_CY - B_R;
+    }
+
+    /**
+     * How far below the crown the centre of a snug piece sits, in design
+     * units. Two units is about a pixel at the bar's scale - still squarely
+     * "on the crown" to the eye, and it is what lets the reading keep the
+     * height it had before the snug work began.
+     */
+    static final float CROWN_DROP = 2f;
+
+    /**
+     * The highest design-space y a crown piece may ink.
+     *
+     * <p>Below the ink box's ceiling ({@code INK_Y}, about 2) by four units:
+     * on the only platform this fork targets the ancestors above the glyph
+     * are unclipped, so ink above the box still renders - the strip above
+     * the icon band offers some sixty units of headroom - and those four
+     * units of overreach are what buy the reading back its original size.
+     * The ink box remains the scale reference: the ring does not move, only
+     * the crown piece reaches a little past its nominal top.
+     */
+    static final float CROWN_TOP = -2f;
+
+    /** Where a snug piece's ink is centred: the crown, dropped a touch. */
+    static float crownCy() {
+        return apexCy() + CROWN_DROP;
+    }
+
+    /**
+     * How far below the crown a <em>reading</em> settles than a drawn figure
+     * does, in design units.
+     *
+     * <p>The eye's answer, not a typographic rule: with both centred on the
+     * crown the bolt read as right and the digits as high - the glyph's own
+     * enlargement on OriginOS (1.66x) amplifies whatever offset is there,
+     * and digits carry their visual mass lower than a bolt does. Tuned live
+     * on the device through the diag build's settle knob and A/B-compared
+     * by eye: 4.9 units - about three pixels at the bar's scale - is where
+     * the reading sat level with the bolt on the crown.
+     */
+    static final float CROWN_TEXT_DROP = 4.9f;
+
+    /**
+     * The ink-height budget for a crown piece, in design units: twice the
+     * span from {@link #CROWN_TOP} up to the centre. A constant on purpose -
+     * the budget answers "how tall may a crown piece be", not "how tall is
+     * this mouth", so the reading keeps one size whatever its digits and
+     * whatever the opening hugged around them. At the defaults it equals
+     * the zone box the fixed placement used, which is the point: the snug
+     * work moved the centre, not the size.
+     */
+    static float crownInkH() {
+        return Math.max(4f, 2f * (crownCy() - CROWN_TOP));
+    }
+
+    /**
+     * The text-height room for a crown reading: the ink budget less the same
+     * inset {@code zoneTextRoomH} takes from its box.
+     */
+    static float crownTextRoomH() {
+        return Math.max(1f, crownInkH() - 2f * ZONE_TEXT_INSET);
+    }
+
     /**
      * Clearance kept between a fitted line's edge and the arc, in design units.
      *
