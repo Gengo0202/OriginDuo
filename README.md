@@ -41,26 +41,21 @@
 
 ## 相对上游的适配改动（v1.0.2）
 
-- **绘制宿主**：vivo 的电池图标视图（横条/圆形/竖条三种样式均覆盖，类名已在真机 SystemUI dex 中核实）没有 MIUI 的 `mTintBgDrawable` 槽位——字形改为完全接管其 `onDraw`（跳过原生绘制，直接在系统给出的干净画布上作画）；
-- **字形尺寸**：vivo 电池框仅 12dp 高（42px），字形放大 1.66 倍绘制至与 MIUI 版相同的 20dp（居中于图标带并解除祖先裁剪；「整体尺寸」滑杆仍在放大后的框内生效）；
-- **原生图标折叠**：vivo 的图标容器是 AOSP 的 `StatusIconContainer`（忽略列表字段名为 `mIgnoredSlots`），
-  折叠走 `addIgnoredSlots` + 布局期 `GONE` 双通道，槽位识别在 `getSlot()` 之外增加按视图类名兜底；
-- **电量/充电状态**：vivo 宿主视图无反射字段可读，改由粘性电池广播采样（电量、充电状态；
-  快充按实时充电功率 ≥10W 判定，只影响闪电颜色）；
-- **信号等级**：无 `transformResId` 管线可挂钩——Wi-Fi 等级取自 RSSI 采样，移动信号取自电话业务轮询
-  （与系统图标同源的 `SignalStrength`）；
+- **绘制宿主**：vivo 的电池图标视图（横条/圆形/竖条三种样式均覆盖）,槽位——字形改为完全接管其 `onDraw`（跳过原生绘制，直接在系统给出的干净画布上作画）；
+- **字形尺寸**：vivo 电池框仅 12dp 高（42px），字形放大 1.66 倍绘制至与 MIUI 版相同的 20dp；
+- **原生图标折叠**：vivo 的图标容器是 AOSP 的 `StatusIconContainer`，折叠走 `addIgnoredSlots` + 布局期 `GONE` 双通道，槽位识别在 `getSlot()` 之外增加按视图类名兜底；
+- **电量/充电状态**：vivo 宿主视图无反射字段可读，改由粘性电池广播采样（电量、充电状态、快充按实时充电功率 ≥10W 判定，只影响闪电颜色）；
+- **信号等级**：无 `transformResId` 管线可挂钩——Wi-Fi 等级取自 RSSI 采样，移动信号取自电话业务轮询（与系统图标同源的 `SignalStrength`）；
 - **网络类型**：环内/环外标签由数据卡的接入网类型映射（NR→5G、LTE→4G……）；
-- **颜色跟随**：OriginOS 深浅色变化不经过任何可挂钩方法，前景色改为每 500ms 读取状态栏时钟文字颜色
-  （屏幕熄灭时暂停），该方案已在同机型的 vivo 适配中验证；
+- **颜色跟随**：OriginOS 深浅色变化不经过任何可挂钩方法，前景色改为每 500ms 读取状态栏时钟文字颜色（屏幕熄灭时暂停）；
 - **时钟**：胶囊样式接管时间时直接隐藏状态栏时钟，交还时恢复捕获时的原始可见性；
-- **环外读数**（环外信号 / 环外网络类型 / 充电功率 / 电池温度）：挂载进 vivo 的 `system_icons` LinearLayout，
-  由系统布局自然占位（间距滑杆在该 ROM 上暂不生效）；
+- **环外读数**（环外信号 / 环外网络类型 / 充电功率 / 电池温度）：挂载进 vivo 的 `system_icons` LinearLayout，由系统布局自然占位（因此间距滑杆在该 ROM 上暂不生效）；
 - **独立标识**：包名 `io.github.gengo0202.originduo`，可与上游原版共存；更新渠道指向本仓库。
 
 ### 已知限制（OriginOS）
 
 - 充电「超级胶囊 / 原子岛」接管状态栏时字形的避让逻辑未适配（上游针对 MIUI 灵动岛）；
-- 「5GA」（5G-A）等 vivo 专属角标暂不区分，均显示为 5G；
+- 「5GA」（5G-A）等角标暂不区分，均显示为 5G；
 - 环外读数的间距微调滑杆不生效（由系统 LinearLayout 排布）。
 
 ## 构建
@@ -70,7 +65,7 @@ JDK 21 + Android SDK (Platform 37) + Gradle 9.8
 gradle :app:assembleRelease -PoriginduoVersionName=1.0.3 -PoriginduoVersionCode=3 --no-daemon
 ```
 
-**诊断构建**（可选）：加 `-PoriginduoDiag=true` 会编入远程开关——root 执行
+**诊断构建**（可选）：编译时添加加 `-PoriginduoDiag=true` 可编入 adb shell 控制开关——root 执行
 `su -c setprop persist.sys.originduo_test N` 可在不重启的情况下分别禁用某个子系统
 （1=停绘制 / 2=停折叠 / 3=停取色轮询 / 4=着色钩子纯直通 / 6=停擦除 / 7=CLEAR 对照 / 8=停解除裁剪），
 用于现场二分定位问题。**公开发布的普通版不含此机制，如有需要请自行构建测试**（R8 常量折叠后相关反射代码全部剥离）。
