@@ -76,6 +76,26 @@ gradle :app:assembleRelease -PoriginduoVersionName=1.0.3 -PoriginduoVersionCode=
 
 **公开发布的普通版不含也不应含有此机制，如有需要请自行构建测试**（R8 常量折叠后相关反射代码全部剥离）。
 
+## 上游同步与防误推
+
+本仓库是** vivo/OriginOS 自用适配 fork**，改动均为 OriginOS 专属，不打算也不应该推送到上游
+[yixing233/HyperDuo](https://github.com/yixing233/HyperDuo)。GPL-3.0 对此完全兼容：自用修改无任何公开义务，
+本仓库的公开发布已超出"分发时提供源码"的许可证要求，且 GPL 从不要求向上游回馈代码。
+
+本地仓库已配置三重防误推：
+
+1. `upstream` 远程为**只读**（推送地址已置为 `DISABLE`，`git push upstream` 会直接失败）；
+2. `scripts/pre-push-guard` 推送守卫钩子：任何目标不是 `Gengo0202/OriginDuo` 的推送一律拦截
+   （重新克隆后执行 `cp scripts/pre-push-guard .git/hooks/pre-push` 重新安装）；
+3. 网页端唯一无法技术拦截的入口是 GitHub fork 页面的 "Contribute" 按钮——**不要**向上游发 PR。
+
+同步上游更新的正确姿势（只拉不推）：
+
+```
+git fetch upstream
+git merge upstream/main   # 解决冲突时保留 vivo 适配逻辑
+```
+
 ## 反馈问题
 
 重启系统界面后几分钟内复现问题，然后在设置里打开「调试日志」，用
